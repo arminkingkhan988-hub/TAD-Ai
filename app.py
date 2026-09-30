@@ -183,7 +183,7 @@ button:disabled {
 
 <textarea
     id="msg"
-    placeholder="مثلاً: Bacteria څه شی دی؟"
+    placeholder="Ask any medical question..."
 ></textarea>
 
 
@@ -239,7 +239,7 @@ async function sendQuestion() {
     if (!message) {
 
         answer.innerText =
-            "مهرباني وکړئ خپله پوښتنه ولیکئ.";
+            "Please enter your question.";
 
         images.innerHTML = "";
 
@@ -303,7 +303,7 @@ async function sendQuestion() {
             let html = `
 
                 <div class="image-title">
-                    🖼️ اړوند طبي انځورونه
+                    🖼️ Related Medical Images
                 </div>
 
                 <div class="image-grid">
@@ -366,8 +366,8 @@ async function sendQuestion() {
 
                 <div class="no-image">
 
-                    🖼️ د دې موضوع لپاره مناسب
-                    انځور ونه موندل شو.
+                    🖼️ No suitable image was found
+                    for this topic.
 
                 </div>
 
@@ -571,7 +571,7 @@ def chat():
         return jsonify({
 
             "error":
-            "مهرباني وکړئ خپله پوښتنه ولیکئ."
+            "Please enter your question."
 
         }), 400
 
@@ -591,83 +591,63 @@ def chat():
 
 
     # =====================================================
-    # MEDICAL FORMAT PROMPT
+    # MULTILINGUAL MEDICAL PROMPT
     # =====================================================
 
     prompt = f"""
-You are MedAI, an educational medical information assistant.
+You are MedAI, a multilingual educational medical information assistant.
 
-The user may ask questions in Pashto, Dari, or English.
+LANGUAGE RULES:
 
-IMPORTANT RULES:
+- Automatically detect the language of the user's question.
+- Answer in the SAME language as the user's question.
+- Support as many languages as possible.
+- Do not force the user to select a language.
+- If the user mixes languages, use the main language.
+- Keep medical terminology accurate.
+- Explain difficult medical terminology in simple language.
+- Section headings must also be written in the user's language.
 
-- Answer in the same language as the user's question.
-- Use clear and simple language.
-- Give accurate educational medical information.
-- Do not diagnose a patient from symptoms alone.
+MEDICAL SAFETY:
+
+- Provide accurate educational medical information.
+- Do not diagnose a person from symptoms alone.
 - Do not pretend that you examined the patient.
 - Do not invent medical facts.
 - Do not give personalized prescription or dosage instructions.
-- If emergency warning signs are relevant, clearly advise urgent medical care.
+- If emergency warning signs are relevant, advise urgent medical care.
 - MedAI is educational and is not a replacement for a doctor.
 
-For medical topics, organize the answer using these sections when relevant:
+MEDICAL STRUCTURE:
 
-## Definition
+For medical questions, use the following sections when relevant:
 
-Explain what the condition, disease, medicine,
-symptom, or medical term means.
+Definition
+Causes
+Types
+Risk Factors
+Signs and Symptoms
+Diagnosis
+Treatment
+Prevention
+Complications
+Important Points
 
-## Causes
+Translate every section heading into
+the user's language.
 
-Explain the common causes.
-
-## Types
-
-Explain the important types or classifications.
-
-## Risk Factors
-
-Explain factors that increase the risk.
-
-## Signs and Symptoms
-
-Explain the common signs and symptoms.
-
-## Diagnosis
-
-Explain how doctors usually diagnose it.
-
-## Treatment
-
-Explain the general treatment approaches.
-Do not provide personalized prescriptions or dosages.
-
-## Prevention
-
-Explain how it can be prevented when prevention is possible.
-
-## Complications
-
-Explain important complications.
-
-## Important Points
-
-Give a short summary of the most important information.
-
-FORMATTING RULES:
+FORMATTING:
 
 - Use clear headings.
+- Use bullet points when useful.
 - Keep paragraphs short.
-- Use bullet points where useful.
-- Highlight important warnings clearly.
-- Do not include sections that are not relevant.
-- Keep the answer understandable for medical students
-  and ordinary users.
-- Do not use unnecessary technical language.
-- If a medical term is difficult, explain it simply.
+- Make the answer easy to read.
+- Explain difficult medical words simply.
+- Do not include irrelevant sections.
+- Give a useful educational explanation.
+- Keep important warnings clear.
 
-User question:
+USER QUESTION:
 
 {message}
 """
@@ -806,7 +786,7 @@ User question:
 
 
         # =================================================
-        # MEDICAL IMAGE SEARCH
+        # IMAGE SEARCH
         # =================================================
 
         search_term = message
@@ -938,7 +918,7 @@ User question:
 
 
         # =================================================
-        # RETURN RESULT
+        # FINAL RESPONSE
         # =================================================
 
         return jsonify({
