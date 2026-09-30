@@ -6,27 +6,41 @@ import urllib.parse
 app = Flask(__name__)
 
 
+# =========================================================
+# HOME PAGE
+# =========================================================
+
 @app.route("/")
 def home():
     return """
 <!DOCTYPE html>
 <html lang="ps" dir="rtl">
+
 <head>
+
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0">
 
 <title>MedAI</title>
 
 <style>
+
+* {
+    box-sizing: border-box;
+}
+
 body {
     margin: 0;
     padding: 20px;
     font-family: Arial, sans-serif;
     background: #f4f7fb;
+    color: #222;
 }
 
 .container {
-    max-width: 850px;
+    max-width: 900px;
     margin: auto;
 }
 
@@ -38,19 +52,19 @@ h1 {
 
 .subtitle {
     text-align: center;
-    color: #555;
+    color: #666;
     margin-bottom: 25px;
 }
 
 textarea {
     width: 100%;
     height: 130px;
-    box-sizing: border-box;
     padding: 15px;
     border: 1px solid #ccc;
     border-radius: 12px;
-    font-size: 17px;
+    font-size: 18px;
     resize: vertical;
+    font-family: Arial, sans-serif;
 }
 
 button {
@@ -69,6 +83,11 @@ button:hover {
     background: #0f5dcc;
 }
 
+button:disabled {
+    background: #999;
+    cursor: not-allowed;
+}
+
 #answer {
     margin-top: 20px;
     padding: 22px;
@@ -76,7 +95,8 @@ button:hover {
     border-radius: 12px;
     line-height: 2;
     white-space: pre-wrap;
-    min-height: 50px;
+    min-height: 80px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
 }
 
 #images {
@@ -91,7 +111,10 @@ button:hover {
 
 .image-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    grid-template-columns: repeat(
+        auto-fit,
+        minmax(220px, 1fr)
+    );
     gap: 15px;
 }
 
@@ -108,6 +131,7 @@ button:hover {
     object-fit: contain;
     border-radius: 10px;
     background: #eee;
+    display: block;
 }
 
 .image-caption {
@@ -121,6 +145,17 @@ button:hover {
     text-decoration: none;
 }
 
+.image-caption a:hover {
+    text-decoration: underline;
+}
+
+.no-image {
+    padding: 15px;
+    background: #fff4d6;
+    border-radius: 10px;
+    color: #6b5200;
+}
+
 .warning {
     margin-top: 25px;
     padding: 15px;
@@ -129,8 +164,16 @@ button:hover {
     color: #6b5200;
     line-height: 1.8;
 }
+
+.loading {
+    text-align: center;
+    padding: 20px;
+}
+
 </style>
+
 </head>
+
 
 <body>
 
@@ -142,25 +185,38 @@ button:hover {
 ستاسو د طبي زده کړو هوښیار مرستیال
 </div>
 
-<textarea
-id="msg"
-placeholder="مثلاً: Bacteria څه شی دی؟">
-</textarea>
 
-<button onclick="sendQuestion()">
+<textarea
+    id="msg"
+    placeholder="مثلاً: Bacteria څه شی دی؟"
+></textarea>
+
+
+<button
+    id="askButton"
+    onclick="sendQuestion()"
+>
 پوښتنه
 </button>
+
 
 <div id="answer">
 ستاسو ځواب به دلته ښکاره شي.
 </div>
 
+
 <div id="images"></div>
 
+
 <div class="warning">
+
 ⚠️ MedAI د طبي زده کړو او معلوماتو لپاره دی.
-دا د ډاکټر بدیل نه دی. د جدي یا بیړنیو نښو په صورت کې
+
+دا د ډاکټر بدیل نه دی.
+
+د جدي یا بیړنیو نښو په صورت کې
 له روغتیايي مسلکي کس سره اړیکه ونیسئ.
+
 </div>
 
 </div>
@@ -171,13 +227,18 @@ placeholder="مثلاً: Bacteria څه شی دی؟">
 async function sendQuestion() {
 
     const message =
-        document.getElementById("msg").value.trim();
+        document.getElementById("msg")
+        .value
+        .trim();
 
     const answer =
         document.getElementById("answer");
 
     const images =
         document.getElementById("images");
+
+    const button =
+        document.getElementById("askButton");
 
 
     if (!message) {
@@ -196,52 +257,73 @@ async function sendQuestion() {
 
     images.innerHTML = "";
 
+    button.disabled = true;
+
+    button.innerText =
+        "⏳ مهرباني وکړئ انتظار وکړئ";
+
 
     try {
 
-        const response = await fetch("/chat", {
+        const response = await fetch(
+            "/chat",
+            {
+                method: "POST",
 
-            method: "POST",
+                headers: {
+                    "Content-Type":
+                    "application/json"
+                },
 
-            headers: {
-                "Content-Type": "application/json"
-            },
-
-            body: JSON.stringify({
-                message: message
-            })
-        });
+                body: JSON.stringify({
+                    message: message
+                })
+            }
+        );
 
 
-        const data = await response.json();
+        const data =
+            await response.json();
 
 
         if (data.answer) {
 
-            answer.innerText = data.answer;
+            answer.innerText =
+                data.answer;
 
         } else {
 
             answer.innerText =
-                data.error || "یوه ستونزه رامنځته شوه.";
+                data.error ||
+                "یوه ستونزه رامنځته شوه.";
 
         }
 
 
-        if (data.images && data.images.length > 0) {
+        /*
+         * DISPLAY IMAGES
+         */
+
+        if (
+            Array.isArray(data.images) &&
+            data.images.length > 0
+        ) {
 
             let html = `
+
                 <div class="image-title">
                     🖼️ اړوند طبي انځورونه
                 </div>
 
                 <div class="image-grid">
+
             `;
 
 
             data.images.forEach(function(image) {
 
                 html += `
+
                     <div class="image-card">
 
                         <a
@@ -254,9 +336,11 @@ async function sendQuestion() {
                                 src="${image.image_url}"
                                 alt="${image.title}"
                                 loading="lazy"
+                                onerror="this.style.display='none';"
                             >
 
                         </a>
+
 
                         <div class="image-caption">
 
@@ -265,12 +349,15 @@ async function sendQuestion() {
                                 target="_blank"
                                 rel="noopener noreferrer"
                             >
+
                                 ${image.title}
+
                             </a>
 
                         </div>
 
                     </div>
+
                 `;
 
             });
@@ -280,15 +367,23 @@ async function sendQuestion() {
                 </div>
             `;
 
+
             images.innerHTML = html;
+
 
         } else {
 
             images.innerHTML = `
-                <div class="image-title">
-                    🖼️ د دې موضوع لپاره مناسب انځور ونه موندل شو.
+
+                <div class="no-image">
+
+                    🖼️ د دې موضوع لپاره مناسب
+                    انځور ونه موندل شو.
+
                 </div>
+
             `;
+
         }
 
 
@@ -300,48 +395,89 @@ async function sendQuestion() {
         images.innerHTML = "";
 
     }
+
+
+    button.disabled = false;
+
+    button.innerText =
+        "پوښتنه";
 }
 
 </script>
 
+
 </body>
+
 </html>
 """
 
 
-# ---------------------------------------
+# =========================================================
 # WIKIMEDIA IMAGE SEARCH
-# ---------------------------------------
+# =========================================================
 
 def search_wikimedia_images(search_term):
 
-    api_url = "https://commons.wikimedia.org/w/api.php"
+    api_url = (
+        "https://commons.wikimedia.org/"
+        "w/api.php"
+    )
+
 
     params = {
+
         "action": "query",
+
         "format": "json",
+
         "formatversion": "2",
+
         "generator": "search",
+
         "gsrsearch": search_term,
+
         "gsrnamespace": "6",
-        "gsrlimit": "4",
+
+        "gsrlimit": "6",
+
         "prop": "imageinfo",
+
         "iiprop": "url",
+
         "iiurlwidth": "600"
+
     }
+
+
+    headers = {
+
+        "User-Agent":
+        "MedAI/1.0 "
+        "(medical educational application)"
+
+    }
+
 
     try:
 
         response = requests.get(
+
             api_url,
+
             params=params,
+
+            headers=headers,
+
             timeout=20
+
         )
 
-        if response.status_code != 200:
-            return []
+
+        response.raise_for_status()
+
 
         data = response.json()
+
 
         pages = (
             data
@@ -349,20 +485,28 @@ def search_wikimedia_images(search_term):
             .get("pages", [])
         )
 
+
         results = []
+
+
+        # -------------------------------------------------
+        # Handle Wikimedia formatversion=2
+        # -------------------------------------------------
+
+        if isinstance(pages, dict):
+
+            pages = pages.values()
 
 
         for page in pages:
 
-            title = page.get(
-                "title",
-                "Medical image"
+            imageinfo = (
+                page.get(
+                    "imageinfo",
+                    []
+                )
             )
 
-            imageinfo = page.get(
-                "imageinfo",
-                []
-            )
 
             if not imageinfo:
                 continue
@@ -371,23 +515,27 @@ def search_wikimedia_images(search_term):
             info = imageinfo[0]
 
 
-            # First use thumbnail.
-            image_url = info.get(
-                "thumburl"
+            # Prefer thumbnail
+            image_url = (
+                info.get("thumburl")
+                or info.get("url")
             )
 
 
-            # If thumbnail is unavailable,
-            # use original image URL.
             if not image_url:
+                continue
 
-                image_url = info.get(
-                    "url"
+
+            page_url = (
+                info.get(
+                    "descriptionurl"
                 )
+            )
 
 
-            page_url = info.get(
-                "descriptionurl"
+            title = page.get(
+                "title",
+                "Medical image"
             )
 
 
@@ -402,20 +550,19 @@ def search_wikimedia_images(search_term):
                 )
 
 
-            if not image_url:
-                continue
-
-
             results.append({
 
-                "title": title.replace(
-                    "File:",
-                    ""
-                ),
+                "title":
+                    title.replace(
+                        "File:",
+                        ""
+                    ),
 
-                "image_url": image_url,
+                "image_url":
+                    image_url,
 
-                "page_url": page_url
+                "page_url":
+                    page_url
 
             })
 
@@ -423,34 +570,48 @@ def search_wikimedia_images(search_term):
         return results
 
 
-    except Exception:
+    except Exception as e:
+
+        print(
+            "Wikimedia error:",
+            str(e)
+        )
 
         return []
 
 
-# ---------------------------------------
+# =========================================================
 # GEMINI
-# ---------------------------------------
+# =========================================================
 
-@app.route("/chat", methods=["POST"])
+@app.route(
+    "/chat",
+    methods=["POST"]
+)
 def chat():
 
-    data = request.get_json(
-        silent=True
-    ) or {}
+    data = (
+        request.get_json(
+            silent=True
+        )
+        or {}
+    )
 
 
-    message = data.get(
-        "message",
-        ""
-    ).strip()
+    message = (
+        data
+        .get("message", "")
+        .strip()
+    )
 
 
     if not message:
 
         return jsonify({
+
             "error":
             "مهرباني وکړئ خپله پوښتنه ولیکئ."
+
         }), 400
 
 
@@ -462,52 +623,101 @@ def chat():
     if not api_key:
 
         return jsonify({
+
             "error":
             "GEMINI_API_KEY پیدا نه شو."
+
         }), 500
 
 
+    # =====================================================
+    # MEDICAL AI PROMPT
+    # =====================================================
+
     prompt = f"""
-You are MedAI, an educational medical information assistant.
 
-Answer the user's medical question accurately,
-clearly and safely.
+You are MedAI, an educational medical
+information assistant.
 
-Rules:
+Answer the user's medical question
+accurately, clearly and safely.
 
-- Support Pashto, Dari and English.
-- Reply in the same language as the user.
-- Use simple language.
-- Do not diagnose a person from symptoms alone.
-- Do not pretend to be a doctor.
-- Do not invent medical facts.
-- Do not replace emergency medical care.
-- For emergency symptoms, advise urgent medical care.
-- Do not give personalized prescription or dosage instructions.
+IMPORTANT RULES:
 
-For medical topics, use these headings when relevant:
+1. Support Pashto, Dari and English.
+
+2. Reply in the same language
+   as the user's question.
+
+3. Use simple language.
+
+4. Give educational medical information.
+
+5. Do not diagnose a person from
+   symptoms alone.
+
+6. Do not pretend that you examined
+   the patient.
+
+7. Do not invent medical facts.
+
+8. Do not replace emergency medical care.
+
+9. If the question involves emergency
+   warning signs, clearly advise the user
+   to seek urgent medical care.
+
+10. Do not give personalized prescription
+    or dosage instructions as if you examined
+    the patient.
+
+11. Explain medical terminology simply.
+
+For medical topics, use these headings
+when relevant:
 
 Definition
+
 Causes
+
 Types
+
 Risk Factors
+
 Signs and Symptoms
+
 Diagnosis
+
 Treatment
+
 Prevention
+
 Complications
+
 Important Points
+
+Make the answer clear and useful.
 
 User question:
 
 {message}
+
 """
 
 
+    # =====================================================
+    # GEMINI API
+    # =====================================================
+
     gemini_url = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        "gemini-3.5-flash-lite:generateContent?key="
+
+        "https://generativelanguage.googleapis.com/"
+        "v1beta/models/"
+        "gemini-3.5-flash-lite:"
+        "generateContent?key="
+
         + api_key
+
     )
 
 
@@ -531,7 +741,8 @@ User question:
                         "parts": [
 
                             {
-                                "text": prompt
+                                "text":
+                                prompt
                             }
 
                         ]
@@ -543,10 +754,12 @@ User question:
             },
 
             timeout=60
+
         )
 
 
-        data = response.json()
+        gemini_data =
+            response.json()
 
 
         if response.status_code != 200:
@@ -555,14 +768,17 @@ User question:
 
                 "error":
                 "Gemini API خطا ورکړه: "
-                + str(data)
+                + str(gemini_data)
 
             }), 500
 
 
-        candidates = data.get(
-            "candidates",
-            []
+        candidates = (
+            gemini_data
+            .get(
+                "candidates",
+                []
+            )
         )
 
 
@@ -577,9 +793,19 @@ User question:
 
 
         parts = (
+
             candidates[0]
-            .get("content", {})
-            .get("parts", [])
+
+            .get(
+                "content",
+                {}
+            )
+
+            .get(
+                "parts",
+                []
+            )
+
         )
 
 
@@ -593,9 +819,9 @@ User question:
             }), 500
 
 
-        answer = parts[0].get(
-            "text",
-            ""
+        answer = (
+            parts[0]
+            .get("text", "")
         )
 
 
@@ -609,73 +835,125 @@ User question:
             }), 500
 
 
-        # ---------------------------------------
-        # MEDICAL IMAGE SEARCH
-        # ---------------------------------------
+        # =================================================
+        # IMAGE SEARCH
+        # =================================================
 
         search_term = message
 
 
-        # Common medical terms.
         translations = {
 
-            "بکتریا": "bacteria",
+            "بکتریا":
+                "bacteria",
 
-            "باکتریا": "bacteria",
+            "باکتریا":
+                "bacteria",
 
-            "bacteria": "bacteria",
+            "bacteria":
+                "bacteria",
 
-            "سینه بغل": "pneumonia",
+            "سینه بغل":
+                "pneumonia",
 
-            "pneumonia": "pneumonia",
+            "pneumonia":
+                "pneumonia",
 
-            "شکر": "diabetes",
+            "شکر":
+                "diabetes",
 
-            "ډایبېټس": "diabetes",
+            "ډایبېټس":
+                "diabetes",
 
-            "diabetes": "diabetes",
+            "diabetes":
+                "diabetes",
 
-            "فشار": "hypertension",
+            "فشار":
+                "hypertension",
 
-            "لوړ فشار": "hypertension",
+            "لوړ فشار":
+                "hypertension",
 
-            "زړه": "heart",
+            "hypertension":
+                "hypertension",
 
-            "د زړه": "heart disease",
+            "زړه":
+                "heart",
 
-            "سږي": "lungs",
+            "د زړه":
+                "heart disease",
 
-            "معده": "stomach",
+            "heart":
+                "heart",
 
-            "ځیګر": "liver",
+            "سږي":
+                "lungs",
 
-            "پښتورګي": "kidney",
+            "سږو":
+                "lungs",
 
-            "دماغ": "brain",
+            "معده":
+                "stomach",
 
-            "پوستکی": "skin",
+            "ځیګر":
+                "liver",
 
-            "هډوکي": "bone",
+            "پښتورګي":
+                "kidney",
 
-            "انفلونزا": "influenza",
+            "دماغ":
+                "brain",
 
-            "سرطان": "cancer",
+            "پوستکی":
+                "skin",
 
-            "وینه": "blood",
+            "هډوکي":
+                "bone",
 
-            "ویروس": "virus",
+            "انفلونزا":
+                "influenza",
 
-            "coronavirus": "coronavirus",
+            "influenza":
+                "influenza",
 
-            "covid": "COVID-19"
+            "سرطان":
+                "cancer",
+
+            "cancer":
+                "cancer",
+
+            "وینه":
+                "blood",
+
+            "blood":
+                "blood",
+
+            "ویروس":
+                "virus",
+
+            "virus":
+                "virus",
+
+            "coronavirus":
+                "coronavirus",
+
+            "covid":
+                "COVID-19",
+
+            "کووېډ":
+                "COVID-19"
 
         }
 
 
-        lower_message = message.lower()
+        lower_message = (
+            message.lower()
+        )
 
 
-        for word, english in translations.items():
+        for word, english in (
+            translations.items()
+        ):
 
             if word.lower() in lower_message:
 
@@ -684,16 +962,24 @@ User question:
                 break
 
 
-        images = search_wikimedia_images(
-            search_term
+        images = (
+            search_wikimedia_images(
+                search_term
+            )
         )
 
 
+        # =================================================
+        # FINAL RESPONSE
+        # =================================================
+
         return jsonify({
 
-            "answer": answer,
+            "answer":
+                answer,
 
-            "images": images
+            "images":
+                images
 
         })
 
@@ -703,12 +989,19 @@ User question:
         return jsonify({
 
             "error":
-            "د AI ځواب ډېر وخت ونیو. بیا هڅه وکړئ."
+            "د AI ځواب ډېر وخت ونیو. "
+            "بیا هڅه وکړئ."
 
         }), 504
 
 
     except Exception as e:
+
+        print(
+            "Chat error:",
+            str(e)
+        )
+
 
         return jsonify({
 
@@ -719,9 +1012,9 @@ User question:
         }), 500
 
 
-# ---------------------------------------
+# =========================================================
 # RUN
-# ---------------------------------------
+# =========================================================
 
 if __name__ == "__main__":
 
