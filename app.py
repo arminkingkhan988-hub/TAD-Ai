@@ -56,6 +56,11 @@ h1 {
     margin-bottom: 25px;
 }
 
+
+/* =====================================================
+   INPUT
+   ===================================================== */
+
 textarea {
     width: 100%;
     height: 130px;
@@ -88,6 +93,11 @@ button:disabled {
     cursor: not-allowed;
 }
 
+
+/* =====================================================
+   ANSWER
+   ===================================================== */
+
 #answer {
     margin-top: 20px;
     padding: 22px;
@@ -98,6 +108,155 @@ button:disabled {
     min-height: 80px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.05);
 }
+
+
+/* =====================================================
+   ACTION BUTTONS
+   ===================================================== */
+
+.action-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.action-buttons button {
+    margin-top: 0;
+}
+
+.save-button {
+    background: #f5a623;
+}
+
+.save-button:hover {
+    background: #d98d08;
+}
+
+.history-button {
+    background: #555;
+}
+
+.history-button:hover {
+    background: #333;
+}
+
+
+/* =====================================================
+   HISTORY
+   ===================================================== */
+
+#historyPanel {
+    display: none;
+    margin-top: 20px;
+    background: white;
+    padding: 18px;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+}
+
+.history-title {
+    font-size: 22px;
+    font-weight: bold;
+    margin-bottom: 15px;
+}
+
+.history-item {
+    padding: 14px;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    background: #fafafa;
+}
+
+.history-item:hover {
+    background: #f0f5ff;
+}
+
+.history-question {
+    font-weight: bold;
+    color: #1677ff;
+    margin-bottom: 6px;
+}
+
+.history-date {
+    font-size: 12px;
+    color: #888;
+}
+
+.history-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.history-actions button {
+    margin-top: 0;
+    padding: 8px;
+    font-size: 14px;
+}
+
+.delete-button {
+    background: #dc3545;
+}
+
+.delete-button:hover {
+    background: #b02a37;
+}
+
+.clear-button {
+    background: #777;
+}
+
+
+/* =====================================================
+   FAVORITES
+   ===================================================== */
+
+#favoritesPanel {
+    display: none;
+    margin-top: 20px;
+    background: white;
+    padding: 18px;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+}
+
+.favorite-item {
+    padding: 14px;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    background: #fffdf5;
+}
+
+.favorite-question {
+    font-weight: bold;
+    color: #f5a623;
+    margin-bottom: 8px;
+}
+
+.favorite-answer {
+    white-space: pre-wrap;
+    line-height: 1.8;
+    margin-bottom: 10px;
+}
+
+.favorite-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.favorite-actions button {
+    margin-top: 0;
+    padding: 8px;
+    font-size: 14px;
+}
+
+
+/* =====================================================
+   IMAGES
+   ===================================================== */
 
 #images {
     margin-top: 25px;
@@ -156,6 +315,11 @@ button:disabled {
     color: #6b5200;
 }
 
+
+/* =====================================================
+   WARNING
+   ===================================================== */
+
 .warning {
     margin-top: 25px;
     padding: 15px;
@@ -163,6 +327,32 @@ button:disabled {
     border-radius: 10px;
     color: #6b5200;
     line-height: 1.8;
+}
+
+
+/* =====================================================
+   MOBILE
+   ===================================================== */
+
+@media (max-width: 600px) {
+
+    body {
+        padding: 12px;
+    }
+
+    textarea {
+        font-size: 16px;
+    }
+
+    .action-buttons {
+        flex-direction: column;
+    }
+
+    .history-actions,
+    .favorite-actions {
+        flex-direction: column;
+    }
+
 }
 
 </style>
@@ -195,12 +385,68 @@ button:disabled {
 </button>
 
 
+<div class="action-buttons">
+
+    <button
+        class="history-button"
+        onclick="toggleHistory()"
+    >
+        📜 History
+    </button>
+
+    <button
+        class="save-button"
+        onclick="saveCurrentAnswer()"
+    >
+        ⭐ Save
+    </button>
+
+</div>
+
+
 <div id="answer">
 ستاسو ځواب به دلته ښکاره شي.
 </div>
 
 
 <div id="images"></div>
+
+
+<!-- =====================================================
+     HISTORY PANEL
+     ===================================================== -->
+
+<div id="historyPanel">
+
+    <div class="history-title">
+        📜 د پخوانیو پوښتنو تاریخ
+    </div>
+
+    <div id="historyList"></div>
+
+    <button
+        class="clear-button"
+        onclick="clearHistory()"
+    >
+        🗑️ Clear History
+    </button>
+
+</div>
+
+
+<!-- =====================================================
+     FAVORITES PANEL
+     ===================================================== -->
+
+<div id="favoritesPanel">
+
+    <div class="history-title">
+        ⭐ خوندي شوي ځوابونه
+    </div>
+
+    <div id="favoritesList"></div>
+
+</div>
 
 
 <div class="warning">
@@ -218,6 +464,32 @@ button:disabled {
 
 
 <script>
+
+
+// =========================================================
+// DATA
+// =========================================================
+
+let currentQuestion = "";
+
+let currentAnswer = "";
+
+let history =
+    JSON.parse(
+        localStorage.getItem("medai_history")
+        || "[]"
+    );
+
+let favorites =
+    JSON.parse(
+        localStorage.getItem("medai_favorites")
+        || "[]"
+    );
+
+
+// =========================================================
+// SEND QUESTION
+// =========================================================
 
 async function sendQuestion() {
 
@@ -245,6 +517,9 @@ async function sendQuestion() {
 
         return;
     }
+
+
+    currentQuestion = message;
 
 
     answer.innerText =
@@ -286,14 +561,30 @@ async function sendQuestion() {
             answer.innerText =
                 data.answer;
 
+            currentAnswer =
+                data.answer;
+
+
+            // Save to history
+            addToHistory(
+                message,
+                data.answer
+            );
+
         } else {
 
             answer.innerText =
                 data.error ||
                 "یوه ستونزه رامنځته شوه.";
 
+            currentAnswer = "";
+
         }
 
+
+        // =================================================
+        // IMAGES
+        // =================================================
 
         if (
             Array.isArray(data.images) &&
@@ -392,8 +683,509 @@ async function sendQuestion() {
         "پوښتنه";
 }
 
-</script>
 
+// =========================================================
+// HISTORY
+// =========================================================
+
+function addToHistory(question, answer) {
+
+    const item = {
+
+        question: question,
+
+        answer: answer,
+
+        date:
+            new Date().toLocaleString()
+
+    };
+
+
+    history.unshift(item);
+
+
+    // Keep only latest 50
+    history =
+        history.slice(0, 50);
+
+
+    localStorage.setItem(
+        "medai_history",
+        JSON.stringify(history)
+    );
+
+
+    renderHistory();
+}
+
+
+// =========================================================
+// SHOW / HIDE HISTORY
+// =========================================================
+
+function toggleHistory() {
+
+    const panel =
+        document.getElementById(
+            "historyPanel"
+        );
+
+
+    if (
+        panel.style.display === "none" ||
+        panel.style.display === ""
+    ) {
+
+        panel.style.display = "block";
+
+        renderHistory();
+
+    } else {
+
+        panel.style.display = "none";
+
+    }
+
+}
+
+
+// =========================================================
+// RENDER HISTORY
+// =========================================================
+
+function renderHistory() {
+
+    const list =
+        document.getElementById(
+            "historyList"
+        );
+
+
+    if (history.length === 0) {
+
+        list.innerHTML = `
+            <div class="no-image">
+                تراوسه هېڅ History نشته.
+            </div>
+        `;
+
+        return;
+    }
+
+
+    let html = "";
+
+
+    history.forEach(function(item, index) {
+
+        html += `
+
+            <div class="history-item">
+
+                <div
+                    class="history-question"
+                    onclick="loadHistory(${index})"
+                >
+                    ${escapeHtml(item.question)}
+                </div>
+
+                <div class="history-date">
+                    ${escapeHtml(item.date)}
+                </div>
+
+                <div class="history-actions">
+
+                    <button
+                        onclick="loadHistory(${index})"
+                    >
+                        📖 Open
+                    </button>
+
+                    <button
+                        class="delete-button"
+                        onclick="deleteHistory(${index})"
+                    >
+                        🗑️ Delete
+                    </button>
+
+                </div>
+
+            </div>
+
+        `;
+
+    });
+
+
+    list.innerHTML = html;
+}
+
+
+// =========================================================
+// LOAD HISTORY
+// =========================================================
+
+function loadHistory(index) {
+
+    const item =
+        history[index];
+
+
+    if (!item) {
+        return;
+    }
+
+
+    document.getElementById("msg")
+        .value =
+        item.question;
+
+
+    document.getElementById("answer")
+        .innerText =
+        item.answer;
+
+
+    currentQuestion =
+        item.question;
+
+    currentAnswer =
+        item.answer;
+
+
+    document.getElementById(
+        "historyPanel"
+    ).style.display = "none";
+
+
+    window.scrollTo({
+        top: 0,
+        behavior: "smooth"
+    });
+
+}
+
+
+// =========================================================
+// DELETE HISTORY
+// =========================================================
+
+function deleteHistory(index) {
+
+    history.splice(index, 1);
+
+
+    localStorage.setItem(
+        "medai_history",
+        JSON.stringify(history)
+    );
+
+
+    renderHistory();
+}
+
+
+// =========================================================
+// CLEAR HISTORY
+// =========================================================
+
+function clearHistory() {
+
+    if (
+        !confirm(
+            "ایا غواړئ ټول History پاک کړئ؟"
+        )
+    ) {
+        return;
+    }
+
+
+    history = [];
+
+
+    localStorage.removeItem(
+        "medai_history"
+    );
+
+
+    renderHistory();
+}
+
+
+// =========================================================
+// SAVE FAVORITE
+// =========================================================
+
+function saveCurrentAnswer() {
+
+    if (
+        !currentQuestion ||
+        !currentAnswer
+    ) {
+
+        alert(
+            "لومړی یوه پوښتنه وکړئ."
+        );
+
+        return;
+    }
+
+
+    const exists =
+        favorites.some(function(item) {
+
+            return (
+                item.question ===
+                currentQuestion
+            );
+
+        });
+
+
+    if (exists) {
+
+        alert(
+            "دا ځواب مخکې خوندي شوی."
+        );
+
+        renderFavorites();
+
+        return;
+    }
+
+
+    favorites.unshift({
+
+        question:
+            currentQuestion,
+
+        answer:
+            currentAnswer,
+
+        date:
+            new Date().toLocaleString()
+
+    });
+
+
+    favorites =
+        favorites.slice(0, 50);
+
+
+    localStorage.setItem(
+        "medai_favorites",
+        JSON.stringify(favorites)
+    );
+
+
+    alert(
+        "⭐ ځواب خوندي شو."
+    );
+
+
+    renderFavorites();
+
+}
+
+
+// =========================================================
+// FAVORITES PANEL
+// =========================================================
+
+function toggleFavorites() {
+
+    const panel =
+        document.getElementById(
+            "favoritesPanel"
+        );
+
+
+    if (
+        panel.style.display === "none" ||
+        panel.style.display === ""
+    ) {
+
+        panel.style.display = "block";
+
+        renderFavorites();
+
+    } else {
+
+        panel.style.display = "none";
+
+    }
+
+}
+
+
+// =========================================================
+// RENDER FAVORITES
+// =========================================================
+
+function renderFavorites() {
+
+    const list =
+        document.getElementById(
+            "favoritesList"
+        );
+
+
+    if (favorites.length === 0) {
+
+        list.innerHTML = `
+            <div class="no-image">
+                تراوسه هېڅ خوندي شوی ځواب نشته.
+            </div>
+        `;
+
+        return;
+    }
+
+
+    let html = "";
+
+
+    favorites.forEach(function(item, index) {
+
+        html += `
+
+            <div class="favorite-item">
+
+                <div class="favorite-question">
+                    ⭐ ${escapeHtml(item.question)}
+                </div>
+
+                <div class="favorite-answer">
+                    ${escapeHtml(item.answer)}
+                </div>
+
+                <div class="history-date">
+                    ${escapeHtml(item.date)}
+                </div>
+
+                <div class="favorite-actions">
+
+                    <button
+                        onclick="loadFavorite(${index})"
+                    >
+                        📖 Open
+                    </button>
+
+                    <button
+                        class="delete-button"
+                        onclick="deleteFavorite(${index})"
+                    >
+                        🗑️ Delete
+                    </button>
+
+                </div>
+
+            </div>
+
+        `;
+
+    });
+
+
+    list.innerHTML = html;
+}
+
+
+// =========================================================
+// LOAD FAVORITE
+// =========================================================
+
+function loadFavorite(index) {
+
+    const item =
+        favorites[index];
+
+
+    if (!item) {
+        return;
+    }
+
+
+    document.getElementById("msg")
+        .value =
+        item.question;
+
+
+    document.getElementById("answer")
+        .innerText =
+        item.answer;
+
+
+    currentQuestion =
+        item.question;
+
+    currentAnswer =
+        item.answer;
+
+
+    document.getElementById(
+        "favoritesPanel"
+    ).style.display = "none";
+
+
+    window.scrollTo({
+        top: 0,
+        behavior: "smooth"
+    });
+
+}
+
+
+// =========================================================
+// DELETE FAVORITE
+// =========================================================
+
+function deleteFavorite(index) {
+
+    favorites.splice(index, 1);
+
+
+    localStorage.setItem(
+        "medai_favorites",
+        JSON.stringify(favorites)
+    );
+
+
+    renderFavorites();
+}
+
+
+// =========================================================
+// ESCAPE HTML
+// =========================================================
+
+function escapeHtml(text) {
+
+    const div =
+        document.createElement("div");
+
+    div.textContent =
+        text;
+
+    return div.innerHTML;
+}
+
+
+// =========================================================
+// WIKIMEDIA IMAGE SEARCH
+// =========================================================
+
+function searchImages() {
+    // Images are handled by Flask backend.
+}
+
+
+// =========================================================
+// GEMINI + IMAGE BACKEND
+// =========================================================
+
+</script>
 
 </body>
 
@@ -976,4 +1768,4 @@ if __name__ == "__main__":
             )
         )
 
-)
+    )
