@@ -6,381 +6,377 @@ from urllib.parse import quote
 app = Flask(__name__)
 
 
-# -----------------------------
-# HOME PAGE
-# -----------------------------
 @app.route("/")
 def home():
     return """
-<!DOCTYPE html>
-<html lang="ps" dir="rtl">
+    <!DOCTYPE html>
+    <html lang="ps" dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>MedAI</title>
 
-<title>MedAI</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                background: #f5f7fa;
+                margin: 0;
+                padding: 20px;
+            }
 
-<style>
+            .container {
+                max-width: 850px;
+                margin: auto;
+            }
 
-body {
-    font-family: Arial, sans-serif;
-    background: #f4f7fb;
-    margin: 0;
-    padding: 20px;
-}
+            h1 {
+                text-align: center;
+                color: #1677ff;
+                margin-bottom: 5px;
+            }
 
-.container {
-    max-width: 850px;
-    margin: auto;
-}
+            .subtitle {
+                text-align: center;
+                color: #555;
+                margin-bottom: 25px;
+            }
 
-h1 {
-    text-align: center;
-    color: #1677ff;
-    margin-bottom: 5px;
-}
+            textarea {
+                width: 100%;
+                height: 130px;
+                padding: 15px;
+                box-sizing: border-box;
+                border: 1px solid #ccc;
+                border-radius: 12px;
+                font-size: 17px;
+                resize: vertical;
+                direction: auto;
+            }
 
-.subtitle {
-    text-align: center;
-    color: #555;
-    margin-bottom: 25px;
-}
+            button {
+                width: 100%;
+                margin-top: 12px;
+                padding: 15px;
+                background: #1677ff;
+                color: white;
+                border: none;
+                border-radius: 12px;
+                font-size: 18px;
+                cursor: pointer;
+            }
 
-textarea {
-    width: 100%;
-    height: 130px;
-    box-sizing: border-box;
-    padding: 15px;
-    border: 1px solid #ccc;
-    border-radius: 12px;
-    font-size: 17px;
-    resize: vertical;
-}
+            button:hover {
+                background: #0f5dcc;
+            }
 
-button {
-    width: 100%;
-    margin-top: 12px;
-    padding: 15px;
-    border: none;
-    border-radius: 12px;
-    background: #1677ff;
-    color: white;
-    font-size: 18px;
-    cursor: pointer;
-}
+            #answer {
+                background: white;
+                margin-top: 20px;
+                padding: 22px;
+                border-radius: 12px;
+                line-height: 2;
+                white-space: pre-wrap;
+                direction: auto;
+                min-height: 50px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            }
 
-button:hover {
-    background: #0f5dcc;
-}
+            #images {
+                margin-top: 20px;
+            }
 
-#answer {
-    background: white;
-    margin-top: 20px;
-    padding: 22px;
-    border-radius: 12px;
-    line-height: 2;
-    white-space: pre-wrap;
-    min-height: 50px;
-}
+            .image-title {
+                font-size: 20px;
+                font-weight: bold;
+                margin-bottom: 12px;
+            }
 
-#images {
-    margin-top: 25px;
-}
+            .image-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+                gap: 15px;
+            }
 
-.image-title {
-    font-size: 21px;
-    font-weight: bold;
-    margin-bottom: 15px;
-}
+            .medical-image {
+                width: 100%;
+                height: 220px;
+                object-fit: cover;
+                border-radius: 12px;
+                background: #eee;
+            }
 
-.image-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 15px;
-}
+            .image-card {
+                background: white;
+                padding: 10px;
+                border-radius: 12px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            }
 
-.image-card {
-    background: white;
-    padding: 10px;
-    border-radius: 12px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-}
+            .image-caption {
+                margin-top: 8px;
+                font-size: 14px;
+                line-height: 1.5;
+            }
 
-.medical-image {
-    width: 100%;
-    height: 220px;
-    object-fit: cover;
-    border-radius: 10px;
-}
+            .image-link {
+                color: #1677ff;
+                text-decoration: none;
+            }
 
-.image-caption {
-    margin-top: 8px;
-    font-size: 14px;
-    line-height: 1.5;
-}
+            .warning {
+                margin-top: 20px;
+                padding: 15px;
+                background: #fff4d6;
+                border-radius: 10px;
+                color: #6b5200;
+                line-height: 1.8;
+            }
 
-.image-link {
-    color: #1677ff;
-    text-decoration: none;
-}
+            .loading {
+                text-align: center;
+                padding: 15px;
+            }
+        </style>
+    </head>
 
-.warning {
-    margin-top: 25px;
-    padding: 15px;
-    background: #fff4d6;
-    border-radius: 10px;
-    color: #6b5200;
-    line-height: 1.8;
-}
+    <body>
 
-</style>
-</head>
+        <div class="container">
 
+            <h1>🩺 MedAI</h1>
 
-<body>
+            <div class="subtitle">
+                ستاسو د طبي زده کړو هوښیار مرستیال
+            </div>
 
-<div class="container">
+            <textarea
+                id="msg"
+                placeholder="مثلاً: Bacteria څه شی دی؟">
+            </textarea>
 
-<h1>🩺 MedAI</h1>
+            <button onclick="sendQuestion()">
+                پوښتنه
+            </button>
 
-<div class="subtitle">
-ستاسو د طبي زده کړو هوښیار مرستیال
-</div>
+            <div id="answer">
+                ستاسو ځواب به دلته ښکاره شي.
+            </div>
 
+            <div id="images"></div>
 
-<textarea
-id="msg"
-placeholder="مثلاً: Bacteria څه شی دی؟">
-</textarea>
+            <div class="warning">
+                ⚠️ MedAI د طبي زده کړو او معلوماتو لپاره دی.
+                دا د ډاکټر بدیل نه دی. د جدي یا بیړنیو نښو په صورت کې
+                له روغتیايي مسلکي کس سره اړیکه ونیسئ.
+            </div>
 
-
-<button onclick="sendQuestion()">
-پوښتنه
-</button>
-
-
-<div id="answer">
-ستاسو ځواب به دلته ښکاره شي.
-</div>
-
-
-<div id="images"></div>
-
-
-<div class="warning">
-⚠️ MedAI د طبي زده کړو لپاره دی.
-دا د ډاکټر بدیل نه دی.
-د جدي یا بیړنیو نښو په صورت کې له روغتیايي مسلکي کس سره اړیکه ونیسئ.
-</div>
-
-</div>
-
-
-<script>
-
-async function sendQuestion() {
-
-    const message =
-        document.getElementById("msg").value.trim();
-
-    const answer =
-        document.getElementById("answer");
-
-    const images =
-        document.getElementById("images");
+        </div>
 
 
-    if (!message) {
+        <script>
 
-        answer.innerText =
-            "مهرباني وکړئ خپله پوښتنه ولیکئ.";
+        async function sendQuestion() {
 
-        images.innerHTML = "";
+            const message =
+                document.getElementById("msg").value.trim();
 
-        return;
-    }
+            const answer =
+                document.getElementById("answer");
 
-
-    answer.innerText =
-        "⏳ ځواب چمتو کېږي...";
-
-    images.innerHTML = "";
+            const images =
+                document.getElementById("images");
 
 
-    try {
+            if (!message) {
 
-        const response = await fetch("/chat", {
+                answer.innerText =
+                    "مهرباني وکړئ خپله طبي پوښتنه ولیکئ.";
 
-            method: "POST",
+                images.innerHTML = "";
 
-            headers: {
-                "Content-Type": "application/json"
-            },
+                return;
+            }
 
-            body: JSON.stringify({
-                message: message
-            })
-
-        });
-
-
-        const data = await response.json();
-
-
-        if (data.answer) {
-
-            answer.innerText = data.answer;
-
-        } else {
 
             answer.innerText =
-                data.error || "یوه ستونزه رامنځته شوه.";
+                "⏳ مهرباني وکړئ، ځواب چمتو کېږي...";
 
-        }
-
-
-        if (data.images && data.images.length > 0) {
-
-            let html = `
-                <div class="image-title">
-                    🖼️ اړوند طبي انځورونه
-                </div>
-
-                <div class="image-grid">
-            `;
+            images.innerHTML = "";
 
 
-            data.images.forEach(function(image) {
+            try {
 
-                html += `
-                    <div class="image-card">
+                const response = await fetch("/chat", {
 
-                        <a
-                            href="${image.page_url}"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                        >
+                    method: "POST",
 
-                            <img
-                                class="medical-image"
-                                src="${image.thumbnail}"
-                                alt="${image.title}"
-                                loading="lazy"
-                            >
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
 
-                        </a>
+                    body: JSON.stringify({
+                        message: message
+                    })
 
-                        <div class="image-caption">
+                });
 
-                            <a
-                                class="image-link"
-                                href="${image.page_url}"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                            >
-                                ${image.title}
-                            </a>
 
+                const data = await response.json();
+
+
+                if (data.answer) {
+
+                    answer.innerText = data.answer;
+
+                } else {
+
+                    answer.innerText =
+                        data.error || "یوه ستونزه رامنځته شوه.";
+
+                }
+
+
+                if (data.images && data.images.length > 0) {
+
+                    let html = `
+                        <div class="image-title">
+                            🖼️ اړوند طبي انځورونه
                         </div>
 
-                    </div>
-                `;
-
-            });
+                        <div class="image-grid">
+                    `;
 
 
-            html += "</div>";
+                    data.images.forEach(function(image) {
 
-            images.innerHTML = html;
+                        html += `
+                            <div class="image-card">
 
-        } else {
+                                <a
+                                    href="${image.page_url}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
 
-            images.innerHTML = `
-                <div class="image-title">
-                    🖼️ د دې موضوع لپاره مناسب انځور ونه موندل شو.
-                </div>
-            `;
+                                    <img
+                                        class="medical-image"
+                                        src="${image.thumbnail}"
+                                        alt="${image.title}"
+                                        loading="lazy"
+                                    >
+
+                                </a>
+
+                                <div class="image-caption">
+
+                                    <a
+                                        class="image-link"
+                                        href="${image.page_url}"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                    >
+                                        ${image.title}
+                                    </a>
+
+                                </div>
+
+                            </div>
+                        `;
+
+                    });
+
+
+                    html += `
+                        </div>
+                    `;
+
+
+                    images.innerHTML = html;
+
+                }
+
+            } catch (error) {
+
+                answer.innerText =
+                    "❌ د سرور سره د اړیکې ستونزه رامنځته شوه.";
+
+                images.innerHTML = "";
+
+            }
 
         }
 
+        </script>
 
-    } catch (error) {
-
-        answer.innerText =
-            "❌ د سرور سره د اړیکې ستونزه رامنځته شوه.";
-
-        images.innerHTML = "";
-
-    }
-
-}
-
-</script>
-
-</body>
-</html>
-"""
+    </body>
+    </html>
+    """
 
 
-# -----------------------------
-# WIKIMEDIA IMAGE SEARCH
-# -----------------------------
-def search_wikimedia_images(search_term):
+def search_medical_images(query):
 
-    api_url = "https://commons.wikimedia.org/w/api.php"
+    """
+    Search Wikimedia Commons for relevant images.
+    """
+
+    url = "https://commons.wikimedia.org/w/api.php"
+
 
     params = {
+
         "action": "query",
+
         "format": "json",
+
         "formatversion": "2",
+
         "generator": "search",
-        "gsrsearch": search_term,
+
+        "gsrsearch": query,
+
         "gsrnamespace": "6",
-        "gsrlimit": "6",
+
+        "gsrlimit": "4",
+
         "prop": "imageinfo",
+
         "iiprop": "url",
+
         "iiurlwidth": "500"
+
     }
+
 
     try:
 
         response = requests.get(
-            api_url,
+            url,
             params=params,
             timeout=15
         )
 
+
         if response.status_code != 200:
             return []
 
+
         data = response.json()
 
-        pages = data.get(
-            "query",
-            {}
-        ).get(
-            "pages",
-            []
-        )
+        pages = data.get("query", {}).get("pages", [])
 
         results = []
 
 
         for page in pages:
 
-            title = page.get("title", "")
+            image_info = page.get("imageinfo", [])
 
-            imageinfo = page.get(
-                "imageinfo",
-                []
-            )
-
-            if not imageinfo:
+            if not image_info:
                 continue
 
 
-            info = imageinfo[0]
+            info = image_info[0]
 
             thumbnail = info.get("thumburl")
 
@@ -395,25 +391,21 @@ def search_wikimedia_images(search_term):
                 continue
 
 
-            page_url = (
-                "https://commons.wikimedia.org/wiki/"
-                + quote(
-                    title,
-                    safe=""
-                )
-            )
-
-
             results.append({
 
-                "title": title.replace(
-                    "File:",
-                    ""
-                ),
+                "title": page.get(
+                    "title",
+                    "Medical image"
+                ).replace("File:", ""),
 
                 "thumbnail": thumbnail,
 
-                "page_url": page_url
+                "page_url":
+                    "https://commons.wikimedia.org/wiki/"
+                    + quote(
+                        page.get("title", ""),
+                        safe=":/"
+                    )
 
             })
 
@@ -426,60 +418,55 @@ def search_wikimedia_images(search_term):
         return []
 
 
-# -----------------------------
-# GEMINI
-# -----------------------------
 @app.route("/chat", methods=["POST"])
 def chat():
 
-    data = request.get_json(
-        silent=True
-    ) or {}
+    data = request.get_json(silent=True) or {}
 
-
-    message = data.get(
-        "message",
-        ""
-    ).strip()
+    message = data.get("message", "").strip()
 
 
     if not message:
 
         return jsonify({
-            "error": "مهرباني وکړئ پوښتنه ولیکئ."
+
+            "error":
+                "مهرباني وکړئ پوښتنه ولیکئ."
+
         }), 400
 
 
-    api_key = os.getenv(
-        "GEMINI_API_KEY"
-    )
+    api_key = os.getenv("GEMINI_API_KEY")
 
 
     if not api_key:
 
         return jsonify({
-            "error": "GEMINI_API_KEY پیدا نه شو."
+
+            "error":
+                "GEMINI_API_KEY پیدا نه شو."
+
         }), 500
 
 
     prompt = f"""
 You are MedAI, an educational medical information assistant.
 
-Answer the user's question accurately and safely.
+Your job is to provide clear, accurate, educational medical information.
 
-IMPORTANT:
+IMPORTANT RULES:
 
-- Support Pashto, Dari and English.
-- Reply in the same language as the user.
-- Use simple language.
-- Do not diagnose a person from symptoms alone.
-- Do not pretend to be a doctor.
-- Do not invent medical facts.
-- Do not replace emergency medical care.
-- For urgent symptoms, advise appropriate medical care.
-- Do not give personalized prescription or dosage instructions.
+1. Support Pashto, Dari, and English.
+2. Always answer in the same language as the user's question.
+3. Use simple language that students can understand.
+4. Do not diagnose a person from symptoms alone.
+5. Do not pretend to be a doctor.
+6. Do not claim that the answer replaces medical care.
+7. Do not invent medical facts.
+8. For emergency symptoms, advise the user to seek urgent medical care.
+9. Be careful with medicines. Do not give personalized prescription or dosage instructions as if the patient has been examined.
 
-For medical topics, use these headings when relevant:
+For general medical topics, organize the answer with useful headings when appropriate:
 
 Definition
 Causes
@@ -492,8 +479,9 @@ Prevention
 Complications
 Important Points
 
-User question:
+If some headings are not relevant, do not force them.
 
+User question:
 {message}
 """
 
@@ -513,7 +501,7 @@ User question:
 
             headers={
                 "Content-Type":
-                "application/json"
+                    "application/json"
             },
 
             json={
@@ -549,16 +537,14 @@ User question:
             return jsonify({
 
                 "error":
-                "Gemini API خطا ورکړه: "
-                + str(data)
+                    "Gemini API خطا ورکړه: "
+                    + str(data)
 
             }), 500
 
 
-        candidates = data.get(
-            "candidates",
-            []
-        )
+        candidates =
+            data.get("candidates", [])
 
 
         if not candidates:
@@ -566,14 +552,23 @@ User question:
             return jsonify({
 
                 "error":
-                "Gemini هېڅ ځواب رانه کړ."
+                    "Gemini هېڅ ځواب رانه کړ."
 
             }), 500
 
 
-        parts = candidates[0] \
-            .get("content", {}) \
-            .get("parts", [])
+        content =
+            candidates[0].get(
+                "content",
+                {}
+            )
+
+
+        parts =
+            content.get(
+                "parts",
+                []
+            )
 
 
         if not parts:
@@ -581,15 +576,16 @@ User question:
             return jsonify({
 
                 "error":
-                "د Gemini ځواب خالي دی."
+                    "د Gemini ځواب خالي دی."
 
             }), 500
 
 
-        answer = parts[0].get(
-            "text",
-            ""
-        )
+        answer =
+            parts[0].get(
+                "text",
+                ""
+            )
 
 
         if not answer:
@@ -597,81 +593,17 @@ User question:
             return jsonify({
 
                 "error":
-                "AI ځواب پیدا نه شو."
+                    "AI ځواب پیدا نه شو."
 
             }), 500
 
 
-        # --------------------------------
-        # IMAGE SEARCH
-        # --------------------------------
+        # Search for related images.
+        #
+        # The user's question itself is used as
+        # the Wikimedia search query.
 
-        # English medical keywords improve
-        # Wikimedia search results.
-
-        image_search_term = message
-
-
-        # Common Pashto medical words
-        # translated to better search terms.
-
-        replacements = {
-
-            "بکتریا": "bacteria",
-
-            "باکتریا": "bacteria",
-
-            "میکروب": "microorganism",
-
-            "میکروبونه": "microorganisms",
-
-            "سینه بغل": "pneumonia",
-
-            "د زړه ناروغي": "heart disease",
-
-            "شکر": "diabetes",
-
-            "ډایبېټس": "diabetes",
-
-            "فشار": "hypertension",
-
-            "وینه": "blood",
-
-            "سږي": "lungs",
-
-            "زړه": "heart",
-
-            "معده": "stomach",
-
-            "ځیګر": "liver",
-
-            "پښتورګي": "kidney",
-
-            "دماغ": "brain",
-
-            "هډوکي": "bone",
-
-            "پوستکی": "skin",
-
-            "انفلونزا": "influenza",
-
-            "سرطان": "cancer"
-
-        }
-
-
-        for word, english in replacements.items():
-
-            if word.lower() in message.lower():
-
-                image_search_term = english
-
-                break
-
-
-        images = search_wikimedia_images(
-            image_search_term
-        )
+        images = search_medical_images(message)
 
 
         return jsonify({
@@ -688,7 +620,7 @@ User question:
         return jsonify({
 
             "error":
-            "د AI ځواب ډېر وخت ونیو. بیا هڅه وکړئ."
+                "د AI ځواب ډېر وخت ونیو. بیا هڅه وکړئ."
 
         }), 504
 
@@ -698,15 +630,12 @@ User question:
         return jsonify({
 
             "error":
-            "د AI سره د اړیکې ستونزه: "
-            + str(e)
+                "د AI سره د اړیکې ستونزه: "
+                + str(e)
 
         }), 500
 
 
-# -----------------------------
-# RUN
-# -----------------------------
 if __name__ == "__main__":
 
     app.run(
@@ -720,4 +649,4 @@ if __name__ == "__main__":
             )
         )
 
-    )
+            )
