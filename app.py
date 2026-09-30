@@ -7,7 +7,7 @@ app = Flask(__name__)
 
 
 # =========================================================
-# HOME PAGE
+# HOME
 # =========================================================
 
 @app.route("/")
@@ -15,12 +15,10 @@ def home():
     return """
 <!DOCTYPE html>
 <html lang="ps" dir="rtl">
-
 <head>
-<meta charset="UTF-8">
 
-<meta name="viewport"
-      content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <title>MedAI</title>
 
@@ -36,7 +34,6 @@ body {
     font-family: Arial, sans-serif;
     background: #f4f7fb;
     color: #222;
-    transition: background 0.3s, color 0.3s;
 }
 
 .container {
@@ -47,7 +44,6 @@ body {
 h1 {
     text-align: center;
     color: #1677ff;
-    margin-bottom: 5px;
 }
 
 .subtitle {
@@ -64,144 +60,112 @@ textarea {
     border-radius: 12px;
     font-size: 18px;
     resize: vertical;
-    font-family: Arial, sans-serif;
-    background: white;
-    color: #222;
 }
 
 button {
     width: 100%;
     margin-top: 12px;
-    padding: 15px;
+    padding: 14px;
     border: none;
     border-radius: 12px;
     background: #1677ff;
     color: white;
-    font-size: 18px;
+    font-size: 17px;
     cursor: pointer;
-}
-
-button:hover {
-    opacity: 0.9;
 }
 
 button:disabled {
     background: #999;
-    cursor: not-allowed;
 }
 
-.action-buttons {
+.actions {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 10px;
-    margin-top: 12px;
 }
 
-.action-buttons button {
-    margin-top: 0;
+.actions button {
+    margin-top: 10px;
 }
 
-.history-button {
+.history-btn {
     background: #555;
 }
 
-.favorite-button {
+.favorite-btn {
     background: #e09b00;
 }
 
-.save-button {
+.save-btn {
     background: #f5a623;
 }
 
-.dark-button {
+.dark-btn {
     background: #222;
 }
 
 #answer {
     margin-top: 20px;
-    padding: 22px;
+    padding: 20px;
     background: white;
     border-radius: 12px;
     line-height: 2;
     white-space: pre-wrap;
-    min-height: 80px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    min-height: 100px;
 }
 
-#historyPanel,
-#favoritesPanel {
+.panel {
     display: none;
     margin-top: 20px;
-    background: white;
     padding: 18px;
+    background: white;
     border-radius: 12px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
 }
 
-.history-title {
+.panel-title {
     font-size: 22px;
     font-weight: bold;
     margin-bottom: 15px;
 }
 
-.history-item,
-.favorite-item {
+.item {
     padding: 14px;
+    margin-bottom: 10px;
     border: 1px solid #ddd;
     border-radius: 10px;
-    margin-bottom: 10px;
-}
-
-.history-item {
     background: #fafafa;
 }
 
-.favorite-item {
-    background: #fffdf5;
-}
-
-.history-question {
+.question {
     font-weight: bold;
     color: #1677ff;
-    margin-bottom: 6px;
-}
-
-.favorite-question {
-    font-weight: bold;
-    color: #e09b00;
     margin-bottom: 8px;
 }
 
-.history-date {
+.favorite-question {
+    color: #e09b00;
+}
+
+.date {
     font-size: 12px;
     color: #888;
 }
 
-.favorite-answer {
-    white-space: pre-wrap;
-    line-height: 1.8;
-    margin-bottom: 10px;
-}
-
-.history-actions,
-.favorite-actions {
+.item-buttons {
     display: flex;
     gap: 8px;
+}
+
+.item-buttons button {
     margin-top: 10px;
+    padding: 9px;
 }
 
-.history-actions button,
-.favorite-actions button {
-    margin-top: 0;
-    padding: 8px;
-    font-size: 14px;
-}
-
-.delete-button {
+.delete {
     background: #dc3545;
 }
 
-.clear-button {
+.clear {
     background: #777;
 }
 
@@ -217,10 +181,7 @@ button:disabled {
 
 .image-grid {
     display: grid;
-    grid-template-columns: repeat(
-        auto-fit,
-        minmax(220px, 1fr)
-    );
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 15px;
 }
 
@@ -228,101 +189,58 @@ button:disabled {
     background: white;
     padding: 10px;
     border-radius: 12px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
 }
 
 .image-card img {
     width: 100%;
     height: 220px;
     object-fit: contain;
-    border-radius: 10px;
     background: #eee;
-    display: block;
-}
-
-.image-caption {
-    margin-top: 8px;
-    font-size: 14px;
-    line-height: 1.5;
-}
-
-.image-caption a {
-    color: #1677ff;
-    text-decoration: none;
-}
-
-.no-image {
-    padding: 15px;
-    background: #fff4d6;
     border-radius: 10px;
-    color: #6b5200;
 }
 
 .warning {
     margin-top: 25px;
     padding: 15px;
     background: #fff4d6;
-    border-radius: 10px;
     color: #6b5200;
+    border-radius: 10px;
     line-height: 1.8;
 }
 
 
-/* =========================================================
-   DARK MODE
-   ========================================================= */
+/* DARK MODE */
 
-body.dark-mode {
+body.dark {
     background: #121212;
-    color: #eeeeee;
+    color: white;
 }
 
-body.dark-mode .subtitle {
-    color: #bbbbbb;
-}
-
-body.dark-mode textarea {
+body.dark textarea {
     background: #1e1e1e;
     color: white;
     border-color: #444;
 }
 
-body.dark-mode #answer,
-body.dark-mode #historyPanel,
-body.dark-mode #favoritesPanel,
-body.dark-mode .image-card {
+body.dark #answer,
+body.dark .panel,
+body.dark .image-card {
     background: #1e1e1e;
-    color: #eeeeee;
+    color: white;
 }
 
-body.dark-mode .history-item {
+body.dark .item {
     background: #252525;
     border-color: #444;
 }
 
-body.dark-mode .favorite-item {
-    background: #292510;
-    border-color: #554d25;
-}
-
-body.dark-mode .warning,
-body.dark-mode .no-image {
+body.dark .warning {
     background: #3b3215;
     color: #ffe99a;
 }
 
-body.dark-mode .history-date {
-    color: #aaa;
-}
 
-body.dark-mode .image-card img {
-    background: #111;
-}
-
-
-/* =========================================================
-   MOBILE
-   ========================================================= */
+/* MOBILE */
 
 @media (max-width: 700px) {
 
@@ -330,51 +248,23 @@ body.dark-mode .image-card img {
         padding: 10px;
     }
 
-    h1 {
-        font-size: 28px;
-    }
-
-    .subtitle {
-        font-size: 14px;
-    }
-
-    textarea {
-        height: 120px;
-        font-size: 16px;
-    }
-
-    #answer {
-        padding: 16px;
-        font-size: 15px;
-        line-height: 1.9;
-    }
-
-    .action-buttons {
+    .actions {
         grid-template-columns: 1fr 1fr;
-    }
-
-    .history-actions,
-    .favorite-actions {
-        flex-direction: column;
     }
 
     .image-grid {
         grid-template-columns: 1fr;
     }
 
-    .image-card img {
-        height: 240px;
+    textarea {
+        font-size: 16px;
     }
 }
 
 @media (max-width: 400px) {
 
-    .action-buttons {
+    .actions {
         grid-template-columns: 1fr;
-    }
-
-    h1 {
-        font-size: 25px;
     }
 }
 
@@ -392,49 +282,51 @@ body.dark-mode .image-card img {
 ستاسو د طبي زده کړو هوښیار مرستیال
 </div>
 
+
 <textarea
-    id="msg"
+    id="question"
     placeholder="Ask any medical question..."
 ></textarea>
 
+
 <button
     id="askButton"
-    onclick="sendQuestion()"
+    onclick="askQuestion()"
 >
 پوښتنه
 </button>
 
 
-<div class="action-buttons">
+<div class="actions">
 
-    <button
-        class="history-button"
-        onclick="toggleHistory()"
-    >
-        📜 History
-    </button>
+<button
+    class="history-btn"
+    onclick="toggleHistory()"
+>
+📜 History
+</button>
 
-    <button
-        class="favorite-button"
-        onclick="toggleFavorites()"
-    >
-        ⭐ Favorites
-    </button>
+<button
+    class="favorite-btn"
+    onclick="toggleFavorites()"
+>
+⭐ Favorites
+</button>
 
-    <button
-        class="save-button"
-        onclick="saveCurrentAnswer()"
-    >
-        💾 Save
-    </button>
+<button
+    class="save-btn"
+    onclick="saveAnswer()"
+>
+💾 Save
+</button>
 
-    <button
-        class="dark-button"
-        id="darkModeButton"
-        onclick="toggleDarkMode()"
-    >
-        🌙 Dark Mode
-    </button>
+<button
+    class="dark-btn"
+    id="darkButton"
+    onclick="toggleDarkMode()"
+>
+🌙 Dark Mode
+</button>
 
 </div>
 
@@ -447,39 +339,41 @@ body.dark-mode .image-card img {
 <div id="images"></div>
 
 
-<!-- =====================================================
-     HISTORY
-     ===================================================== -->
+<!-- HISTORY -->
 
-<div id="historyPanel">
+<div
+    id="historyPanel"
+    class="panel"
+>
 
-    <div class="history-title">
-        📜 د پخوانیو پوښتنو تاریخ
-    </div>
+<div class="panel-title">
+📜 د پخوانیو پوښتنو تاریخ
+</div>
 
-    <div id="historyList"></div>
+<div id="historyList"></div>
 
-    <button
-        class="clear-button"
-        onclick="clearHistory()"
-    >
-        🗑️ Clear History
-    </button>
+<button
+    class="clear"
+    onclick="clearHistory()"
+>
+🗑️ Clear History
+</button>
 
 </div>
 
 
-<!-- =====================================================
-     FAVORITES
-     ===================================================== -->
+<!-- FAVORITES -->
 
-<div id="favoritesPanel">
+<div
+    id="favoritesPanel"
+    class="panel"
+>
 
-    <div class="history-title">
-        ⭐ خوندي شوي ځوابونه
-    </div>
+<div class="panel-title">
+⭐ خوندي شوي ځوابونه
+</div>
 
-    <div id="favoritesList"></div>
+<div id="favoritesList"></div>
 
 </div>
 
@@ -490,8 +384,8 @@ body.dark-mode .image-card img {
 
 دا د ډاکټر بدیل نه دی.
 
-د جدي یا بیړنیو نښو په صورت کې
-له روغتیايي مسلکي کس سره اړیکه ونیسئ.
+که بیړنۍ یا جدي نښې موجودې وي،
+له روغتیايي مسلکي کس سره ژر اړیکه ونیسئ.
 
 </div>
 
@@ -506,7 +400,6 @@ body.dark-mode .image-card img {
 // =========================================================
 
 let currentQuestion = "";
-
 let currentAnswer = "";
 
 
@@ -521,22 +414,26 @@ let favorites = JSON.parse(
 
 
 // =========================================================
-// SEND QUESTION
+// ASK QUESTION
 // =========================================================
 
-async function sendQuestion() {
+async function askQuestion() {
 
-    const message =
-        document.getElementById("msg").value.trim();
+    const input =
+        document.getElementById("question");
 
     const answer =
         document.getElementById("answer");
 
+    const button =
+        document.getElementById("askButton");
+
     const images =
         document.getElementById("images");
 
-    const button =
-        document.getElementById("askButton");
+
+    const message =
+        input.value.trim();
 
 
     if (!message) {
@@ -544,44 +441,52 @@ async function sendQuestion() {
         answer.innerText =
             "Please enter your question.";
 
-        images.innerHTML = "";
-
         return;
     }
 
 
-    currentQuestion = message;
+    currentQuestion =
+        message;
+
+
+    currentAnswer =
+        "";
 
 
     answer.innerText =
         "⏳ ځواب چمتو کېږي...";
 
-    images.innerHTML = "";
+
+    images.innerHTML =
+        "";
 
 
-    button.disabled = true;
+    button.disabled =
+        true;
+
 
     button.innerText =
-        "⏳ مهرباني وکړئ انتظار وکړئ";
+        "⏳ انتظار وکړئ";
 
 
     try {
 
-        const response = await fetch(
-            "/chat",
-            {
-                method: "POST",
+        const response =
+            await fetch(
+                "/chat",
+                {
+                    method: "POST",
 
-                headers: {
-                    "Content-Type":
-                    "application/json"
-                },
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
 
-                body: JSON.stringify({
-                    message: message
-                })
-            }
-        );
+                    body: JSON.stringify({
+                        message: message
+                    })
+                }
+            );
 
 
         const data =
@@ -590,17 +495,19 @@ async function sendQuestion() {
 
         if (data.answer) {
 
-            answer.innerText =
-                data.answer;
-
             currentAnswer =
                 data.answer;
 
 
-            addToHistory(
+            answer.innerText =
+                data.answer;
+
+
+            addHistory(
                 message,
                 data.answer
             );
+
 
         } else {
 
@@ -608,91 +515,12 @@ async function sendQuestion() {
                 data.error ||
                 "یوه ستونزه رامنځته شوه.";
 
-            currentAnswer = "";
-
         }
 
 
-        // =================================================
-        // IMAGES
-        // =================================================
-
-        if (
-            Array.isArray(data.images) &&
-            data.images.length > 0
-        ) {
-
-            let html = `
-
-                <div class="image-title">
-                    🖼️ Related Medical Images
-                </div>
-
-                <div class="image-grid">
-
-            `;
-
-
-            data.images.forEach(
-                function(image) {
-
-                    html += `
-
-                        <div class="image-card">
-
-                            <a
-                                href="${image.page_url}"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                            >
-
-                                <img
-                                    src="${image.image_url}"
-                                    alt="${escapeHtml(image.title)}"
-                                    loading="lazy"
-                                >
-
-                            </a>
-
-                            <div class="image-caption">
-
-                                <a
-                                    href="${image.page_url}"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                >
-                                    ${escapeHtml(
-                                        image.title
-                                    )}
-                                </a>
-
-                            </div>
-
-                        </div>
-
-                    `;
-                }
-            );
-
-
-            html += `
-                </div>
-            `;
-
-
-            images.innerHTML = html;
-
-        } else {
-
-            images.innerHTML = `
-
-                <div class="no-image">
-                    🖼️ No suitable image
-                    was found for this topic.
-                </div>
-
-            `;
-        }
+        showImages(
+            data.images || []
+        );
 
 
     } catch (error) {
@@ -700,12 +528,12 @@ async function sendQuestion() {
         answer.innerText =
             "❌ د سرور سره د اړیکې ستونزه رامنځته شوه.";
 
-        images.innerHTML = "";
-
     }
 
 
-    button.disabled = false;
+    button.disabled =
+        false;
+
 
     button.innerText =
         "پوښتنه";
@@ -713,10 +541,83 @@ async function sendQuestion() {
 
 
 // =========================================================
+// SHOW IMAGES
+// =========================================================
+
+function showImages(images) {
+
+    const container =
+        document.getElementById("images");
+
+
+    if (!images.length) {
+
+        container.innerHTML =
+            "";
+
+        return;
+    }
+
+
+    let html = `
+        <div class="image-title">
+            🖼️ Related Medical Images
+        </div>
+
+        <div class="image-grid">
+    `;
+
+
+    images.forEach(
+        function(image) {
+
+            html += `
+
+                <div class="image-card">
+
+                    <a
+                        href="${image.page_url}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+
+                        <img
+                            src="${image.image_url}"
+                            alt="${escapeHtml(image.title)}"
+                            loading="lazy"
+                        >
+
+                    </a>
+
+                    <div>
+                        ${escapeHtml(image.title)}
+                    </div>
+
+                </div>
+
+            `;
+        }
+    );
+
+
+    html += `
+        </div>
+    `;
+
+
+    container.innerHTML =
+        html;
+}
+
+
+// =========================================================
 // HISTORY ADD
 // =========================================================
 
-function addToHistory(question, answer) {
+function addHistory(
+    question,
+    answer
+) {
 
     history.unshift({
 
@@ -724,7 +625,8 @@ function addToHistory(question, answer) {
 
         answer: answer,
 
-        date: new Date().toLocaleString()
+        date:
+            new Date().toLocaleString()
 
     });
 
@@ -750,10 +652,15 @@ function addToHistory(question, answer) {
 function toggleHistory() {
 
     const panel =
-        document.getElementById("historyPanel");
+        document.getElementById(
+            "historyPanel"
+        );
+
 
     const favoritesPanel =
-        document.getElementById("favoritesPanel");
+        document.getElementById(
+            "favoritesPanel"
+        );
 
 
     favoritesPanel.style.display =
@@ -765,14 +672,15 @@ function toggleHistory() {
         panel.style.display === ""
     ) {
 
-        panel.style.display = "block";
+        panel.style.display =
+            "block";
 
         renderHistory();
 
     } else {
 
-        panel.style.display = "none";
-
+        panel.style.display =
+            "none";
     }
 }
 
@@ -784,18 +692,15 @@ function toggleHistory() {
 function renderHistory() {
 
     const list =
-        document.getElementById("historyList");
+        document.getElementById(
+            "historyList"
+        );
 
 
-    if (history.length === 0) {
+    if (!history.length) {
 
-        list.innerHTML = `
-
-            <div class="no-image">
-                تراوسه هېڅ History نشته.
-            </div>
-
-        `;
+        list.innerHTML =
+            "<p>تراوسه History نشته.</p>";
 
         return;
     }
@@ -809,26 +714,34 @@ function renderHistory() {
 
             html += `
 
-                <div class="history-item">
+                <div class="item">
 
-                    <div class="history-question">
-                        ${escapeHtml(item.question)}
+                    <div class="question">
+
+                        ${escapeHtml(
+                            item.question
+                        )}
+
                     </div>
 
-                    <div class="history-date">
-                        ${escapeHtml(item.date)}
+                    <div class="date">
+
+                        ${escapeHtml(
+                            item.date
+                        )}
+
                     </div>
 
-                    <div class="history-actions">
+                    <div class="item-buttons">
 
                         <button
-                            onclick="loadHistory(${index})"
+                            onclick="openHistory(${index})"
                         >
                             📖 Open
                         </button>
 
                         <button
-                            class="delete-button"
+                            class="delete"
                             onclick="deleteHistory(${index})"
                         >
                             🗑️ Delete
@@ -843,15 +756,16 @@ function renderHistory() {
     );
 
 
-    list.innerHTML = html;
+    list.innerHTML =
+        html;
 }
 
 
 // =========================================================
-// HISTORY LOAD
+// HISTORY OPEN
 // =========================================================
 
-function loadHistory(index) {
+function openHistory(index) {
 
     const item =
         history[index];
@@ -862,28 +776,30 @@ function loadHistory(index) {
     }
 
 
-    document.getElementById("msg").value =
+    document.getElementById(
+        "question"
+    ).value =
         item.question;
 
-    document.getElementById("answer").innerText =
+
+    document.getElementById(
+        "answer"
+    ).innerText =
         item.answer;
 
 
     currentQuestion =
         item.question;
 
+
     currentAnswer =
         item.answer;
 
 
-    document.getElementById("historyPanel")
-        .style.display = "none";
-
-
-    window.scrollTo({
-        top: 0,
-        behavior: "smooth"
-    });
+    document.getElementById(
+        "historyPanel"
+    ).style.display =
+        "none";
 }
 
 
@@ -893,7 +809,10 @@ function loadHistory(index) {
 
 function deleteHistory(index) {
 
-    history.splice(index, 1);
+    history.splice(
+        index,
+        1
+    );
 
 
     localStorage.setItem(
@@ -917,6 +836,7 @@ function clearHistory() {
             "ایا غواړئ ټول History پاک کړئ؟"
         )
     ) {
+
         return;
     }
 
@@ -934,10 +854,10 @@ function clearHistory() {
 
 
 // =========================================================
-// FAVORITES SAVE
+// SAVE FAVORITE
 // =========================================================
 
-function saveCurrentAnswer() {
+function saveAnswer() {
 
     if (
         !currentQuestion ||
@@ -999,12 +919,12 @@ function saveCurrentAnswer() {
     );
 
 
+    renderFavorites();
+
+
     alert(
         "⭐ ځواب خوندي شو."
     );
-
-
-    renderFavorites();
 }
 
 
@@ -1015,10 +935,15 @@ function saveCurrentAnswer() {
 function toggleFavorites() {
 
     const panel =
-        document.getElementById("favoritesPanel");
+        document.getElementById(
+            "favoritesPanel"
+        );
+
 
     const historyPanel =
-        document.getElementById("historyPanel");
+        document.getElementById(
+            "historyPanel"
+        );
 
 
     historyPanel.style.display =
@@ -1050,21 +975,15 @@ function toggleFavorites() {
 function renderFavorites() {
 
     const list =
-        document.getElementById("favoritesList");
+        document.getElementById(
+            "favoritesList"
+        );
 
 
-    if (favorites.length === 0) {
+    if (!favorites.length) {
 
-        list.innerHTML = `
-
-            <div class="no-image">
-
-                تراوسه هېڅ خوندي شوی
-                ځواب نشته.
-
-            </div>
-
-        `;
+        list.innerHTML =
+            "<p>تراوسه خوندي شوي ځوابونه نشته.</p>";
 
         return;
     }
@@ -1078,9 +997,11 @@ function renderFavorites() {
 
             html += `
 
-                <div class="favorite-item">
+                <div class="item">
 
-                    <div class="favorite-question">
+                    <div
+                        class="question favorite-question"
+                    >
 
                         ⭐ ${escapeHtml(
                             item.question
@@ -1088,7 +1009,8 @@ function renderFavorites() {
 
                     </div>
 
-                    <div class="favorite-answer">
+
+                    <div>
 
                         ${escapeHtml(
                             item.answer
@@ -1096,7 +1018,8 @@ function renderFavorites() {
 
                     </div>
 
-                    <div class="history-date">
+
+                    <div class="date">
 
                         ${escapeHtml(
                             item.date
@@ -1104,16 +1027,17 @@ function renderFavorites() {
 
                     </div>
 
-                    <div class="favorite-actions">
+
+                    <div class="item-buttons">
 
                         <button
-                            onclick="loadFavorite(${index})"
+                            onclick="openFavorite(${index})"
                         >
                             📖 Open
                         </button>
 
                         <button
-                            class="delete-button"
+                            class="delete"
                             onclick="deleteFavorite(${index})"
                         >
                             🗑️ Delete
@@ -1128,15 +1052,16 @@ function renderFavorites() {
     );
 
 
-    list.innerHTML = html;
+    list.innerHTML =
+        html;
 }
 
 
 // =========================================================
-// FAVORITES LOAD
+// FAVORITE OPEN
 // =========================================================
 
-function loadFavorite(index) {
+function openFavorite(index) {
 
     const item =
         favorites[index];
@@ -1147,38 +1072,43 @@ function loadFavorite(index) {
     }
 
 
-    document.getElementById("msg").value =
+    document.getElementById(
+        "question"
+    ).value =
         item.question;
 
-    document.getElementById("answer").innerText =
+
+    document.getElementById(
+        "answer"
+    ).innerText =
         item.answer;
 
 
     currentQuestion =
         item.question;
 
+
     currentAnswer =
         item.answer;
 
 
-    document.getElementById("favoritesPanel")
-        .style.display = "none";
-
-
-    window.scrollTo({
-        top: 0,
-        behavior: "smooth"
-    });
+    document.getElementById(
+        "favoritesPanel"
+    ).style.display =
+        "none";
 }
 
 
 // =========================================================
-// FAVORITES DELETE
+// FAVORITE DELETE
 // =========================================================
 
 function deleteFavorite(index) {
 
-    favorites.splice(index, 1);
+    favorites.splice(
+        index,
+        1
+    );
 
 
     localStorage.setItem(
@@ -1216,35 +1146,37 @@ function escapeHtml(text) {
 function toggleDarkMode() {
 
     document.body.classList.toggle(
-        "dark-mode"
+        "dark"
     );
 
 
-    const darkMode =
+    const enabled =
         document.body.classList.contains(
-            "dark-mode"
+            "dark"
         );
 
 
     localStorage.setItem(
-        "medai_dark_mode",
-        darkMode ? "on" : "off"
+        "medai_dark",
+        enabled
+        ? "on"
+        : "off"
     );
 
 
-    updateDarkModeButton();
+    updateDarkButton();
 }
 
 
 // =========================================================
-// DARK MODE BUTTON
+// DARK BUTTON
 // =========================================================
 
-function updateDarkModeButton() {
+function updateDarkButton() {
 
     const button =
         document.getElementById(
-            "darkModeButton"
+            "darkButton"
         );
 
 
@@ -1253,16 +1185,20 @@ function updateDarkModeButton() {
     }
 
 
-    const darkMode =
+    if (
         document.body.classList.contains(
-            "dark-mode"
-        );
+            "dark"
+        )
+    ) {
 
+        button.innerText =
+            "☀️ Light Mode";
 
-    button.innerText =
-        darkMode
-        ? "☀️ Light Mode"
-        : "🌙 Dark Mode";
+    } else {
+
+        button.innerText =
+            "🌙 Dark Mode";
+    }
 }
 
 
@@ -1272,17 +1208,17 @@ function updateDarkModeButton() {
 
 if (
     localStorage.getItem(
-        "medai_dark_mode"
+        "medai_dark"
     ) === "on"
 ) {
 
     document.body.classList.add(
-        "dark-mode"
+        "dark"
     );
 }
 
 
-updateDarkModeButton();
+updateDarkButton();
 
 renderHistory();
 
@@ -1296,14 +1232,13 @@ renderFavorites();
 
 
 # =========================================================
-# WIKIMEDIA IMAGE SEARCH
+# WIKIMEDIA IMAGES
 # =========================================================
 
 def search_wikimedia_images(search_term):
 
     api_url = (
-        "https://commons.wikimedia.org/"
-        "w/api.php"
+        "https://commons.wikimedia.org/w/api.php"
     )
 
 
@@ -1335,8 +1270,7 @@ def search_wikimedia_images(search_term):
     headers = {
 
         "User-Agent":
-        "MedAI/1.0 "
-        "(medical educational application)"
+            "MedAI/1.0 medical educational application"
 
     }
 
@@ -1354,57 +1288,67 @@ def search_wikimedia_images(search_term):
         response.raise_for_status()
 
 
-        data = response.json()
+        data =
+            response.json()
 
 
-        pages = (
-            data
-            .get("query", {})
-            .get("pages", [])
-        )
-
-
-        results = []
+        pages =
+            data.get(
+                "query",
+                {}
+            ).get(
+                "pages",
+                []
+            )
 
 
         if isinstance(pages, dict):
             pages = pages.values()
 
 
+        results = []
+
+
         for page in pages:
 
-            imageinfo = page.get(
-                "imageinfo",
-                []
-            )
+            imageinfo =
+                page.get(
+                    "imageinfo",
+                    []
+                )
 
 
             if not imageinfo:
                 continue
 
 
-            info = imageinfo[0]
+            info =
+                imageinfo[0]
 
 
-            image_url = (
-                info.get("thumburl")
-                or info.get("url")
-            )
+            image_url =
+                info.get(
+                    "thumburl"
+                ) or info.get(
+                    "url"
+                )
 
 
             if not image_url:
                 continue
 
 
-            page_url = info.get(
-                "descriptionurl"
-            )
+            title =
+                page.get(
+                    "title",
+                    "Medical image"
+                )
 
 
-            title = page.get(
-                "title",
-                "Medical image"
-            )
+            page_url =
+                info.get(
+                    "descriptionurl"
+                )
 
 
             if not page_url:
@@ -1439,18 +1383,18 @@ def search_wikimedia_images(search_term):
         return results
 
 
-    except Exception as e:
+    except Exception as error:
 
         print(
             "Wikimedia error:",
-            str(e)
+            error
         )
 
         return []
 
 
 # =========================================================
-# GEMINI AI
+# CHAT
 # =========================================================
 
 @app.route(
@@ -1459,23 +1403,17 @@ def search_wikimedia_images(search_term):
 )
 def chat():
 
-    data = (
-        request
-        .get_json(
+    data =
+        request.get_json(
             silent=True
-        )
-        or {}
-    )
+        ) or {}
 
 
-    message = (
-        data
-        .get(
+    message =
+        data.get(
             "message",
             ""
-        )
-        .strip()
-    )
+        ).strip()
 
 
     if not message:
@@ -1483,14 +1421,15 @@ def chat():
         return jsonify({
 
             "error":
-            "Please enter your question."
+                "Please enter your question."
 
         }), 400
 
 
-    api_key = os.getenv(
-        "GEMINI_API_KEY"
-    )
+    api_key =
+        os.getenv(
+            "GEMINI_API_KEY"
+        )
 
 
     if not api_key:
@@ -1498,40 +1437,33 @@ def chat():
         return jsonify({
 
             "error":
-            "GEMINI_API_KEY پیدا نه شو."
+                "GEMINI_API_KEY پیدا نه شو."
 
         }), 500
 
 
-    # =====================================================
-    # MEDICAL PROMPT
-    # =====================================================
-
     prompt = f"""
 You are MedAI, a multilingual educational medical information assistant.
 
-LANGUAGE RULES:
+Answer in the SAME language as the user's question.
 
-- Automatically detect the language of the user's question.
-- Answer in the SAME language as the user's question.
-- Support as many languages as possible.
-- Do not force the user to select a language.
-- If the user mixes languages, use the main language.
-- Keep medical terminology accurate.
-- Explain difficult medical terminology in simple language.
-- Section headings must also be written in the user's language.
+Support many languages.
 
-MEDICAL SAFETY:
+Translate section headings into the user's language.
 
-- Provide accurate educational medical information.
-- Do not diagnose a person from symptoms alone.
-- Do not pretend that you examined the patient.
-- Do not invent medical facts.
-- Do not give personalized prescription or dosage instructions.
-- If emergency warning signs are relevant, advise urgent medical care.
-- MedAI is educational and is not a replacement for a doctor.
+Give accurate educational medical information.
 
-MEDICAL STRUCTURE:
+Do not diagnose a person from symptoms alone.
+
+Do not pretend to examine the patient.
+
+Do not invent medical facts.
+
+Do not give personalized prescription or dosage instructions.
+
+If emergency warning signs are relevant, advise urgent medical care.
+
+MedAI is educational and is not a replacement for a doctor.
 
 For medical questions, use these sections when relevant:
 
@@ -1546,19 +1478,11 @@ Prevention
 Complications
 Important Points
 
-Translate every section heading into
-the user's language.
+Use clear headings and bullet points.
 
-FORMATTING:
+Keep paragraphs short.
 
-- Use clear headings.
-- Use bullet points when useful.
-- Keep paragraphs short.
-- Make the answer easy to read.
-- Explain difficult medical words simply.
-- Do not include irrelevant sections.
-- Give a useful educational explanation.
-- Keep important warnings clear.
+Explain difficult medical terms simply.
 
 USER QUESTION:
 
@@ -1566,17 +1490,11 @@ USER QUESTION:
 """
 
 
-    # =====================================================
-    # GEMINI API
-    # =====================================================
-
     gemini_url = (
         "https://generativelanguage.googleapis.com/"
         "v1beta/models/"
-        "gemini-3.5-flash-lite:"
-        "generateContent?key="
-        +
-        api_key
+        "gemini-3.5-flash-lite:generateContent?key="
+        + api_key
     )
 
 
@@ -1588,7 +1506,7 @@ USER QUESTION:
 
             headers={
                 "Content-Type":
-                "application/json"
+                    "application/json"
             },
 
             json={
@@ -1602,7 +1520,7 @@ USER QUESTION:
                             {
 
                                 "text":
-                                prompt
+                                    prompt
 
                             }
 
@@ -1615,7 +1533,6 @@ USER QUESTION:
             },
 
             timeout=60
-
         )
 
 
@@ -1628,20 +1545,18 @@ USER QUESTION:
             return jsonify({
 
                 "error":
-                "Gemini API خطا ورکړه: "
-                +
-                str(gemini_data)
+                    "Gemini API خطا ورکړه: "
+                    +
+                    str(gemini_data)
 
             }), 500
 
 
-        candidates = (
-            gemini_data
-            .get(
+        candidates =
+            gemini_data.get(
                 "candidates",
                 []
             )
-        )
 
 
         if not candidates:
@@ -1649,24 +1564,19 @@ USER QUESTION:
             return jsonify({
 
                 "error":
-                "Gemini هېڅ ځواب رانه کړ."
+                    "Gemini هېڅ ځواب رانه کړ."
 
             }), 500
 
 
-        parts = (
-
-            candidates[0]
-            .get(
+        parts =
+            candidates[0].get(
                 "content",
                 {}
-            )
-            .get(
+            ).get(
                 "parts",
                 []
             )
-
-        )
 
 
         if not parts:
@@ -1674,18 +1584,16 @@ USER QUESTION:
             return jsonify({
 
                 "error":
-                "د Gemini ځواب خالي دی."
+                    "د Gemini ځواب خالي دی."
 
             }), 500
 
 
-        answer = (
-            parts[0]
-            .get(
+        answer =
+            parts[0].get(
                 "text",
                 ""
             )
-        )
 
 
         if not answer:
@@ -1693,16 +1601,17 @@ USER QUESTION:
             return jsonify({
 
                 "error":
-                "AI ځواب پیدا نه شو."
+                    "AI ځواب پیدا نه شو."
 
             }), 500
 
 
         # =================================================
-        # IMAGE SEARCH
+        # IMAGE SEARCH TERM
         # =================================================
 
-        search_term = message
+        search_term =
+            message
 
 
         translations = {
@@ -1730,15 +1639,10 @@ USER QUESTION:
             "سږو": "lungs",
 
             "معده": "stomach",
-
             "ځیګر": "liver",
-
             "پښتورګي": "kidney",
-
             "دماغ": "brain",
-
             "پوستکی": "skin",
-
             "هډوکي": "bone",
 
             "انفلونزا": "influenza",
@@ -1754,9 +1658,7 @@ USER QUESTION:
             "virus": "virus",
 
             "coronavirus": "coronavirus",
-
             "covid": "COVID-19",
-
             "کووېډ": "COVID-19"
 
         }
@@ -1770,7 +1672,8 @@ USER QUESTION:
 
             if word.lower() in lower_message:
 
-                search_term = english
+                search_term =
+                    english
 
                 break
 
@@ -1797,31 +1700,31 @@ USER QUESTION:
         return jsonify({
 
             "error":
-            "د AI ځواب ډېر وخت ونیو. بیا هڅه وکړئ."
+                "د AI ځواب ډېر وخت ونیو. بیا هڅه وکړئ."
 
         }), 504
 
 
-    except Exception as e:
+    except Exception as error:
 
         print(
             "Chat error:",
-            str(e)
+            error
         )
 
 
         return jsonify({
 
             "error":
-            "د AI سره د اړیکې ستونزه: "
-            +
-            str(e)
+                "د AI سره د اړیکې ستونزه: "
+                +
+                str(error)
 
         }), 500
 
 
 # =========================================================
-# RUN
+# LOCAL RUN
 # =========================================================
 
 if __name__ == "__main__":
