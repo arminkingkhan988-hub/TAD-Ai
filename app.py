@@ -165,11 +165,6 @@ button:disabled {
     line-height: 1.8;
 }
 
-.loading {
-    text-align: center;
-    padding: 20px;
-}
-
 </style>
 
 </head>
@@ -300,10 +295,6 @@ async function sendQuestion() {
         }
 
 
-        /*
-         * DISPLAY IMAGES
-         */
-
         if (
             Array.isArray(data.images) &&
             data.images.length > 0
@@ -336,11 +327,9 @@ async function sendQuestion() {
                                 src="${image.image_url}"
                                 alt="${image.title}"
                                 loading="lazy"
-                                onerror="this.style.display='none';"
                             >
 
                         </a>
-
 
                         <div class="image-caption">
 
@@ -423,7 +412,6 @@ def search_wikimedia_images(search_term):
         "w/api.php"
     )
 
-
     params = {
 
         "action": "query",
@@ -448,7 +436,6 @@ def search_wikimedia_images(search_term):
 
     }
 
-
     headers = {
 
         "User-Agent":
@@ -456,7 +443,6 @@ def search_wikimedia_images(search_term):
         "(medical educational application)"
 
     }
-
 
     try:
 
@@ -472,12 +458,9 @@ def search_wikimedia_images(search_term):
 
         )
 
-
         response.raise_for_status()
 
-
         data = response.json()
-
 
         pages = (
             data
@@ -485,46 +468,31 @@ def search_wikimedia_images(search_term):
             .get("pages", [])
         )
 
-
         results = []
-
-
-        # -------------------------------------------------
-        # Handle Wikimedia formatversion=2
-        # -------------------------------------------------
 
         if isinstance(pages, dict):
 
             pages = pages.values()
 
-
         for page in pages:
 
-            imageinfo = (
-                page.get(
-                    "imageinfo",
-                    []
-                )
+            imageinfo = page.get(
+                "imageinfo",
+                []
             )
-
 
             if not imageinfo:
                 continue
 
-
             info = imageinfo[0]
 
-
-            # Prefer thumbnail
             image_url = (
                 info.get("thumburl")
                 or info.get("url")
             )
 
-
             if not image_url:
                 continue
-
 
             page_url = (
                 info.get(
@@ -532,12 +500,10 @@ def search_wikimedia_images(search_term):
                 )
             )
 
-
             title = page.get(
                 "title",
                 "Medical image"
             )
-
 
             if not page_url:
 
@@ -548,7 +514,6 @@ def search_wikimedia_images(search_term):
                         safe=""
                     )
                 )
-
 
             results.append({
 
@@ -566,9 +531,7 @@ def search_wikimedia_images(search_term):
 
             })
 
-
         return results
-
 
     except Exception as e:
 
@@ -581,7 +544,7 @@ def search_wikimedia_images(search_term):
 
 
 # =========================================================
-# GEMINI
+# GEMINI AI
 # =========================================================
 
 @app.route(
@@ -597,13 +560,11 @@ def chat():
         or {}
     )
 
-
     message = (
         data
         .get("message", "")
         .strip()
     )
-
 
     if not message:
 
@@ -619,7 +580,6 @@ def chat():
         "GEMINI_API_KEY"
     )
 
-
     if not api_key:
 
         return jsonify({
@@ -631,77 +591,85 @@ def chat():
 
 
     # =====================================================
-    # MEDICAL AI PROMPT
+    # MEDICAL FORMAT PROMPT
     # =====================================================
 
     prompt = f"""
+You are MedAI, an educational medical information assistant.
 
-You are MedAI, an educational medical
-information assistant.
-
-Answer the user's medical question
-accurately, clearly and safely.
+The user may ask questions in Pashto, Dari, or English.
 
 IMPORTANT RULES:
 
-1. Support Pashto, Dari and English.
+- Answer in the same language as the user's question.
+- Use clear and simple language.
+- Give accurate educational medical information.
+- Do not diagnose a patient from symptoms alone.
+- Do not pretend that you examined the patient.
+- Do not invent medical facts.
+- Do not give personalized prescription or dosage instructions.
+- If emergency warning signs are relevant, clearly advise urgent medical care.
+- MedAI is educational and is not a replacement for a doctor.
 
-2. Reply in the same language
-   as the user's question.
+For medical topics, organize the answer using these sections when relevant:
 
-3. Use simple language.
+## Definition
 
-4. Give educational medical information.
+Explain what the condition, disease, medicine,
+symptom, or medical term means.
 
-5. Do not diagnose a person from
-   symptoms alone.
+## Causes
 
-6. Do not pretend that you examined
-   the patient.
+Explain the common causes.
 
-7. Do not invent medical facts.
+## Types
 
-8. Do not replace emergency medical care.
+Explain the important types or classifications.
 
-9. If the question involves emergency
-   warning signs, clearly advise the user
-   to seek urgent medical care.
+## Risk Factors
 
-10. Do not give personalized prescription
-    or dosage instructions as if you examined
-    the patient.
+Explain factors that increase the risk.
 
-11. Explain medical terminology simply.
+## Signs and Symptoms
 
-For medical topics, use these headings
-when relevant:
+Explain the common signs and symptoms.
 
-Definition
+## Diagnosis
 
-Causes
+Explain how doctors usually diagnose it.
 
-Types
+## Treatment
 
-Risk Factors
+Explain the general treatment approaches.
+Do not provide personalized prescriptions or dosages.
 
-Signs and Symptoms
+## Prevention
 
-Diagnosis
+Explain how it can be prevented when prevention is possible.
 
-Treatment
+## Complications
 
-Prevention
+Explain important complications.
 
-Complications
+## Important Points
 
-Important Points
+Give a short summary of the most important information.
 
-Make the answer clear and useful.
+FORMATTING RULES:
+
+- Use clear headings.
+- Keep paragraphs short.
+- Use bullet points where useful.
+- Highlight important warnings clearly.
+- Do not include sections that are not relevant.
+- Keep the answer understandable for medical students
+  and ordinary users.
+- Do not use unnecessary technical language.
+- If a medical term is difficult, explain it simply.
 
 User question:
 
 {message}
-
 """
 
 
@@ -758,8 +726,7 @@ User question:
         )
 
 
-        gemini_data =
-            response.json()
+        gemini_data = response.json()
 
 
         if response.status_code != 200:
@@ -821,7 +788,10 @@ User question:
 
         answer = (
             parts[0]
-            .get("text", "")
+            .get(
+                "text",
+                ""
+            )
         )
 
 
@@ -836,7 +806,7 @@ User question:
 
 
         # =================================================
-        # IMAGE SEARCH
+        # MEDICAL IMAGE SEARCH
         # =================================================
 
         search_term = message
@@ -962,15 +932,13 @@ User question:
                 break
 
 
-        images = (
-            search_wikimedia_images(
-                search_term
-            )
+        images = search_wikimedia_images(
+            search_term
         )
 
 
         # =================================================
-        # FINAL RESPONSE
+        # RETURN RESULT
         # =================================================
 
         return jsonify({
@@ -1002,7 +970,6 @@ User question:
             str(e)
         )
 
-
         return jsonify({
 
             "error":
@@ -1029,4 +996,4 @@ if __name__ == "__main__":
             )
         )
 
-    )
+)
