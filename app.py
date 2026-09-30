@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 import os
 import requests
+from urllib.parse import quote
 
 app = Flask(__name__)
 
@@ -13,6 +14,7 @@ def home():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
         <title>MedAI</title>
 
         <style>
@@ -80,6 +82,48 @@ def home():
                 box-shadow: 0 2px 10px rgba(0,0,0,0.05);
             }
 
+            #images {
+                margin-top: 20px;
+            }
+
+            .image-title {
+                font-size: 20px;
+                font-weight: bold;
+                margin-bottom: 12px;
+            }
+
+            .image-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+                gap: 15px;
+            }
+
+            .medical-image {
+                width: 100%;
+                height: 220px;
+                object-fit: cover;
+                border-radius: 12px;
+                background: #eee;
+            }
+
+            .image-card {
+                background: white;
+                padding: 10px;
+                border-radius: 12px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            }
+
+            .image-caption {
+                margin-top: 8px;
+                font-size: 14px;
+                line-height: 1.5;
+            }
+
+            .image-link {
+                color: #1677ff;
+                text-decoration: none;
+            }
+
             .warning {
                 margin-top: 20px;
                 padding: 15px;
@@ -88,10 +132,16 @@ def home():
                 color: #6b5200;
                 line-height: 1.8;
             }
+
+            .loading {
+                text-align: center;
+                padding: 15px;
+            }
         </style>
     </head>
 
     <body>
+
         <div class="container">
 
             <h1>🩺 MedAI</h1>
@@ -113,6 +163,8 @@ def home():
                 ستاسو ځواب به دلته ښکاره شي.
             </div>
 
+            <div id="images"></div>
+
             <div class="warning">
                 ⚠️ MedAI د طبي زده کړو او معلوماتو لپاره دی.
                 دا د ډاکټر بدیل نه دی. د جدي یا بیړنیو نښو په صورت کې
@@ -123,6 +175,7 @@ def home():
 
 
         <script>
+
         async function sendQuestion() {
 
             const message =
@@ -131,47 +184,238 @@ def home():
             const answer =
                 document.getElementById("answer");
 
+            const images =
+                document.getElementById("images");
+
+
             if (!message) {
+
                 answer.innerText =
                     "مهرباني وکړئ خپله طبي پوښتنه ولیکئ.";
+
+                images.innerHTML = "";
+
                 return;
             }
+
 
             answer.innerText =
                 "⏳ مهرباني وکړئ، ځواب چمتو کېږي...";
 
+            images.innerHTML = "";
+
+
             try {
 
                 const response = await fetch("/chat", {
+
                     method: "POST",
+
                     headers: {
                         "Content-Type": "application/json"
                     },
+
                     body: JSON.stringify({
                         message: message
                     })
+
                 });
+
 
                 const data = await response.json();
 
+
                 if (data.answer) {
+
                     answer.innerText = data.answer;
+
                 } else {
+
                     answer.innerText =
                         data.error || "یوه ستونزه رامنځته شوه.";
+
+                }
+
+
+                if (data.images && data.images.length > 0) {
+
+                    let html = `
+                        <div class="image-title">
+                            🖼️ اړوند طبي انځورونه
+                        </div>
+
+                        <div class="image-grid">
+                    `;
+
+
+                    data.images.forEach(function(image) {
+
+                        html += `
+                            <div class="image-card">
+
+                                <a
+                                    href="${image.page_url}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+
+                                    <img
+                                        class="medical-image"
+                                        src="${image.thumbnail}"
+                                        alt="${image.title}"
+                                        loading="lazy"
+                                    >
+
+                                </a>
+
+                                <div class="image-caption">
+
+                                    <a
+                                        class="image-link"
+                                        href="${image.page_url}"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                    >
+                                        ${image.title}
+                                    </a>
+
+                                </div>
+
+                            </div>
+                        `;
+
+                    });
+
+
+                    html += `
+                        </div>
+                    `;
+
+
+                    images.innerHTML = html;
+
                 }
 
             } catch (error) {
 
                 answer.innerText =
                     "❌ د سرور سره د اړیکې ستونزه رامنځته شوه.";
+
+                images.innerHTML = "";
+
             }
+
         }
+
         </script>
 
     </body>
     </html>
     """
+
+
+def search_medical_images(query):
+
+    """
+    Search Wikimedia Commons for relevant images.
+    """
+
+    url = "https://commons.wikimedia.org/w/api.php"
+
+
+    params = {
+
+        "action": "query",
+
+        "format": "json",
+
+        "formatversion": "2",
+
+        "generator": "search",
+
+        "gsrsearch": query,
+
+        "gsrnamespace": "6",
+
+        "gsrlimit": "4",
+
+        "prop": "imageinfo",
+
+        "iiprop": "url",
+
+        "iiurlwidth": "500"
+
+    }
+
+
+    try:
+
+        response = requests.get(
+            url,
+            params=params,
+            timeout=15
+        )
+
+
+        if response.status_code != 200:
+            return []
+
+
+        data = response.json()
+
+        pages = data.get("query", {}).get("pages", [])
+
+        results = []
+
+
+        for page in pages:
+
+            image_info = page.get("imageinfo", [])
+
+            if not image_info:
+                continue
+
+
+            info = image_info[0]
+
+            thumbnail = info.get("thumburl")
+
+            original_url = info.get("url")
+
+
+            if not thumbnail:
+                thumbnail = original_url
+
+
+            if not thumbnail:
+                continue
+
+
+            results.append({
+
+                "title": page.get(
+                    "title",
+                    "Medical image"
+                ).replace("File:", ""),
+
+                "thumbnail": thumbnail,
+
+                "page_url":
+                    "https://commons.wikimedia.org/wiki/"
+                    + quote(
+                        page.get("title", ""),
+                        safe=":/"
+                    )
+
+            })
+
+
+        return results
+
+
+    except Exception:
+
+        return []
 
 
 @app.route("/chat", methods=["POST"])
@@ -181,16 +425,27 @@ def chat():
 
     message = data.get("message", "").strip()
 
+
     if not message:
+
         return jsonify({
-            "error": "مهرباني وکړئ پوښتنه ولیکئ."
+
+            "error":
+                "مهرباني وکړئ پوښتنه ولیکئ."
+
         }), 400
+
 
     api_key = os.getenv("GEMINI_API_KEY")
 
+
     if not api_key:
+
         return jsonify({
-            "error": "GEMINI_API_KEY پیدا نه شو."
+
+            "error":
+                "GEMINI_API_KEY پیدا نه شو."
+
         }), 500
 
 
@@ -231,8 +486,7 @@ User question:
 """
 
 
-    # Gemini API
-    url = (
+    gemini_url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
         "gemini-3.5-flash-lite:generateContent?key="
         + api_key
@@ -242,22 +496,36 @@ User question:
     try:
 
         response = requests.post(
-            url,
+
+            gemini_url,
+
             headers={
-                "Content-Type": "application/json"
+                "Content-Type":
+                    "application/json"
             },
+
             json={
+
                 "contents": [
+
                     {
+
                         "parts": [
+
                             {
                                 "text": prompt
                             }
+
                         ]
+
                     }
+
                 ]
+
             },
+
             timeout=60
+
         )
 
 
@@ -267,64 +535,118 @@ User question:
         if response.status_code != 200:
 
             return jsonify({
-                "error": "Gemini API خطا ورکړه: "
-                + str(data)
+
+                "error":
+                    "Gemini API خطا ورکړه: "
+                    + str(data)
+
             }), 500
 
 
-        candidates = data.get("candidates", [])
+        candidates =
+            data.get("candidates", [])
+
 
         if not candidates:
 
             return jsonify({
-                "error": "Gemini هېڅ ځواب رانه کړ."
+
+                "error":
+                    "Gemini هېڅ ځواب رانه کړ."
+
             }), 500
 
 
-        content = candidates[0].get("content", {})
+        content =
+            candidates[0].get(
+                "content",
+                {}
+            )
 
-        parts = content.get("parts", [])
+
+        parts =
+            content.get(
+                "parts",
+                []
+            )
+
 
         if not parts:
 
             return jsonify({
-                "error": "د Gemini ځواب خالي دی."
+
+                "error":
+                    "د Gemini ځواب خالي دی."
+
             }), 500
 
 
-        answer = parts[0].get("text", "")
+        answer =
+            parts[0].get(
+                "text",
+                ""
+            )
 
 
         if not answer:
 
             return jsonify({
-                "error": "AI ځواب پیدا نه شو."
+
+                "error":
+                    "AI ځواب پیدا نه شو."
+
             }), 500
 
 
+        # Search for related images.
+        #
+        # The user's question itself is used as
+        # the Wikimedia search query.
+
+        images = search_medical_images(message)
+
+
         return jsonify({
-            "answer": answer
+
+            "answer": answer,
+
+            "images": images
+
         })
 
 
     except requests.exceptions.Timeout:
 
         return jsonify({
-            "error": "د AI ځواب ډېر وخت ونیو. بیا هڅه وکړئ."
+
+            "error":
+                "د AI ځواب ډېر وخت ونیو. بیا هڅه وکړئ."
+
         }), 504
 
 
     except Exception as e:
 
         return jsonify({
-            "error": "د AI سره د اړیکې ستونزه: "
-            + str(e)
+
+            "error":
+                "د AI سره د اړیکې ستونزه: "
+                + str(e)
+
         }), 500
 
 
 if __name__ == "__main__":
 
     app.run(
+
         host="0.0.0.0",
-        port=int(os.environ.get("PORT", 5000))
+
+        port=int(
+            os.environ.get(
+                "PORT",
+                5000
+            )
+        )
+
     )
