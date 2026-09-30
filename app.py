@@ -27,6 +27,10 @@ def home():
 
 <style>
 
+/* =========================================================
+   GENERAL
+   ========================================================= */
+
 * {
     box-sizing: border-box;
 }
@@ -37,6 +41,7 @@ body {
     font-family: Arial, sans-serif;
     background: #f4f7fb;
     color: #222;
+    transition: background 0.3s, color 0.3s;
 }
 
 .container {
@@ -57,9 +62,9 @@ h1 {
 }
 
 
-/* =====================================================
+/* =========================================================
    INPUT
-   ===================================================== */
+   ========================================================= */
 
 textarea {
     width: 100%;
@@ -70,7 +75,14 @@ textarea {
     font-size: 18px;
     resize: vertical;
     font-family: Arial, sans-serif;
+    background: white;
+    color: #222;
 }
+
+
+/* =========================================================
+   BUTTONS
+   ========================================================= */
 
 button {
     width: 100%;
@@ -82,10 +94,11 @@ button {
     color: white;
     font-size: 18px;
     cursor: pointer;
+    transition: 0.2s;
 }
 
 button:hover {
-    background: #0f5dcc;
+    opacity: 0.9;
 }
 
 button:disabled {
@@ -94,9 +107,41 @@ button:disabled {
 }
 
 
-/* =====================================================
+/* =========================================================
+   ACTION BUTTONS
+   ========================================================= */
+
+.action-buttons {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.action-buttons button {
+    margin-top: 0;
+}
+
+.history-button {
+    background: #555;
+}
+
+.favorite-button {
+    background: #e09b00;
+}
+
+.save-button {
+    background: #f5a623;
+}
+
+.dark-button {
+    background: #222;
+}
+
+
+/* =========================================================
    ANSWER
-   ===================================================== */
+   ========================================================= */
 
 #answer {
     margin-top: 20px;
@@ -110,40 +155,9 @@ button:disabled {
 }
 
 
-/* =====================================================
-   ACTION BUTTONS
-   ===================================================== */
-
-.action-buttons {
-    display: flex;
-    gap: 10px;
-    margin-top: 12px;
-}
-
-.action-buttons button {
-    margin-top: 0;
-}
-
-.save-button {
-    background: #f5a623;
-}
-
-.save-button:hover {
-    background: #d98d08;
-}
-
-.history-button {
-    background: #555;
-}
-
-.history-button:hover {
-    background: #333;
-}
-
-
-/* =====================================================
+/* =========================================================
    HISTORY
-   ===================================================== */
+   ========================================================= */
 
 #historyPanel {
     display: none;
@@ -165,12 +179,7 @@ button:disabled {
     border: 1px solid #ddd;
     border-radius: 10px;
     margin-bottom: 10px;
-    cursor: pointer;
     background: #fafafa;
-}
-
-.history-item:hover {
-    background: #f0f5ff;
 }
 
 .history-question {
@@ -200,18 +209,14 @@ button:disabled {
     background: #dc3545;
 }
 
-.delete-button:hover {
-    background: #b02a37;
-}
-
 .clear-button {
     background: #777;
 }
 
 
-/* =====================================================
+/* =========================================================
    FAVORITES
-   ===================================================== */
+   ========================================================= */
 
 #favoritesPanel {
     display: none;
@@ -232,7 +237,7 @@ button:disabled {
 
 .favorite-question {
     font-weight: bold;
-    color: #f5a623;
+    color: #e09b00;
     margin-bottom: 8px;
 }
 
@@ -254,9 +259,9 @@ button:disabled {
 }
 
 
-/* =====================================================
+/* =========================================================
    IMAGES
-   ===================================================== */
+   ========================================================= */
 
 #images {
     margin-top: 25px;
@@ -304,10 +309,6 @@ button:disabled {
     text-decoration: none;
 }
 
-.image-caption a:hover {
-    text-decoration: underline;
-}
-
 .no-image {
     padding: 15px;
     background: #fff4d6;
@@ -316,9 +317,9 @@ button:disabled {
 }
 
 
-/* =====================================================
+/* =========================================================
    WARNING
-   ===================================================== */
+   ========================================================= */
 
 .warning {
     margin-top: 25px;
@@ -330,27 +331,118 @@ button:disabled {
 }
 
 
-/* =====================================================
-   MOBILE
-   ===================================================== */
+/* =========================================================
+   DARK MODE
+   ========================================================= */
 
-@media (max-width: 600px) {
+body.dark-mode {
+    background: #121212;
+    color: #eeeeee;
+}
+
+body.dark-mode .subtitle {
+    color: #bbbbbb;
+}
+
+body.dark-mode textarea {
+    background: #1e1e1e;
+    color: #ffffff;
+    border-color: #444;
+}
+
+body.dark-mode #answer,
+body.dark-mode #historyPanel,
+body.dark-mode #favoritesPanel,
+body.dark-mode .image-card {
+    background: #1e1e1e;
+    color: #eeeeee;
+}
+
+body.dark-mode .history-item {
+    background: #252525;
+    border-color: #444;
+}
+
+body.dark-mode .favorite-item {
+    background: #292510;
+    border-color: #554d25;
+}
+
+body.dark-mode .warning {
+    background: #3b3215;
+    color: #ffe99a;
+}
+
+body.dark-mode .no-image {
+    background: #3b3215;
+    color: #ffe99a;
+}
+
+body.dark-mode .history-date {
+    color: #aaa;
+}
+
+body.dark-mode .image-card img {
+    background: #111;
+}
+
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
+
+@media (max-width: 700px) {
 
     body {
-        padding: 12px;
+        padding: 10px;
+    }
+
+    h1 {
+        font-size: 28px;
+    }
+
+    .subtitle {
+        font-size: 14px;
     }
 
     textarea {
+        height: 120px;
         font-size: 16px;
     }
 
+    #answer {
+        padding: 16px;
+        font-size: 15px;
+        line-height: 1.9;
+    }
+
     .action-buttons {
-        flex-direction: column;
+        grid-template-columns: 1fr 1fr;
     }
 
     .history-actions,
     .favorite-actions {
         flex-direction: column;
+    }
+
+    .image-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .image-card img {
+        height: 240px;
+    }
+}
+
+
+@media (max-width: 400px) {
+
+    .action-buttons {
+        grid-template-columns: 1fr;
+    }
+
+    h1 {
+        font-size: 25px;
     }
 
 }
@@ -363,6 +455,7 @@ button:disabled {
 <body>
 
 <div class="container">
+
 
 <h1>🩺 MedAI</h1>
 
@@ -385,6 +478,10 @@ button:disabled {
 </button>
 
 
+<!-- =====================================================
+     MAIN ACTION BUTTONS
+     ===================================================== -->
+
 <div class="action-buttons">
 
     <button
@@ -394,20 +491,46 @@ button:disabled {
         📜 History
     </button>
 
+
+    <button
+        class="favorite-button"
+        onclick="toggleFavorites()"
+    >
+        ⭐ Favorites
+    </button>
+
+
     <button
         class="save-button"
         onclick="saveCurrentAnswer()"
     >
-        ⭐ Save
+        💾 Save
+    </button>
+
+
+    <button
+        class="dark-button"
+        id="darkModeButton"
+        onclick="toggleDarkMode()"
+    >
+        🌙 Dark Mode
     </button>
 
 </div>
 
 
+<!-- =====================================================
+     ANSWER
+     ===================================================== -->
+
 <div id="answer">
 ستاسو ځواب به دلته ښکاره شي.
 </div>
 
+
+<!-- =====================================================
+     IMAGES
+     ===================================================== -->
 
 <div id="images"></div>
 
@@ -449,6 +572,10 @@ button:disabled {
 </div>
 
 
+<!-- =====================================================
+     WARNING
+     ===================================================== -->
+
 <div class="warning">
 
 ⚠️ MedAI د طبي زده کړو او معلوماتو لپاره دی.
@@ -460,6 +587,7 @@ button:disabled {
 
 </div>
 
+
 </div>
 
 
@@ -467,24 +595,26 @@ button:disabled {
 
 
 // =========================================================
-// DATA
+// CURRENT DATA
 // =========================================================
 
 let currentQuestion = "";
 
 let currentAnswer = "";
 
-let history =
-    JSON.parse(
-        localStorage.getItem("medai_history")
-        || "[]"
-    );
 
-let favorites =
-    JSON.parse(
-        localStorage.getItem("medai_favorites")
-        || "[]"
-    );
+let history = JSON.parse(
+    localStorage.getItem(
+        "medai_history"
+    ) || "[]"
+);
+
+
+let favorites = JSON.parse(
+    localStorage.getItem(
+        "medai_favorites"
+    ) || "[]"
+);
 
 
 // =========================================================
@@ -527,6 +657,7 @@ async function sendQuestion() {
 
     images.innerHTML = "";
 
+
     button.disabled = true;
 
     button.innerText =
@@ -565,7 +696,6 @@ async function sendQuestion() {
                 data.answer;
 
 
-            // Save to history
             addToHistory(
                 message,
                 data.answer
@@ -583,7 +713,7 @@ async function sendQuestion() {
 
 
         // =================================================
-        // IMAGES
+        // DISPLAY IMAGES
         // =================================================
 
         if (
@@ -602,27 +732,12 @@ async function sendQuestion() {
             `;
 
 
-            data.images.forEach(function(image) {
+            data.images.forEach(
+                function(image) {
 
-                html += `
+                    html += `
 
-                    <div class="image-card">
-
-                        <a
-                            href="${image.page_url}"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                        >
-
-                            <img
-                                src="${image.image_url}"
-                                alt="${image.title}"
-                                loading="lazy"
-                            >
-
-                        </a>
-
-                        <div class="image-caption">
+                        <div class="image-card">
 
                             <a
                                 href="${image.page_url}"
@@ -630,17 +745,36 @@ async function sendQuestion() {
                                 rel="noopener noreferrer"
                             >
 
-                                ${image.title}
+                                <img
+                                    src="${image.image_url}"
+                                    alt="${image.title}"
+                                    loading="lazy"
+                                >
 
                             </a>
 
+                            <div
+                                class="image-caption"
+                            >
+
+                                <a
+                                    href="${image.page_url}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    ${escapeHtml(
+                                        image.title
+                                    )}
+                                </a>
+
+                            </div>
+
                         </div>
 
-                    </div>
+                    `;
 
-                `;
-
-            });
+                }
+            );
 
 
             html += `
@@ -657,8 +791,8 @@ async function sendQuestion() {
 
                 <div class="no-image">
 
-                    🖼️ No suitable image was found
-                    for this topic.
+                    🖼️ No suitable image
+                    was found for this topic.
 
                 </div>
 
@@ -685,10 +819,13 @@ async function sendQuestion() {
 
 
 // =========================================================
-// HISTORY
+// HISTORY - ADD
 // =========================================================
 
-function addToHistory(question, answer) {
+function addToHistory(
+    question,
+    answer
+) {
 
     const item = {
 
@@ -705,7 +842,6 @@ function addToHistory(question, answer) {
     history.unshift(item);
 
 
-    // Keep only latest 50
     history =
         history.slice(0, 50);
 
@@ -721,7 +857,7 @@ function addToHistory(question, answer) {
 
 
 // =========================================================
-// SHOW / HIDE HISTORY
+// HISTORY - TOGGLE
 // =========================================================
 
 function toggleHistory() {
@@ -732,26 +868,37 @@ function toggleHistory() {
         );
 
 
+    const favoritesPanel =
+        document.getElementById(
+            "favoritesPanel"
+        );
+
+
+    favoritesPanel.style.display =
+        "none";
+
+
     if (
         panel.style.display === "none" ||
         panel.style.display === ""
     ) {
 
-        panel.style.display = "block";
+        panel.style.display =
+            "block";
 
         renderHistory();
 
     } else {
 
-        panel.style.display = "none";
+        panel.style.display =
+            "none";
 
     }
-
 }
 
 
 // =========================================================
-// RENDER HISTORY
+// HISTORY - RENDER
 // =========================================================
 
 function renderHistory() {
@@ -765,9 +912,13 @@ function renderHistory() {
     if (history.length === 0) {
 
         list.innerHTML = `
+
             <div class="no-image">
+
                 تراوسه هېڅ History نشته.
+
             </div>
+
         `;
 
         return;
@@ -777,53 +928,72 @@ function renderHistory() {
     let html = "";
 
 
-    history.forEach(function(item, index) {
+    history.forEach(
+        function(item, index) {
 
-        html += `
+            html += `
 
-            <div class="history-item">
+                <div class="history-item">
 
-                <div
-                    class="history-question"
-                    onclick="loadHistory(${index})"
-                >
-                    ${escapeHtml(item.question)}
+                    <div class="history-question">
+
+                        ${escapeHtml(
+                            item.question
+                        )}
+
+                    </div>
+
+
+                    <div class="history-date">
+
+                        ${escapeHtml(
+                            item.date
+                        )}
+
+                    </div>
+
+
+                    <div class="history-actions">
+
+                        <button
+                            onclick="
+                                loadHistory(
+                                    ${index}
+                                )
+                            "
+                        >
+                            📖 Open
+                        </button>
+
+
+                        <button
+                            class="delete-button"
+                            onclick="
+                                deleteHistory(
+                                    ${index}
+                                )
+                            "
+                        >
+                            🗑️ Delete
+                        </button>
+
+                    </div>
+
                 </div>
 
-                <div class="history-date">
-                    ${escapeHtml(item.date)}
-                </div>
+            `;
 
-                <div class="history-actions">
-
-                    <button
-                        onclick="loadHistory(${index})"
-                    >
-                        📖 Open
-                    </button>
-
-                    <button
-                        class="delete-button"
-                        onclick="deleteHistory(${index})"
-                    >
-                        🗑️ Delete
-                    </button>
-
-                </div>
-
-            </div>
-
-        `;
-
-    });
+        }
+    );
 
 
-    list.innerHTML = html;
+    list.innerHTML =
+        html;
 }
 
 
 // =========================================================
-// LOAD HISTORY
+// HISTORY - LOAD
 // =========================================================
 
 function loadHistory(index) {
@@ -837,18 +1007,21 @@ function loadHistory(index) {
     }
 
 
-    document.getElementById("msg")
-        .value =
+    document.getElementById(
+        "msg"
+    ).value =
         item.question;
 
 
-    document.getElementById("answer")
-        .innerText =
+    document.getElementById(
+        "answer"
+    ).innerText =
         item.answer;
 
 
     currentQuestion =
         item.question;
+
 
     currentAnswer =
         item.answer;
@@ -856,24 +1029,27 @@ function loadHistory(index) {
 
     document.getElementById(
         "historyPanel"
-    ).style.display = "none";
+    ).style.display =
+        "none";
 
 
     window.scrollTo({
         top: 0,
         behavior: "smooth"
     });
-
 }
 
 
 // =========================================================
-// DELETE HISTORY
+// HISTORY - DELETE
 // =========================================================
 
 function deleteHistory(index) {
 
-    history.splice(index, 1);
+    history.splice(
+        index,
+        1
+    );
 
 
     localStorage.setItem(
@@ -887,7 +1063,7 @@ function deleteHistory(index) {
 
 
 // =========================================================
-// CLEAR HISTORY
+// HISTORY - CLEAR
 // =========================================================
 
 function clearHistory() {
@@ -897,6 +1073,7 @@ function clearHistory() {
             "ایا غواړئ ټول History پاک کړئ؟"
         )
     ) {
+
         return;
     }
 
@@ -914,7 +1091,7 @@ function clearHistory() {
 
 
 // =========================================================
-// SAVE FAVORITE
+// FAVORITES - SAVE
 // =========================================================
 
 function saveCurrentAnswer() {
@@ -933,14 +1110,16 @@ function saveCurrentAnswer() {
 
 
     const exists =
-        favorites.some(function(item) {
+        favorites.some(
+            function(item) {
 
-            return (
-                item.question ===
-                currentQuestion
-            );
+                return (
+                    item.question ===
+                    currentQuestion
+                );
 
-        });
+            }
+        );
 
 
     if (exists) {
@@ -948,8 +1127,6 @@ function saveCurrentAnswer() {
         alert(
             "دا ځواب مخکې خوندي شوی."
         );
-
-        renderFavorites();
 
         return;
     }
@@ -975,7 +1152,9 @@ function saveCurrentAnswer() {
 
     localStorage.setItem(
         "medai_favorites",
-        JSON.stringify(favorites)
+        JSON.stringify(
+            favorites
+        )
     );
 
 
@@ -985,12 +1164,11 @@ function saveCurrentAnswer() {
 
 
     renderFavorites();
-
 }
 
 
 // =========================================================
-// FAVORITES PANEL
+// FAVORITES - TOGGLE
 // =========================================================
 
 function toggleFavorites() {
@@ -1001,26 +1179,37 @@ function toggleFavorites() {
         );
 
 
+    const historyPanel =
+        document.getElementById(
+            "historyPanel"
+        );
+
+
+    historyPanel.style.display =
+        "none";
+
+
     if (
         panel.style.display === "none" ||
         panel.style.display === ""
     ) {
 
-        panel.style.display = "block";
+        panel.style.display =
+            "block";
 
         renderFavorites();
 
     } else {
 
-        panel.style.display = "none";
+        panel.style.display =
+            "none";
 
     }
-
 }
 
 
 // =========================================================
-// RENDER FAVORITES
+// FAVORITES - RENDER
 // =========================================================
 
 function renderFavorites() {
@@ -1034,9 +1223,14 @@ function renderFavorites() {
     if (favorites.length === 0) {
 
         list.innerHTML = `
+
             <div class="no-image">
-                تراوسه هېڅ خوندي شوی ځواب نشته.
+
+                تراوسه هېڅ خوندي شوی
+                ځواب نشته.
+
             </div>
+
         `;
 
         return;
@@ -1046,54 +1240,81 @@ function renderFavorites() {
     let html = "";
 
 
-    favorites.forEach(function(item, index) {
+    favorites.forEach(
+        function(item, index) {
 
-        html += `
+            html += `
 
-            <div class="favorite-item">
+                <div class="favorite-item">
 
-                <div class="favorite-question">
-                    ⭐ ${escapeHtml(item.question)}
+                    <div class="favorite-question">
+
+                        ⭐ ${escapeHtml(
+                            item.question
+                        )}
+
+                    </div>
+
+
+                    <div class="favorite-answer">
+
+                        ${escapeHtml(
+                            item.answer
+                        )}
+
+                    </div>
+
+
+                    <div class="history-date">
+
+                        ${escapeHtml(
+                            item.date
+                        )}
+
+                    </div>
+
+
+                    <div class="favorite-actions">
+
+                        <button
+                            onclick="
+                                loadFavorite(
+                                    ${index}
+                                )
+                            "
+                        >
+                            📖 Open
+                        </button>
+
+
+                        <button
+                            class="delete-button"
+                            onclick="
+                                deleteFavorite(
+                                    ${index}
+                                )
+                            "
+                        >
+                            🗑️ Delete
+                        </button>
+
+                    </div>
+
                 </div>
 
-                <div class="favorite-answer">
-                    ${escapeHtml(item.answer)}
-                </div>
+            `;
 
-                <div class="history-date">
-                    ${escapeHtml(item.date)}
-                </div>
-
-                <div class="favorite-actions">
-
-                    <button
-                        onclick="loadFavorite(${index})"
-                    >
-                        📖 Open
-                    </button>
-
-                    <button
-                        class="delete-button"
-                        onclick="deleteFavorite(${index})"
-                    >
-                        🗑️ Delete
-                    </button>
-
-                </div>
-
-            </div>
-
-        `;
-
-    });
+        }
+    );
 
 
-    list.innerHTML = html;
+    list.innerHTML =
+        html;
 }
 
 
 // =========================================================
-// LOAD FAVORITE
+// FAVORITES - LOAD
 // =========================================================
 
 function loadFavorite(index) {
@@ -1107,18 +1328,21 @@ function loadFavorite(index) {
     }
 
 
-    document.getElementById("msg")
-        .value =
+    document.getElementById(
+        "msg"
+    ).value =
         item.question;
 
 
-    document.getElementById("answer")
-        .innerText =
+    document.getElementById(
+        "answer"
+    ).innerText =
         item.answer;
 
 
     currentQuestion =
         item.question;
+
 
     currentAnswer =
         item.answer;
@@ -1126,29 +1350,34 @@ function loadFavorite(index) {
 
     document.getElementById(
         "favoritesPanel"
-    ).style.display = "none";
+    ).style.display =
+        "none";
 
 
     window.scrollTo({
         top: 0,
         behavior: "smooth"
     });
-
 }
 
 
 // =========================================================
-// DELETE FAVORITE
+// FAVORITES - DELETE
 // =========================================================
 
 function deleteFavorite(index) {
 
-    favorites.splice(index, 1);
+    favorites.splice(
+        index,
+        1
+    );
 
 
     localStorage.setItem(
         "medai_favorites",
-        JSON.stringify(favorites)
+        JSON.stringify(
+            favorites
+        )
     );
 
 
@@ -1163,27 +1392,96 @@ function deleteFavorite(index) {
 function escapeHtml(text) {
 
     const div =
-        document.createElement("div");
+        document.createElement(
+            "div"
+        );
+
 
     div.textContent =
         text;
+
 
     return div.innerHTML;
 }
 
 
 // =========================================================
-// WIKIMEDIA IMAGE SEARCH
+// DARK MODE
 // =========================================================
 
-function searchImages() {
-    // Images are handled by Flask backend.
+function toggleDarkMode() {
+
+    document.body.classList.toggle(
+        "dark-mode"
+    );
+
+
+    const darkMode =
+        document.body.classList.contains(
+            "dark-mode"
+        );
+
+
+    localStorage.setItem(
+        "medai_dark_mode",
+        darkMode
+        ? "on"
+        : "off"
+    );
+
+
+    updateDarkModeButton();
 }
 
 
 // =========================================================
-// GEMINI + IMAGE BACKEND
+// DARK MODE BUTTON
 // =========================================================
+
+function updateDarkModeButton() {
+
+    const button =
+        document.getElementById(
+            "darkModeButton"
+        );
+
+
+    if (!button) {
+        return;
+    }
+
+
+    const darkMode =
+        document.body.classList.contains(
+            "dark-mode"
+        );
+
+
+    button.innerText =
+        darkMode
+        ? "☀️ Light Mode"
+        : "🌙 Dark Mode";
+}
+
+
+// =========================================================
+// LOAD DARK MODE
+// =========================================================
+
+if (
+    localStorage.getItem(
+        "medai_dark_mode"
+    ) === "on"
+) {
+
+    document.body.classList.add(
+        "dark-mode"
+    );
+}
+
+
+updateDarkModeButton();
+
 
 </script>
 
@@ -1203,6 +1501,7 @@ def search_wikimedia_images(search_term):
         "https://commons.wikimedia.org/"
         "w/api.php"
     )
+
 
     params = {
 
@@ -1228,6 +1527,7 @@ def search_wikimedia_images(search_term):
 
     }
 
+
     headers = {
 
         "User-Agent":
@@ -1235,6 +1535,7 @@ def search_wikimedia_images(search_term):
         "(medical educational application)"
 
     }
+
 
     try:
 
@@ -1250,9 +1551,12 @@ def search_wikimedia_images(search_term):
 
         )
 
+
         response.raise_for_status()
 
+
         data = response.json()
+
 
         pages = (
             data
@@ -1260,11 +1564,17 @@ def search_wikimedia_images(search_term):
             .get("pages", [])
         )
 
+
         results = []
 
-        if isinstance(pages, dict):
+
+        if isinstance(
+            pages,
+            dict
+        ):
 
             pages = pages.values()
+
 
         for page in pages:
 
@@ -1273,39 +1583,47 @@ def search_wikimedia_images(search_term):
                 []
             )
 
+
             if not imageinfo:
                 continue
 
+
             info = imageinfo[0]
+
 
             image_url = (
                 info.get("thumburl")
-                or info.get("url")
+                or
+                info.get("url")
             )
+
 
             if not image_url:
                 continue
 
-            page_url = (
-                info.get(
-                    "descriptionurl"
-                )
+
+            page_url = info.get(
+                "descriptionurl"
             )
+
 
             title = page.get(
                 "title",
                 "Medical image"
             )
 
+
             if not page_url:
 
                 page_url = (
                     "https://commons.wikimedia.org/wiki/"
-                    + urllib.parse.quote(
+                    +
+                    urllib.parse.quote(
                         title,
                         safe=""
                     )
                 )
+
 
             results.append({
 
@@ -1323,7 +1641,9 @@ def search_wikimedia_images(search_term):
 
             })
 
+
         return results
+
 
     except Exception as e:
 
@@ -1331,6 +1651,7 @@ def search_wikimedia_images(search_term):
             "Wikimedia error:",
             str(e)
         )
+
 
         return []
 
@@ -1346,17 +1667,23 @@ def search_wikimedia_images(search_term):
 def chat():
 
     data = (
-        request.get_json(
+        request
+        .get_json(
             silent=True
         )
         or {}
     )
 
+
     message = (
         data
-        .get("message", "")
+        .get(
+            "message",
+            ""
+        )
         .strip()
     )
+
 
     if not message:
 
@@ -1372,6 +1699,7 @@ def chat():
         "GEMINI_API_KEY"
     )
 
+
     if not api_key:
 
         return jsonify({
@@ -1383,7 +1711,7 @@ def chat():
 
 
     # =====================================================
-    # MULTILINGUAL MEDICAL PROMPT
+    # MEDICAL PROMPT
     # =====================================================
 
     prompt = f"""
@@ -1450,14 +1778,12 @@ USER QUESTION:
     # =====================================================
 
     gemini_url = (
-
         "https://generativelanguage.googleapis.com/"
         "v1beta/models/"
         "gemini-3.5-flash-lite:"
         "generateContent?key="
-
-        + api_key
-
+        +
+        api_key
     )
 
 
@@ -1481,8 +1807,10 @@ USER QUESTION:
                         "parts": [
 
                             {
+
                                 "text":
                                 prompt
+
                             }
 
                         ]
@@ -1507,7 +1835,8 @@ USER QUESTION:
 
                 "error":
                 "Gemini API خطا ورکړه: "
-                + str(gemini_data)
+                +
+                str(gemini_data)
 
             }), 500
 
@@ -1688,25 +2017,29 @@ USER QUESTION:
         }
 
 
-        lower_message = (
+        lower_message =
             message.lower()
-        )
 
 
         for word, english in (
             translations.items()
         ):
 
-            if word.lower() in lower_message:
+            if (
+                word.lower()
+                in lower_message
+            ):
 
-                search_term = english
+                search_term =
+                    english
 
                 break
 
 
-        images = search_wikimedia_images(
-            search_term
-        )
+        images =
+            search_wikimedia_images(
+                search_term
+            )
 
 
         # =================================================
@@ -1742,11 +2075,13 @@ USER QUESTION:
             str(e)
         )
 
+
         return jsonify({
 
             "error":
             "د AI سره د اړیکې ستونزه: "
-            + str(e)
+            +
+            str(e)
 
         }), 500
 
