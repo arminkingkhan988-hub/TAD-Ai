@@ -1,12 +1,12 @@
 import os
 import requests
 from flask import Flask, request, jsonify
-
 app = Flask(__name__)
-
+import os
+import requests
+from flask import Flask, request, jsonify
+app = Flask(__name__)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-
-
 HTML = r"""
 <!DOCTYPE html>
 <html lang="ps" dir="rtl">
