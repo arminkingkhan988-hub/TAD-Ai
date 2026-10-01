@@ -12,12 +12,8 @@ HTML = r"""
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<html lang="ps" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>MedAI</title>
+    <title>MedAI - Medical AI</title>
 
     <style>
         * {
@@ -29,149 +25,141 @@ HTML = r"""
             font-family: Arial, Tahoma, sans-serif;
             background: #f4f7fb;
             color: #172033;
-            transition: background 0.3s, color 0.3s;
+            transition: 0.3s;
         }
 
         body.dark {
-            background: #111827;
-            color: #f3f4f6;
+            background: #101827;
+            color: #f1f5f9;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #0d6efd, #00a6a6);
+            color: white;
+            padding: 22px 15px;
+            text-align: center;
+        }
+
+        .header h1 {
+            margin: 0 0 8px;
+            font-size: 32px;
+        }
+
+        .header p {
+            margin: 0;
+            font-size: 16px;
         }
 
         .container {
-            width: 94%;
             max-width: 1000px;
             margin: auto;
-            padding: 20px 0 40px;
+            padding: 18px;
         }
 
-        header,
-        .card {
-            background: #ffffff;
-            border-radius: 18px;
-            padding: 20px;
-            margin-bottom: 18px;
-            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.07);
-            transition: background 0.3s, color 0.3s;
-        }
-
-        body.dark header,
-        body.dark .card {
-            background: #1f2937;
-            color: #f3f4f6;
-        }
-
-        .top {
+        .top-buttons {
             display: flex;
-            justify-content: space-between;
-            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 15px 0;
+        }
+
+        button {
+            border: none;
+            border-radius: 10px;
+            padding: 11px 16px;
+            cursor: pointer;
+            font-size: 15px;
+        }
+
+        .dark-btn {
+            background: #172033;
+            color: white;
+        }
+
+        body.dark .dark-btn {
+            background: #e5e7eb;
+            color: #111827;
+        }
+
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 18px;
+            margin-bottom: 18px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.07);
+        }
+
+        body.dark .card {
+            background: #172033;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.25);
+        }
+
+        .question-area {
+            display: flex;
             gap: 10px;
             flex-wrap: wrap;
         }
 
-        h1 {
-            margin: 0;
-            color: #1677ff;
-        }
-
-        h2 {
-            margin-top: 0;
-        }
-
-        .subtitle {
-            margin-top: 8px;
-            color: #667085;
-        }
-
-        body.dark .subtitle {
-            color: #cbd5e1;
-        }
-
-        button {
-            border: 0;
-            border-radius: 12px;
-            padding: 11px 15px;
-            cursor: pointer;
-            font-size: 15px;
-            margin: 4px;
-        }
-
-        .dark-button {
-            background: #111827;
-            color: white;
-        }
-
-        body.dark .dark-button {
-            background: #f3f4f6;
-            color: #111827;
-        }
-
         textarea {
-            width: 100%;
-            min-height: 120px;
+            flex: 1;
+            min-width: 220px;
+            min-height: 100px;
             resize: vertical;
-            padding: 15px;
-            border-radius: 14px;
-            border: 1px solid #d0d5dd;
+            border: 2px solid #dbe3ee;
+            border-radius: 12px;
+            padding: 14px;
             font-size: 16px;
-            outline: none;
+            font-family: inherit;
             background: white;
-            color: #111827;
+            color: #172033;
         }
 
         body.dark textarea {
-            background: #111827;
+            background: #0f172a;
             color: white;
-            border-color: #475569;
+            border-color: #334155;
         }
 
-        .send-button {
-            background: #1677ff;
-            color: white;
-            width: 100%;
-            margin: 10px 0;
-            font-weight: bold;
-        }
-
-        .voice-button {
-            background: #7c3aed;
+        .main-btn {
+            background: #0d6efd;
             color: white;
         }
 
-        .speak-button {
-            background: #059669;
+        .voice-btn {
+            background: #16a34a;
             color: white;
         }
 
-        .stop-button {
+        .stop-btn {
             background: #dc2626;
             color: white;
         }
 
-        .save-button {
-            background: #f59e0b;
-            color: white;
-        }
-
-        .section-title {
-            margin-top: 0;
-        }
-
-        #answer {
-            line-height: 1.9;
+        .result {
             white-space: pre-wrap;
+            line-height: 1.9;
+            font-size: 16px;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 15px;
+            font-size: 17px;
         }
 
         .warning {
             background: #fff3cd;
             color: #664d03;
-            border-radius: 12px;
-            padding: 13px;
-            margin-top: 15px;
-            line-height: 1.7;
+            border-right: 5px solid #ffc107;
+            padding: 14px;
+            border-radius: 10px;
+            line-height: 1.8;
         }
 
         body.dark .warning {
-            background: #4a3b16;
+            background: #3b3215;
             color: #ffe69c;
         }
 
@@ -186,71 +174,62 @@ HTML = r"""
             width: 100%;
             height: 180px;
             object-fit: cover;
-            border-radius: 14px;
+            border-radius: 12px;
+            background: #eee;
         }
 
         .topics {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-            gap: 12px;
+            gap: 10px;
         }
 
-        .topic-card {
-            background: #f8fafc;
-            border-radius: 14px;
-            padding: 15px;
+        .topic {
+            background: #e8f1ff;
+            color: #0756b8;
+            padding: 15px 10px;
+            border-radius: 12px;
             text-align: center;
             cursor: pointer;
-            transition: 0.2s;
-            border: 1px solid #e5e7eb;
+            font-weight: bold;
         }
 
-        body.dark .topic-card {
-            background: #111827;
-            border-color: #374151;
-        }
-
-        .topic-card:hover {
-            transform: translateY(-2px);
-            border-color: #1677ff;
-        }
-
-        .topic-icon {
-            font-size: 30px;
-            display: block;
-            margin-bottom: 7px;
+        body.dark .topic {
+            background: #203452;
+            color: #93c5fd;
         }
 
         .faq-item {
-            background: #f8fafc;
-            border-radius: 12px;
             margin-bottom: 10px;
-            overflow: hidden;
-            border: 1px solid #e5e7eb;
-        }
-
-        body.dark .faq-item {
-            background: #111827;
-            border-color: #374151;
         }
 
         .faq-question {
             width: 100%;
             text-align: right;
-            background: transparent;
-            margin: 0;
-            font-weight: bold;
-            color: inherit;
+            background: #eef3f8;
+            color: #172033;
+        }
+
+        body.dark .faq-question {
+            background: #253247;
+            color: white;
         }
 
         .faq-answer {
             display: none;
-            padding: 0 15px 15px;
+            padding: 12px;
             line-height: 1.8;
+            border: 1px solid #dbe3ee;
+            border-top: none;
+            border-radius: 0 0 10px 10px;
+        }
+
+        body.dark .faq-answer {
+            border-color: #334155;
         }
 
         .history-item {
-            background: #f8fafc;
+            background: #f7f9fc;
             padding: 12px;
             border-radius: 10px;
             margin-bottom: 8px;
@@ -258,38 +237,33 @@ HTML = r"""
         }
 
         body.dark .history-item {
-            background: #111827;
+            background: #202c3d;
         }
 
-        .status {
-            text-align: center;
-            margin: 10px;
-            color: #667085;
+        .small {
+            color: #64748b;
+            font-size: 13px;
         }
 
-        body.dark .status {
-            color: #cbd5e1;
+        body.dark .small {
+            color: #94a3b8;
         }
 
         @media (max-width: 600px) {
-            .container {
-                width: 96%;
-                padding-top: 10px;
+            .header h1 {
+                font-size: 26px;
             }
 
-            header,
-            .card {
-                padding: 15px;
-                border-radius: 14px;
+            .container {
+                padding: 10px;
             }
 
             button {
                 width: 100%;
-                margin: 5px 0;
             }
 
-            .top button {
-                width: auto;
+            .question-area button {
+                width: 100%;
             }
         }
     </style>
@@ -297,380 +271,297 @@ HTML = r"""
 
 <body>
 
+<div class="header">
+    <h1>🩺 MedAI</h1>
+    <p>Medical AI Assistant</p>
+</div>
+
 <div class="container">
 
-    <header>
-        <div class="top">
-            <div>
-                <h1>🩺 MedAI</h1>
+    <div class="top-buttons">
+        <button class="dark-btn" onclick="toggleDarkMode()">
+            🌙 Dark Mode
+        </button>
 
-                <div class="subtitle">
-                    ستاسو هوښیار طبي معلوماتي مرستیال
-                </div>
-            </div>
-
-            <button
-                class="dark-button"
-                type="button"
-                onclick="toggleDarkMode()"
-                id="darkBtn">
-                🌙 Dark Mode
-            </button>
-        </div>
-    </header>
-
-
-    <!-- MEDICAL TOPICS -->
+        <button class="stop-btn" onclick="stopSpeaking()">
+            ⏹️ Stop Voice
+        </button>
+    </div>
 
     <div class="card">
+        <h2>🤖 Medical AI</h2>
 
-        <h2>🗂️ طبي موضوعات</h2>
+        <div class="question-area">
+            <textarea
+                id="msg"
+                placeholder="خپله طبي پوښتنه دلته ولیکئ..."
+            ></textarea>
+
+            <button class="voice-btn" onclick="startVoice()">
+                🎤 Voice Question
+            </button>
+
+            <button class="main-btn" onclick="askAI()">
+                🤖 Ask MedAI
+            </button>
+        </div>
+
+        <div id="loading" class="loading">
+            ⏳ مهرباني وکړئ، ځواب جوړېږي...
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="warning">
+            ⚠️ <b>Medical Safety:</b><br>
+            MedAI یوازې د تعلیمي او معلوماتي موخو لپاره دی.
+            دا د ډاکټر معاینه یا تشخیص نه بدلوي.
+            که د سینې شدید درد، د ساه سخت مشکل، بې هوښۍ،
+            شدید خونریزي یا بل عاجل حالت وي، ژر تر ژره
+            بیړنۍ طبي مرسته وغواړئ.
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>🩺 Medical Topics</h2>
 
         <div class="topics">
 
-            <div class="topic-card"
-                 onclick="selectTopic('Diabetes')">
-                <span class="topic-icon">🩸</span>
-                شکر / Diabetes
+            <div class="topic" onclick="setTopic('Diabetes')">
+                🩸 Diabetes
             </div>
 
-            <div class="topic-card"
-                 onclick="selectTopic('Hypertension')">
-                <span class="topic-icon">❤️</span>
-                لوړ فشار
+            <div class="topic" onclick="setTopic('Blood Pressure')">
+                ❤️ Blood Pressure
             </div>
 
-            <div class="topic-card"
-                 onclick="selectTopic('Pneumonia')">
-                <span class="topic-icon">🫁</span>
-                سینه بغل
+            <div class="topic" onclick="setTopic('Asthma')">
+                🫁 Asthma
             </div>
 
-            <div class="topic-card"
-                 onclick="selectTopic('Heart disease')">
-                <span class="topic-icon">❤️</span>
-                د زړه ناروغۍ
+            <div class="topic" onclick="setTopic('Heart Disease')">
+                ❤️ Heart Disease
             </div>
 
-            <div class="topic-card"
-                 onclick="selectTopic('Kidney disease')">
-                <span class="topic-icon">🫘</span>
-                د پښتورګو ناروغۍ
+            <div class="topic" onclick="setTopic('Anemia')">
+                🩸 Anemia
             </div>
 
-            <div class="topic-card"
-                 onclick="selectTopic('Liver disease')">
-                <span class="topic-icon">🫀</span>
-                د ځیګر ناروغۍ
+            <div class="topic" onclick="setTopic('Migraine')">
+                🧠 Migraine
             </div>
 
-            <div class="topic-card"
-                 onclick="selectTopic('Asthma')">
-                <span class="topic-icon">🫁</span>
-                استما
+            <div class="topic" onclick="setTopic('Pneumonia')">
+                🫁 Pneumonia
             </div>
 
-            <div class="topic-card"
-                 onclick="selectTopic('Cancer')">
-                <span class="topic-icon">🧬</span>
-                سرطان
+            <div class="topic" onclick="setTopic('Gastritis')">
+                🥗 Gastritis
             </div>
 
         </div>
-
     </div>
 
-
-    <!-- CHAT -->
-
     <div class="card">
+        <h2>💡 Answer</h2>
 
-        <h2>🤖 له MedAI څخه پوښتنه وکړئ</h2>
+        <div id="answer" class="result">
+ستاسو ځواب به دلته ښکاره شي.
+        </div>
 
-        <textarea
-            id="msg"
-            placeholder="خپله طبي پوښتنه دلته ولیکئ..."></textarea>
+        <br>
 
-        <button
-            class="voice-button"
-            type="button"
-            onclick="startVoice()">
-            🎤 په غږ پوښتنه وکړئ
+        <button class="main-btn" onclick="speakAnswer()">
+            🔊 Voice Output
         </button>
 
-        <button
-            class="send-button"
-            type="button"
-            onclick="sendMessage()">
-            🔎 پوښتنه واستوئ
+        <button class="stop-btn" onclick="stopSpeaking()">
+            ⏹️ Stop
+        </button>
+    </div>
+
+    <div class="card">
+        <h2>🖼️ Medical Images</h2>
+
+        <div id="images" class="images">
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>🕘 History</h2>
+
+        <button class="stop-btn" onclick="clearHistory()">
+            🗑️ Clear History
         </button>
 
-        <div
-            id="status"
-            class="status">
-        </div>
+        <br><br>
 
+        <div id="history"></div>
     </div>
 
-
-    <!-- ANSWER -->
-
     <div class="card">
+        <h2>⭐ Favorites</h2>
 
-        <h2>📋 ځواب</h2>
-
-        <div id="answer">
-            ستاسو ځواب به دلته ښکاره شي.
-        </div>
-
-        <div class="warning">
-            ⚠️ دا معلومات یوازې د زده کړې او عمومي پوهاوي لپاره دي.
-            MedAI د ډاکټر بدیل نه دی. د جدي یا بیړني حالت په صورت کې
-            له روغتیايي مسلکي سره اړیکه ونیسئ.
-        </div>
-
-        <div style="margin-top:15px;">
-
-            <button
-                class="speak-button"
-                type="button"
-                onclick="speakAnswer()">
-                🔊 ځواب واورئ
-            </button>
-
-            <button
-                class="stop-button"
-                type="button"
-                onclick="stopSpeaking()">
-                ⏹️ غږ ودروئ
-            </button>
-
-            <button
-                class="save-button"
-                type="button"
-                onclick="saveFavorite()">
-                ⭐ Save
-            </button>
-
-        </div>
-
+        <div id="favorites"></div>
     </div>
 
-
-    <!-- IMAGES -->
-
     <div class="card">
-
-        <h2>🖼️ طبي عکسونه</h2>
-
-        <div
-            id="images"
-            class="images">
-        </div>
-
-    </div>
-
-
-    <!-- FAQ -->
-
-    <div class="card">
-
-        <h2>❓ عامې پوښتنې (FAQ)</h2>
+        <h2>❓ FAQ</h2>
 
         <div class="faq-item">
-
-            <button
-                class="faq-question"
-                type="button"
-                onclick="toggleFAQ(this)">
+            <button class="faq-question" onclick="toggleFAQ(1)">
                 MedAI څه شی دی؟
             </button>
 
-            <div class="faq-answer">
-                MedAI یو معلوماتي طبي AI مرستیال دی چې د طبي موضوعاتو
-                په اړه عمومي معلومات وړاندې کوي.
+            <div id="faq1" class="faq-answer">
+                MedAI یو AI طبي معلوماتي مرستیال دی چې د طبي موضوعاتو
+                په اړه عمومي او تعلیمي معلومات وړاندې کوي.
             </div>
-
         </div>
 
-
         <div class="faq-item">
-
-            <button
-                class="faq-question"
-                type="button"
-                onclick="toggleFAQ(this)">
-                آیا MedAI تشخیص کوي؟
+            <button class="faq-question" onclick="toggleFAQ(2)">
+                آیا MedAI تشخیص کولی شي؟
             </button>
 
-            <div class="faq-answer">
-                نه. MedAI باید د مسلکي ډاکټر د معاینې او تشخیص بدیل ونه ګڼل شي.
+            <div id="faq2" class="faq-answer">
+                نه. MedAI باید د مسلکي ډاکټر د تشخیص او معاینې بدیل ونه ګڼل شي.
             </div>
-
         </div>
 
-
         <div class="faq-item">
-
-            <button
-                class="faq-question"
-                type="button"
-                onclick="toggleFAQ(this)">
+            <button class="faq-question" onclick="toggleFAQ(3)">
                 آیا زه په خپله ژبه پوښتنه کولی شم؟
             </button>
 
-            <div class="faq-answer">
-                هو. پوښتنه په خپله ژبه ولیکئ؛ AI هڅه کوي ځواب هم
+            <div id="faq3" class="faq-answer">
+                هو. پوښتنه په خپله ژبه ولیکئ؛ AI هڅه کوي ځواب
                 په هماغه ژبه وړاندې کړي.
             </div>
-
         </div>
-
 
         <div class="faq-item">
-
-            <button
-                class="faq-question"
-                type="button"
-                onclick="toggleFAQ(this)">
-                آیا طبي عکسونه هم ښيي؟
+            <button class="faq-question" onclick="toggleFAQ(4)">
+                آیا طبي عکسونه هم ښکاره کېږي؟
             </button>
 
-            <div class="faq-answer">
-                هو، د اړوندو طبي موضوعاتو لپاره موجود Wikimedia عکسونه
-                ښودل کېدای شي.
+            <div id="faq4" class="faq-answer">
+                هو. که اړوند عکسونه موجود وي، MedAI یې د Wikimedia
+                Commons له لارې ښکاره کوي.
             </div>
-
         </div>
-
-    </div>
-
-
-    <!-- HISTORY -->
-
-    <div class="card">
-
-        <h2>🕘 History</h2>
-
-        <div id="history"></div>
-
-        <button
-            type="button"
-            onclick="clearHistory()">
-            🗑️ History پاکول
-        </button>
-
-    </div>
-
-
-    <!-- FAVORITES -->
-
-    <div class="card">
-
-        <h2>⭐ Saved Questions</h2>
-
-        <div id="favorites"></div>
 
     </div>
 
 </div>
 
-
 <script>
 
-/* -------------------------
-   DARK MODE
-------------------------- */
-
-function toggleDarkMode() {
-
-    document.body.classList.toggle("dark");
-
-    const isDark =
-        document.body.classList.contains("dark");
-
-    localStorage.setItem(
-        "medai_dark",
-        isDark ? "1" : "0"
-    );
-
-    updateDarkButton();
+function setTopic(topic) {
+    document.getElementById("msg").value =
+        "Please explain " + topic + " in detail.";
+    window.scrollTo({
+        top: 0,
+        behavior: "smooth"
+    });
 }
 
 
-function updateDarkButton() {
+async function askAI() {
 
-    const button =
-        document.getElementById("darkBtn");
+    const message =
+        document.getElementById("msg").value.trim();
 
-    if (!button) {
+    if (!message) {
+        alert("مهرباني وکړئ لومړی خپله پوښتنه ولیکئ.");
         return;
     }
 
-    if (
-        document.body.classList.contains("dark")
-    ) {
-        button.innerText = "☀️ Light Mode";
-    } else {
-        button.innerText = "🌙 Dark Mode";
-    }
-}
-
-
-function loadDarkMode() {
-
-    const saved =
-        localStorage.getItem("medai_dark");
-
-    if (saved === "1") {
-        document.body.classList.add("dark");
-    }
-
-    updateDarkButton();
-}
-
-
-/* -------------------------
-   MEDICAL TOPICS
-------------------------- */
-
-function selectTopic(topic) {
-
-    const message =
-        "Please explain " +
-        topic +
-        " in detail, including definition, causes, types, risk factors, signs and symptoms, diagnosis, treatment, prevention, complications, and important points.";
-
-    document.getElementById("msg").value =
-        message;
-
-    document.getElementById("msg").focus();
-}
-
-
-/* -------------------------
-   FAQ
-------------------------- */
-
-function toggleFAQ(button) {
+    const loading =
+        document.getElementById("loading");
 
     const answer =
-        button.nextElementSibling;
+        document.getElementById("answer");
 
-    if (answer.style.display === "block") {
+    loading.style.display = "block";
 
-        answer.style.display = "none";
+    answer.innerText =
+        "⏳ AI ځواب جوړوي...";
 
-    } else {
+    document.getElementById("images").innerHTML = "";
 
-        answer.style.display = "block";
+    try {
+
+        const response = await fetch("/chat", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                message: message
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(
+                data.error || "Server error"
+            );
+        }
+
+        answer.innerText =
+            data.answer || "ځواب ترلاسه نه شو.";
+
+        saveHistory(message, data.answer);
+
+        showImages(data.images || []);
+
+        loadHistory();
+
+    } catch (error) {
+
+        answer.innerText =
+            "❌ ستونزه رامنځته شوه: " +
+            error.message;
+
+    } finally {
+
+        loading.style.display = "none";
     }
 }
 
 
-/* -------------------------
-   VOICE QUESTION
-------------------------- */
+function showImages(images) {
+
+    const container =
+        document.getElementById("images");
+
+    container.innerHTML = "";
+
+    if (!images || images.length === 0) {
+        container.innerHTML =
+            "<p>د دې موضوع لپاره عکس ونه موندل شو.</p>";
+        return;
+    }
+
+    images.forEach(function(url) {
+
+        const img =
+            document.createElement("img");
+
+        img.src = url;
+
+        img.alt = "Medical image";
+
+        img.onerror = function() {
+            img.style.display = "none";
+        };
+
+        container.appendChild(img);
+    });
+}
+
 
 function startVoice() {
 
@@ -681,7 +572,7 @@ function startVoice() {
     if (!SpeechRecognition) {
 
         alert(
-            "ستاسو Chrome د Voice Question ملاتړ نه کوي."
+            "ستاسو Browser د Voice Question ملاتړ نه کوي."
         );
 
         return;
@@ -696,13 +587,11 @@ function startVoice() {
 
     recognition.maxAlternatives = 1;
 
-
     recognition.onstart = function() {
 
         document.getElementById("msg").value =
             "🎤 واورېدل کېږي...";
     };
-
 
     recognition.onresult = function(event) {
 
@@ -713,7 +602,6 @@ function startVoice() {
             text;
     };
 
-
     recognition.onerror = function() {
 
         document.getElementById("msg").value = "";
@@ -723,192 +611,40 @@ function startVoice() {
         );
     };
 
-
     recognition.start();
 }
 
 
-/* -------------------------
-   SEND MESSAGE
-------------------------- */
-
-async function sendMessage() {
-
-    const message =
-        document
-            .getElementById("msg")
-            .value
-            .trim();
-
-
-    if (!message) {
-
-        alert(
-            "مهرباني وکړئ پوښتنه ولیکئ."
-        );
-
-        return;
-    }
-
-
-    currentQuestion = message;
-
-
-    document.getElementById("status").innerText =
-        "⏳ ځواب چمتو کېږي...";
-
-
-    document.getElementById("answer").innerText =
-        "مهرباني وکړئ انتظار وکړئ...";
-
-
-    document.getElementById("images").innerHTML =
-        "";
-
-
-    try {
-
-        const response =
-            await fetch(
-                "/chat",
-                {
-                    method: "POST",
-
-                    headers: {
-                        "Content-Type":
-                            "application/json"
-                    },
-
-                    body: JSON.stringify({
-                        message: message
-                    })
-                }
-            );
-
-
-        const data =
-            await response.json();
-
-
-        if (!response.ok) {
-
-            throw new Error(
-                data.error ||
-                "Server error"
-            );
-        }
-
-
-        const answer =
-            data.answer ||
-            "ځواب ونه موندل شو.";
-
-
-        document.getElementById("answer").innerText =
-            answer;
-
-
-        showImages(
-            data.images || []
-        );
-
-
-        saveHistory(
-            message,
-            answer
-        );
-
-
-        document.getElementById("status").innerText =
-            "✅ ځواب چمتو شو.";
-
-    } catch (error) {
-
-        document.getElementById("answer").innerText =
-            "❌ ستونزه: " +
-            error.message;
-
-        document.getElementById("status").innerText =
-            "";
-    }
-}
-
-
-/* -------------------------
-   MEDICAL IMAGES
-------------------------- */
-
-function showImages(images) {
-
-    const container =
-        document.getElementById("images");
-
-    container.innerHTML = "";
-
-
-    images.forEach(function(url) {
-
-        const image =
-            document.createElement("img");
-
-        image.src = url;
-
-        image.alt = "Medical image";
-
-        image.loading = "lazy";
-
-        container.appendChild(image);
-    });
-}
-
-
-/* -------------------------
-   VOICE OUTPUT
-------------------------- */
-
 function speakAnswer() {
 
     const answer =
-        document
-            .getElementById("answer")
-            .innerText
-            .trim();
-
+        document.getElementById("answer")
+        .innerText
+        .trim();
 
     if (
         !answer ||
-        answer ===
-        "ستاسو ځواب به دلته ښکاره شي."
+        answer === "ستاسو ځواب به دلته ښکاره شي."
     ) {
 
-        alert(
-            "لومړی یوه پوښتنه وکړئ."
-        );
+        alert("لومړی یوه پوښتنه وکړئ.");
 
         return;
     }
 
-
-    if (
-        !("speechSynthesis" in window)
-    ) {
+    if (!("speechSynthesis" in window)) {
 
         alert(
-            "ستاسو Chrome د Voice Output ملاتړ نه کوي."
+            "ستاسو Browser د Voice Output ملاتړ نه کوي."
         );
 
         return;
     }
-
 
     window.speechSynthesis.cancel();
 
-
     const speech =
-        new SpeechSynthesisUtterance(
-            answer
-        );
-
+        new SpeechSynthesisUtterance(answer);
 
     speech.lang = "en-US";
 
@@ -918,286 +654,247 @@ function speakAnswer() {
 
     speech.volume = 1;
 
-
-    window.speechSynthesis.speak(
-        speech
-    );
+    window.speechSynthesis.speak(speech);
 }
 
 
 function stopSpeaking() {
 
-    if (
-        "speechSynthesis" in window
-    ) {
-
+    if ("speechSynthesis" in window) {
         window.speechSynthesis.cancel();
     }
 }
 
 
-/* -------------------------
-   HISTORY
-------------------------- */
+function toggleDarkMode() {
 
-function saveHistory(
-    question,
-    answer
-) {
+    document.body.classList.toggle("dark");
+
+    const enabled =
+        document.body.classList.contains("dark");
+
+    localStorage.setItem(
+        "medai_dark",
+        enabled ? "1" : "0"
+    );
+}
+
+
+function loadDarkMode() {
+
+    const enabled =
+        localStorage.getItem("medai_dark");
+
+    if (enabled === "1") {
+        document.body.classList.add("dark");
+    }
+}
+
+
+function saveHistory(question, answer) {
 
     let history =
         JSON.parse(
-            localStorage.getItem(
-                "medai_history"
-            ) || "[]"
+            localStorage.getItem("medai_history") || "[]"
         );
-
 
     history.unshift({
         question: question,
         answer: answer,
-        date:
-            new Date().toLocaleString()
+        time: new Date().toLocaleString()
     });
-
 
     history =
         history.slice(0, 20);
-
 
     localStorage.setItem(
         "medai_history",
         JSON.stringify(history)
     );
-
-
-    showHistory();
 }
 
 
-function showHistory() {
+function loadHistory() {
 
     const container =
-        document.getElementById(
-            "history"
-        );
+        document.getElementById("history");
 
-
-    let history =
+    const history =
         JSON.parse(
-            localStorage.getItem(
-                "medai_history"
-            ) || "[]"
+            localStorage.getItem("medai_history") || "[]"
         );
-
 
     container.innerHTML = "";
 
-
     if (history.length === 0) {
 
-        container.innerText =
-            "تر اوسه History نشته.";
+        container.innerHTML =
+            "<p>تر اوسه History نشته.</p>";
 
         return;
     }
 
+    history.forEach(function(item, index) {
 
-    history.forEach(
-        function(item) {
+        const div =
+            document.createElement("div");
 
-            const div =
-                document.createElement(
-                    "div"
-                );
+        div.className =
+            "history-item";
 
+        div.innerHTML =
+            "<b>" +
+            escapeHTML(item.question) +
+            "</b><br>" +
+            "<span class='small'>" +
+            escapeHTML(item.time) +
+            "</span>";
 
-            div.className =
-                "history-item";
+        div.onclick = function() {
 
-
-            div.innerText =
+            document.getElementById("msg").value =
                 item.question;
 
+            document.getElementById("answer").innerText =
+                item.answer;
+        };
 
-            div.onclick =
-                function() {
-
-                    document
-                        .getElementById("msg")
-                        .value =
-                        item.question;
-
-
-                    document
-                        .getElementById("answer")
-                        .innerText =
-                        item.answer;
-
-
-                    currentQuestion =
-                        item.question;
-                };
-
-
-            container.appendChild(div);
-        }
-    );
+        container.appendChild(div);
+    });
 }
 
 
 function clearHistory() {
 
-    localStorage.removeItem(
-        "medai_history"
-    );
+    localStorage.removeItem("medai_history");
 
-    showHistory();
+    loadHistory();
 }
 
 
-/* -------------------------
-   FAVORITES
-------------------------- */
-
 function saveFavorite() {
 
-    if (!currentQuestion) {
+    const question =
+        document.getElementById("msg")
+        .value
+        .trim();
 
-        alert(
-            "لومړی یوه پوښتنه وکړئ."
-        );
+    const answer =
+        document.getElementById("answer")
+        .innerText
+        .trim();
 
+    if (!question || !answer) {
         return;
     }
 
-
-    const answer =
-        document
-            .getElementById("answer")
-            .innerText;
-
-
     let favorites =
         JSON.parse(
-            localStorage.getItem(
-                "medai_favorites"
-            ) || "[]"
+            localStorage.getItem("medai_favorites") || "[]"
         );
 
-
     favorites.unshift({
-
-        question:
-            currentQuestion,
-
-        answer:
-            answer
+        question: question,
+        answer: answer
     });
 
-
     favorites =
-        favorites.slice(0, 30);
-
+        favorites.slice(0, 20);
 
     localStorage.setItem(
         "medai_favorites",
         JSON.stringify(favorites)
     );
 
-
-    showFavorites();
-
-
-    alert(
-        "⭐ پوښتنه Save شوه."
-    );
+    loadFavorites();
 }
 
 
-function showFavorites() {
+function loadFavorites() {
 
     const container =
-        document.getElementById(
-            "favorites"
-        );
+        document.getElementById("favorites");
 
-
-    let favorites =
+    const favorites =
         JSON.parse(
-            localStorage.getItem(
-                "medai_favorites"
-            ) || "[]"
+            localStorage.getItem("medai_favorites") || "[]"
         );
-
 
     container.innerHTML = "";
 
-
     if (favorites.length === 0) {
 
-        container.innerText =
-            "تر اوسه Saved پوښتنې نشته.";
+        container.innerHTML =
+            "<p>تر اوسه Favorite نشته.</p>";
 
         return;
     }
 
+    favorites.forEach(function(item) {
 
-    favorites.forEach(
-        function(item) {
+        const div =
+            document.createElement("div");
 
-            const div =
-                document.createElement(
-                    "div"
-                );
+        div.className =
+            "history-item";
 
+        div.innerHTML =
+            "⭐ <b>" +
+            escapeHTML(item.question) +
+            "</b>";
 
-            div.className =
-                "history-item";
+        div.onclick = function() {
 
-
-            div.innerText =
-                "⭐ " +
+            document.getElementById("msg").value =
                 item.question;
 
+            document.getElementById("answer").innerText =
+                item.answer;
+        };
 
-            div.onclick =
-                function() {
-
-                    document
-                        .getElementById("msg")
-                        .value =
-                        item.question;
-
-
-                    document
-                        .getElementById("answer")
-                        .innerText =
-                        item.answer;
-
-
-                    currentQuestion =
-                        item.question;
-                };
-
-
-            container.appendChild(div);
-        }
-    );
+        container.appendChild(div);
+    });
 }
 
 
-/* -------------------------
-   START
-------------------------- */
+function toggleFAQ(number) {
 
-let currentQuestion = "";
+    const element =
+        document.getElementById(
+            "faq" + number
+        );
 
-loadDarkMode();
+    if (element.style.display === "block") {
+        element.style.display = "none";
+    } else {
+        element.style.display = "block";
+    }
+}
 
-showHistory();
 
-showFavorites();
+function escapeHTML(text) {
+
+    const div =
+        document.createElement("div");
+
+    div.textContent =
+        text || "";
+
+    return div.innerHTML;
+}
+
+
+document.addEventListener(
+    "DOMContentLoaded",
+    function() {
+
+        loadDarkMode();
+
+        loadHistory();
+
+        loadFavorites();
+    }
+);
 
 </script>
 
@@ -1206,14 +903,8 @@ showFavorites();
 """
 
 
-# ==========================================
-# MEDICAL IMAGE SEARCH
-# ==========================================
-
 def get_medical_images(query):
-
     try:
-
         url = "https://commons.wikimedia.org/w/api.php"
 
         params = {
@@ -1227,119 +918,67 @@ def get_medical_images(query):
             "iiprop": "url"
         }
 
-
         response = requests.get(
             url,
             params=params,
             timeout=10
         )
 
-
         response.raise_for_status()
-
 
         data = response.json()
 
-
-        pages = (
-            data
-            .get("query", {})
-            .get("pages", {})
+        pages = data.get(
+            "query",
+            {}
+        ).get(
+            "pages",
+            {}
         )
-
 
         images = []
 
-
         for page in pages.values():
 
-            image_info =
-                page.get("imageinfo", [])
-
+            image_info = page.get(
+                "imageinfo",
+                []
+            )
 
             if image_info:
 
-                image_url =
-                    image_info[0].get("url")
-
+                image_url = image_info[0].get(
+                    "url"
+                )
 
                 if image_url:
-
-                    images.append(
-                        image_url
-                    )
-
+                    images.append(image_url)
 
         return images
 
-
     except Exception:
-
         return []
 
 
-# ==========================================
-# HOME
-# ==========================================
+def ask_gemini(message):
 
-@app.route("/")
-def home():
+    if not GEMINI_API_KEY:
+        return (
+            "GEMINI_API_KEY نه ده تنظیم شوې. "
+            "مهرباني وکړئ په Vercel Environment Variables "
+            "کې GEMINI_API_KEY اضافه کړئ."
+        )
 
-    return HTML
+    prompt = f"""
+You are MedAI, a medical educational AI assistant.
 
+The user can ask in any language.
 
-# ==========================================
-# CHAT
-# ==========================================
+Answer in the SAME LANGUAGE as the user's question.
 
-@app.route(
-    "/chat",
-    methods=["POST"]
-)
-def chat():
+Provide clear, educational medical information.
 
-    try:
-
-        data =
-            request.get_json(
-                silent=True
-            ) or {}
-
-
-        message =
-            str(
-                data.get(
-                    "message",
-                    ""
-                )
-            ).strip()
-
-
-        if not message:
-
-            return jsonify({
-                "error":
-                    "Question is required."
-            }), 400
-
-
-        if not GEMINI_API_KEY:
-
-            return jsonify({
-                "error":
-                    "GEMINI_API_KEY is not configured."
-            }), 500
-
-
-        prompt = f"""
-You are MedAI, an educational medical information assistant.
-
-Answer the user's question in the SAME LANGUAGE
-that the user used.
-
-Provide medically responsible educational information.
-
-When appropriate, organize the answer using:
+Use this structure when appropriate:
 
 Definition
 Causes
@@ -1352,145 +991,139 @@ Prevention
 Complications
 Important Points
 
-Safety rules:
+Important safety rules:
 
 - Do not claim to diagnose the user.
-- Do not pretend to examine the patient.
+- Do not pretend to physically examine the patient.
 - Do not invent medical facts.
 - Do not provide personalized prescription or dosage instructions.
-- If symptoms may indicate an emergency, advise urgent medical care.
-- Make clear that the information is educational.
-- Use understandable language.
+- Explain that a qualified healthcare professional should evaluate personal medical concerns.
+- If the question describes a possible emergency, clearly advise urgent medical care.
+- Keep the answer understandable and organized.
 
 User question:
 
 {message}
 """
 
+    url = (
+        "https://generativelanguage.googleapis.com/"
+        "v1beta/models/gemini-3.5-flash-lite:generateContent"
+    )
 
-        api_url = (
-            "https://generativelanguage.googleapis.com/"
-            "v1beta/models/gemini-3.5-flash-lite:generateContent"
-        )
+    params = {
+        "key": GEMINI_API_KEY
+    }
 
-
-        response = requests.post(
-
-            api_url,
-
-            params={
-                "key":
-                    GEMINI_API_KEY
-            },
-
-            json={
-                "contents": [
+    payload = {
+        "contents": [
+            {
+                "parts": [
                     {
-                        "parts": [
-                            {
-                                "text":
-                                    prompt
-                            }
-                        ]
+                        "text": prompt
                     }
                 ]
-            },
+            }
+        ]
+    }
 
-            timeout=60
-        )
+    response = requests.post(
+        url,
+        params=params,
+        json=payload,
+        timeout=60
+    )
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    candidates = data.get(
+        "candidates",
+        []
+    )
+
+    if not candidates:
+        return "AI ځواب ترلاسه نه کړ."
+
+    content = candidates[0].get(
+        "content",
+        {}
+    )
+
+    parts = content.get(
+        "parts",
+        []
+    )
+
+    if not parts:
+        return "AI ځواب ترلاسه نه کړ."
+
+    return parts[0].get(
+        "text",
+        "AI ځواب ترلاسه نه کړ."
+    )
 
 
-        if response.status_code != 200:
+@app.route("/", methods=["GET"])
+def home():
+    return HTML
+
+
+@app.route("/chat", methods=["POST"])
+def chat():
+
+    try:
+
+        data = request.get_json(
+            silent=True
+        ) or {}
+
+        message = str(
+            data.get("message", "")
+        ).strip()
+
+        if not message:
 
             return jsonify({
-                "error":
-                    "Gemini API error: "
-                    + response.text[:500]
-            }), 500
+                "error": "پوښتنه تشه ده."
+            }), 400
 
+        answer = ask_gemini(
+            message
+        )
 
-        gemini_data =
-            response.json()
-
-
-        answer = ""
-
-
-        candidates =
-            gemini_data.get(
-                "candidates",
-                []
-            )
-
-
-        if candidates:
-
-            content =
-                candidates[0].get(
-                    "content",
-                    {}
-                )
-
-
-            parts =
-                content.get(
-                    "parts",
-                    []
-                )
-
-
-            if parts:
-
-                answer =
-                    parts[0].get(
-                        "text",
-                        ""
-                    )
-
-
-        if not answer:
-
-            answer =
-                "ځواب ترلاسه نه شو."
-
-
-        images =
-            get_medical_images(
-                message
-            )
-
+        images = get_medical_images(
+            message
+        )
 
         return jsonify({
-
-            "answer":
-                answer,
-
-            "images":
-                images
-
+            "answer": answer,
+            "images": images
         })
 
-
-    except Exception as error:
+    except requests.exceptions.Timeout:
 
         return jsonify({
+            "error": "AI server ته د ځواب وخت ختم شو."
+        }), 504
 
-            "error":
-                str(error)
+    except requests.exceptions.RequestException:
 
+        return jsonify({
+            "error": "د AI server سره اړیکه ونه شوه."
+        }), 502
+
+    except Exception as e:
+
+        return jsonify({
+            "error": "Server error: " + str(e)
         }), 500
 
 
-# ==========================================
-# RUN
-# ==========================================
-
 if __name__ == "__main__":
-
     app.run(
-
         host="0.0.0.0",
-
         port=int(
             os.environ.get(
                 "PORT",
