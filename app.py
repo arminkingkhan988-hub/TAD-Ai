@@ -89,6 +89,22 @@ button:disabled {
     background: #218838;
 }
 
+.speak-button {
+    background: #8e44ad;
+}
+
+.speak-button:hover {
+    background: #703688;
+}
+
+.stop-button {
+    background: #dc3545;
+}
+
+.stop-button:hover {
+    background: #b02a37;
+}
+
 #answer {
     margin-top: 20px;
     padding: 22px;
@@ -301,7 +317,7 @@ button:disabled {
 <h1>🩺 MedAI</h1>
 
 <div class="subtitle">
-ستاسو د طبي زده کړو هوښیار مرستیال
+    ستاسو د طبي زده کړو هوښیار مرستیال
 </div>
 
 <textarea
@@ -343,8 +359,24 @@ button:disabled {
 </div>
 
 <div id="answer">
-ستاسو ځواب به دلته ښکاره شي.
+    ستاسو ځواب به دلته ښکاره شي.
 </div>
+
+<button
+    class="speak-button"
+    type="button"
+    onclick="speakAnswer()"
+>
+    🔊 ځواب واورئ
+</button>
+
+<button
+    class="stop-button"
+    type="button"
+    onclick="stopSpeaking()"
+>
+    ⏹️ غږ ودروئ
+</button>
 
 <div id="images"></div>
 
@@ -381,12 +413,12 @@ button:disabled {
 
 دا د ډاکټر بدیل نه دی.
 
-د جدي یا بیړنیو نښو په صورت کې
-له روغتیايي مسلکي کس سره اړیکه ونیسئ.
+د جدي یا بیړنیو نښو په صورت کې له روغتیايي مسلکي کس سره اړیکه ونیسئ.
 
 </div>
 
 </div>
+
 
 <script>
 
@@ -423,7 +455,9 @@ function startVoice() {
         new SpeechRecognition();
 
     recognition.lang = "ps-AF";
+
     recognition.interimResults = false;
+
     recognition.maxAlternatives = 1;
 
     recognition.onstart = function() {
@@ -457,12 +491,105 @@ function startVoice() {
 }
 
 
+/* Voice Output */
+
+function speakAnswer() {
+
+    const answer =
+        document.getElementById("answer")
+        .innerText
+        .trim();
+
+    if (
+        !answer ||
+        answer === "ستاسو ځواب به دلته ښکاره شي."
+    ) {
+
+        alert(
+            "لومړی یوه پوښتنه وکړئ."
+        );
+
+        return;
+    }
+
+    if (!("speechSynthesis" in window)) {
+
+        alert(
+            "ستاسو Browser د Voice Output ملاتړ نه کوي."
+        );
+
+        return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    const speech =
+        new SpeechSynthesisUtterance(answer);
+
+    speech.lang = detectSpeechLanguage(
+        currentQuestion
+    );
+
+    speech.rate = 0.9;
+
+    speech.pitch = 1;
+
+    speech.volume = 1;
+
+    window.speechSynthesis.speak(
+        speech
+    );
+}
+
+
+/* Stop Voice Output */
+
+function stopSpeaking() {
+
+    if ("speechSynthesis" in window) {
+
+        window.speechSynthesis.cancel();
+
+    }
+
+}
+
+
+/* Detect language */
+
+function detectSpeechLanguage(text) {
+
+    if (!text) {
+        return "en-US";
+    }
+
+    const pashtoPattern =
+        /[\u0600-\u06FF]/;
+
+    if (pashtoPattern.test(text)) {
+        return "ps-AF";
+    }
+
+    const arabicPattern =
+        /[\u0600-\u06FF]/;
+
+    if (arabicPattern.test(text)) {
+        return "ar-SA";
+    }
+
+    return "en-US";
+}
+
+
 /* Send Question */
 
 async function sendQuestion() {
 
     const message =
-        document.getElementById("msg").value.trim();
+        document
+        .getElementById("msg")
+        .value
+        .trim();
 
     const answer =
         document.getElementById("answer");
@@ -483,6 +610,8 @@ async function sendQuestion() {
         return;
     }
 
+    stopSpeaking();
+
     currentQuestion = message;
 
     answer.innerText =
@@ -497,19 +626,22 @@ async function sendQuestion() {
 
     try {
 
-        const response = await fetch(
-            "/chat",
-            {
-                method: "POST",
-                headers: {
-                    "Content-Type":
-                        "application/json"
-                },
-                body: JSON.stringify({
-                    message: message
-                })
-            }
-        );
+        const response =
+            await fetch(
+                "/chat",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        message: message
+                    })
+                }
+            );
 
         const data =
             await response.json();
@@ -537,54 +669,61 @@ async function sendQuestion() {
 
         }
 
+
         if (
             Array.isArray(data.images) &&
             data.images.length > 0
         ) {
 
             let html = `
+
                 <div class="image-title">
                     🖼️ Related Medical Images
                 </div>
 
                 <div class="image-grid">
+
             `;
 
-            data.images.forEach(function(image) {
+            data.images.forEach(
+                function(image) {
 
-                html += `
-                    <div class="image-card">
+                    html += `
 
-                        <a
-                            href="${image.page_url}"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                        >
-
-                            <img
-                                src="${image.image_url}"
-                                alt="${escapeHtml(image.title)}"
-                                loading="lazy"
-                            >
-
-                        </a>
-
-                        <div class="image-caption">
+                        <div class="image-card">
 
                             <a
                                 href="${image.page_url}"
                                 target="_blank"
                                 rel="noopener noreferrer"
                             >
-                                ${escapeHtml(image.title)}
+
+                                <img
+                                    src="${image.image_url}"
+                                    alt="${escapeHtml(image.title)}"
+                                    loading="lazy"
+                                >
+
                             </a>
+
+                            <div class="image-caption">
+
+                                <a
+                                    href="${image.page_url}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    ${escapeHtml(image.title)}
+                                </a>
+
+                            </div>
 
                         </div>
 
-                    </div>
-                `;
+                    `;
 
-            });
+                }
+            );
 
             html += "</div>";
 
@@ -593,11 +732,16 @@ async function sendQuestion() {
         } else {
 
             images.innerHTML = `
+
                 <div class="no-image">
+
                     🖼️ No suitable image was found
                     for this topic.
+
                 </div>
+
             `;
+
         }
 
     } catch (error) {
@@ -618,12 +762,21 @@ async function sendQuestion() {
 
 /* History */
 
-function addToHistory(question, answer) {
+function addToHistory(
+    question,
+    answer
+) {
 
     history.unshift({
+
         question: question,
+
         answer: answer,
-        date: new Date().toLocaleString()
+
+        date:
+            new Date()
+            .toLocaleString()
+
     });
 
     history =
@@ -641,20 +794,24 @@ function addToHistory(question, answer) {
 function toggleHistory() {
 
     const panel =
-        document.getElementById("historyPanel");
+        document.getElementById(
+            "historyPanel"
+        );
 
     if (
         panel.style.display === "none" ||
         panel.style.display === ""
     ) {
 
-        panel.style.display = "block";
+        panel.style.display =
+            "block";
 
         renderHistory();
 
     } else {
 
-        panel.style.display = "none";
+        panel.style.display =
+            "none";
 
     }
 }
@@ -663,14 +820,20 @@ function toggleHistory() {
 function renderHistory() {
 
     const list =
-        document.getElementById("historyList");
+        document.getElementById(
+            "historyList"
+        );
 
     if (history.length === 0) {
 
         list.innerHTML = `
+
             <div class="no-image">
+
                 تراوسه هېڅ History نشته.
+
             </div>
+
         `;
 
         return;
@@ -678,43 +841,47 @@ function renderHistory() {
 
     let html = "";
 
-    history.forEach(function(item, index) {
+    history.forEach(
+        function(item, index) {
 
-        html += `
-            <div class="history-item">
+            html += `
 
-                <div
-                    class="history-question"
-                    onclick="loadHistory(${index})"
-                >
-                    ${escapeHtml(item.question)}
-                </div>
+                <div class="history-item">
 
-                <div class="history-date">
-                    ${escapeHtml(item.date)}
-                </div>
-
-                <div class="history-actions">
-
-                    <button
+                    <div
+                        class="history-question"
                         onclick="loadHistory(${index})"
                     >
-                        📖 Open
-                    </button>
+                        ${escapeHtml(item.question)}
+                    </div>
 
-                    <button
-                        class="delete-button"
-                        onclick="deleteHistory(${index})"
-                    >
-                        🗑️ Delete
-                    </button>
+                    <div class="history-date">
+                        ${escapeHtml(item.date)}
+                    </div>
+
+                    <div class="history-actions">
+
+                        <button
+                            onclick="loadHistory(${index})"
+                        >
+                            📖 Open
+                        </button>
+
+                        <button
+                            class="delete-button"
+                            onclick="deleteHistory(${index})"
+                        >
+                            🗑️ Delete
+                        </button>
+
+                    </div>
 
                 </div>
 
-            </div>
-        `;
+            `;
 
-    });
+        }
+    );
 
     list.innerHTML = html;
 }
@@ -746,8 +913,11 @@ function loadHistory(index) {
     ).style.display = "none";
 
     window.scrollTo({
+
         top: 0,
+
         behavior: "smooth"
+
     });
 }
 
@@ -802,14 +972,16 @@ function saveCurrentAnswer() {
     }
 
     const exists =
-        favorites.some(function(item) {
+        favorites.some(
+            function(item) {
 
-            return (
-                item.question ===
-                currentQuestion
-            );
+                return (
+                    item.question ===
+                    currentQuestion
+                );
 
-        });
+            }
+        );
 
     if (exists) {
 
@@ -829,7 +1001,8 @@ function saveCurrentAnswer() {
             currentAnswer,
 
         date:
-            new Date().toLocaleString()
+            new Date()
+            .toLocaleString()
 
     });
 
@@ -859,9 +1032,13 @@ function renderFavorites() {
     if (favorites.length === 0) {
 
         list.innerHTML = `
+
             <div class="no-image">
+
                 تراوسه هېڅ خوندي شوی ځواب نشته.
+
             </div>
+
         `;
 
         return;
@@ -869,44 +1046,54 @@ function renderFavorites() {
 
     let html = "";
 
-    favorites.forEach(function(item, index) {
+    favorites.forEach(
+        function(item, index) {
 
-        html += `
-            <div class="favorite-item">
+            html += `
 
-                <div class="favorite-question">
-                    ⭐ ${escapeHtml(item.question)}
+                <div class="favorite-item">
+
+                    <div class="favorite-question">
+
+                        ⭐ ${escapeHtml(item.question)}
+
+                    </div>
+
+                    <div class="favorite-answer">
+
+                        ${escapeHtml(item.answer)}
+
+                    </div>
+
+                    <div class="history-date">
+
+                        ${escapeHtml(item.date)}
+
+                    </div>
+
+                    <div class="favorite-actions">
+
+                        <button
+                            onclick="loadFavorite(${index})"
+                        >
+                            📖 Open
+                        </button>
+
+                        <button
+                            class="delete-button"
+                            onclick="deleteFavorite(${index})"
+                        >
+                            🗑️ Delete
+                        </button>
+
+                    </div>
+
                 </div>
 
-                <div class="favorite-answer">
-                    ${escapeHtml(item.answer)}
-                </div>
+            `;
 
-                <div class="history-date">
-                    ${escapeHtml(item.date)}
-                </div>
-
-                <div class="favorite-actions">
-
-                    <button
-                        onclick="loadFavorite(${index})"
-                    >
-                        📖 Open
-                    </button>
-
-                    <button
-                        class="delete-button"
-                        onclick="deleteFavorite(${index})"
-                    >
-                        🗑️ Delete
-                    </button>
-
-                </div>
-
-            </div>
-        `;
-
-    });
+        }
+    );
 
     list.innerHTML = html;
 }
@@ -938,8 +1125,11 @@ function loadFavorite(index) {
     ).style.display = "none";
 
     window.scrollTo({
+
         top: 0,
+
         behavior: "smooth"
+
     });
 }
 
@@ -985,31 +1175,49 @@ def search_wikimedia_images(search_term):
     )
 
     params = {
+
         "action": "query",
+
         "format": "json",
+
         "formatversion": "2",
+
         "generator": "search",
+
         "gsrsearch": search_term,
+
         "gsrnamespace": "6",
+
         "gsrlimit": "6",
+
         "prop": "imageinfo",
+
         "iiprop": "url",
+
         "iiurlwidth": "600"
+
     }
 
     headers = {
+
         "User-Agent":
             "MedAI/1.0 "
             "(medical educational application)"
+
     }
 
     try:
 
         response = requests.get(
+
             api_url,
+
             params=params,
+
             headers=headers,
+
             timeout=20
+
         )
 
         response.raise_for_status()
@@ -1025,6 +1233,7 @@ def search_wikimedia_images(search_term):
         results = []
 
         if isinstance(pages, dict):
+
             pages = pages.values()
 
         for page in pages:
@@ -1067,6 +1276,7 @@ def search_wikimedia_images(search_term):
                 )
 
             results.append({
+
                 "title":
                     title.replace(
                         "File:",
@@ -1078,6 +1288,7 @@ def search_wikimedia_images(search_term):
 
                 "page_url":
                     page_url
+
             })
 
         return results
@@ -1114,8 +1325,10 @@ def chat():
     if not message:
 
         return jsonify({
+
             "error":
                 "Please enter your question."
+
         }), 400
 
     api_key = os.getenv(
@@ -1125,11 +1338,14 @@ def chat():
     if not api_key:
 
         return jsonify({
+
             "error":
                 "GEMINI_API_KEY پیدا نه شو."
+
         }), 500
 
     prompt = f"""
+
 You are MedAI, a multilingual educational medical information assistant.
 
 LANGUAGE RULES:
@@ -1167,8 +1383,7 @@ Prevention
 Complications
 Important Points
 
-Translate every section heading into
-the user's language.
+Translate every section heading into the user's language.
 
 FORMATTING:
 
@@ -1184,6 +1399,7 @@ FORMATTING:
 USER QUESTION:
 
 {message}
+
 """
 
     gemini_url = (
@@ -1197,34 +1413,52 @@ USER QUESTION:
     try:
 
         response = requests.post(
+
             gemini_url,
+
             headers={
                 "Content-Type":
                     "application/json"
             },
+
             json={
+
                 "contents": [
+
                     {
+
                         "parts": [
+
                             {
+
                                 "text":
                                     prompt
+
                             }
+
                         ]
+
                     }
+
                 ]
+
             },
+
             timeout=60
+
         )
 
-        gemini_data = response.json()
+        gemini_data =
+            response.json()
 
         if response.status_code != 200:
 
             return jsonify({
+
                 "error":
                     "Gemini API خطا ورکړه: "
                     + str(gemini_data)
+
             }), 500
 
         candidates = (
@@ -1235,8 +1469,10 @@ USER QUESTION:
         if not candidates:
 
             return jsonify({
+
                 "error":
                     "Gemini هېڅ ځواب رانه کړ."
+
             }), 500
 
         parts = (
@@ -1248,8 +1484,10 @@ USER QUESTION:
         if not parts:
 
             return jsonify({
+
                 "error":
                     "د Gemini ځواب خالي دی."
+
             }), 500
 
         answer = (
@@ -1260,13 +1498,16 @@ USER QUESTION:
         if not answer:
 
             return jsonify({
+
                 "error":
                     "AI ځواب پیدا نه شو."
+
             }), 500
 
         search_term = message
 
         translations = {
+
             "بکتریا": "bacteria",
             "باکتریا": "bacteria",
             "bacteria": "bacteria",
@@ -1311,34 +1552,43 @@ USER QUESTION:
             "coronavirus": "coronavirus",
             "covid": "COVID-19",
             "کووېډ": "COVID-19"
+
         }
 
-        lower_message = message.lower()
+        lower_message =
+            message.lower()
 
         for word, english in translations.items():
 
             if word.lower() in lower_message:
 
                 search_term = english
+
                 break
 
-        images = search_wikimedia_images(
-            search_term
-        )
+        images =
+            search_wikimedia_images(
+                search_term
+            )
 
         return jsonify({
+
             "answer":
                 answer,
+
             "images":
                 images
+
         })
 
     except requests.exceptions.Timeout:
 
         return jsonify({
+
             "error":
                 "د AI ځواب ډېر وخت ونیو. "
                 "بیا هڅه وکړئ."
+
         }), 504
 
     except Exception as e:
@@ -1349,20 +1599,25 @@ USER QUESTION:
         )
 
         return jsonify({
+
             "error":
                 "د AI سره د اړیکې ستونزه: "
                 + str(e)
+
         }), 500
 
 
 if __name__ == "__main__":
 
     app.run(
+
         host="0.0.0.0",
+
         port=int(
             os.environ.get(
                 "PORT",
                 5000
             )
         )
+
     )
