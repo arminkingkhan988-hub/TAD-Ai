@@ -6,10 +6,6 @@ import urllib.parse
 app = Flask(__name__)
 
 
-# =========================================================
-# HOME PAGE
-# =========================================================
-
 @app.route("/")
 def home():
     return """
@@ -17,11 +13,8 @@ def home():
 <html lang="ps" dir="rtl">
 
 <head>
-
 <meta charset="UTF-8">
-
-<meta name="viewport"
-      content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <title>MedAI</title>
 
@@ -56,11 +49,6 @@ h1 {
     margin-bottom: 25px;
 }
 
-
-/* =====================================================
-   INPUT
-   ===================================================== */
-
 textarea {
     width: 100%;
     height: 130px;
@@ -93,10 +81,13 @@ button:disabled {
     cursor: not-allowed;
 }
 
+.voice-button {
+    background: #28a745;
+}
 
-/* =====================================================
-   ANSWER
-   ===================================================== */
+.voice-button:hover {
+    background: #218838;
+}
 
 #answer {
     margin-top: 20px;
@@ -108,11 +99,6 @@ button:disabled {
     min-height: 80px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.05);
 }
-
-
-/* =====================================================
-   ACTION BUTTONS
-   ===================================================== */
 
 .action-buttons {
     display: flex;
@@ -140,12 +126,8 @@ button:disabled {
     background: #333;
 }
 
-
-/* =====================================================
-   HISTORY
-   ===================================================== */
-
-#historyPanel {
+#historyPanel,
+#favoritesPanel {
     display: none;
     margin-top: 20px;
     background: white;
@@ -165,7 +147,6 @@ button:disabled {
     border: 1px solid #ddd;
     border-radius: 10px;
     margin-bottom: 10px;
-    cursor: pointer;
     background: #fafafa;
 }
 
@@ -177,6 +158,7 @@ button:disabled {
     font-weight: bold;
     color: #1677ff;
     margin-bottom: 6px;
+    cursor: pointer;
 }
 
 .history-date {
@@ -184,13 +166,15 @@ button:disabled {
     color: #888;
 }
 
-.history-actions {
+.history-actions,
+.favorite-actions {
     display: flex;
     gap: 8px;
     margin-top: 10px;
 }
 
-.history-actions button {
+.history-actions button,
+.favorite-actions button {
     margin-top: 0;
     padding: 8px;
     font-size: 14px;
@@ -206,20 +190,6 @@ button:disabled {
 
 .clear-button {
     background: #777;
-}
-
-
-/* =====================================================
-   FAVORITES
-   ===================================================== */
-
-#favoritesPanel {
-    display: none;
-    margin-top: 20px;
-    background: white;
-    padding: 18px;
-    border-radius: 12px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
 }
 
 .favorite-item {
@@ -241,22 +211,6 @@ button:disabled {
     line-height: 1.8;
     margin-bottom: 10px;
 }
-
-.favorite-actions {
-    display: flex;
-    gap: 8px;
-}
-
-.favorite-actions button {
-    margin-top: 0;
-    padding: 8px;
-    font-size: 14px;
-}
-
-
-/* =====================================================
-   IMAGES
-   ===================================================== */
 
 #images {
     margin-top: 25px;
@@ -304,21 +258,12 @@ button:disabled {
     text-decoration: none;
 }
 
-.image-caption a:hover {
-    text-decoration: underline;
-}
-
 .no-image {
     padding: 15px;
     background: #fff4d6;
     border-radius: 10px;
     color: #6b5200;
 }
-
-
-/* =====================================================
-   WARNING
-   ===================================================== */
 
 .warning {
     margin-top: 25px;
@@ -328,11 +273,6 @@ button:disabled {
     color: #6b5200;
     line-height: 1.8;
 }
-
-
-/* =====================================================
-   MOBILE
-   ===================================================== */
 
 @media (max-width: 600px) {
 
@@ -344,21 +284,15 @@ button:disabled {
         font-size: 16px;
     }
 
-    .action-buttons {
-        flex-direction: column;
-    }
-
+    .action-buttons,
     .history-actions,
     .favorite-actions {
         flex-direction: column;
     }
-
 }
 
 </style>
-
 </head>
-
 
 <body>
 
@@ -370,20 +304,25 @@ button:disabled {
 ستاسو د طبي زده کړو هوښیار مرستیال
 </div>
 
-
 <textarea
     id="msg"
     placeholder="Ask any medical question..."
 ></textarea>
 
+<button
+    class="voice-button"
+    type="button"
+    onclick="startVoice()"
+>
+    🎤 په غږ پوښتنه وکړئ
+</button>
 
 <button
     id="askButton"
     onclick="sendQuestion()"
 >
-پوښتنه
+    پوښتنه
 </button>
-
 
 <div class="action-buttons">
 
@@ -403,18 +342,11 @@ button:disabled {
 
 </div>
 
-
 <div id="answer">
 ستاسو ځواب به دلته ښکاره شي.
 </div>
 
-
 <div id="images"></div>
-
-
-<!-- =====================================================
-     HISTORY PANEL
-     ===================================================== -->
 
 <div id="historyPanel">
 
@@ -433,11 +365,6 @@ button:disabled {
 
 </div>
 
-
-<!-- =====================================================
-     FAVORITES PANEL
-     ===================================================== -->
-
 <div id="favoritesPanel">
 
     <div class="history-title">
@@ -447,7 +374,6 @@ button:disabled {
     <div id="favoritesList"></div>
 
 </div>
-
 
 <div class="warning">
 
@@ -462,41 +388,81 @@ button:disabled {
 
 </div>
 
-
 <script>
 
-
-// =========================================================
-// DATA
-// =========================================================
-
 let currentQuestion = "";
-
 let currentAnswer = "";
 
-let history =
-    JSON.parse(
-        localStorage.getItem("medai_history")
-        || "[]"
-    );
+let history = JSON.parse(
+    localStorage.getItem("medai_history") || "[]"
+);
 
-let favorites =
-    JSON.parse(
-        localStorage.getItem("medai_favorites")
-        || "[]"
-    );
+let favorites = JSON.parse(
+    localStorage.getItem("medai_favorites") || "[]"
+);
 
 
-// =========================================================
-// SEND QUESTION
-// =========================================================
+/* Voice Question */
+
+function startVoice() {
+
+    const SpeechRecognition =
+        window.SpeechRecognition ||
+        window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+
+        alert(
+            "ستاسو Browser د Voice Question ملاتړ نه کوي."
+        );
+
+        return;
+    }
+
+    const recognition =
+        new SpeechRecognition();
+
+    recognition.lang = "ps-AF";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = function() {
+
+        document.getElementById("msg").value =
+            "🎤 واورېدل کېږي...";
+
+    };
+
+    recognition.onresult = function(event) {
+
+        const text =
+            event.results[0][0].transcript;
+
+        document.getElementById("msg").value =
+            text;
+
+    };
+
+    recognition.onerror = function() {
+
+        document.getElementById("msg").value = "";
+
+        alert(
+            "د غږ په اخیستلو کې ستونزه رامنځته شوه."
+        );
+
+    };
+
+    recognition.start();
+}
+
+
+/* Send Question */
 
 async function sendQuestion() {
 
     const message =
-        document.getElementById("msg")
-        .value
-        .trim();
+        document.getElementById("msg").value.trim();
 
     const answer =
         document.getElementById("answer");
@@ -506,7 +472,6 @@ async function sendQuestion() {
 
     const button =
         document.getElementById("askButton");
-
 
     if (!message) {
 
@@ -518,9 +483,7 @@ async function sendQuestion() {
         return;
     }
 
-
     currentQuestion = message;
-
 
     answer.innerText =
         "⏳ ځواب چمتو کېږي...";
@@ -532,29 +495,24 @@ async function sendQuestion() {
     button.innerText =
         "⏳ مهرباني وکړئ انتظار وکړئ";
 
-
     try {
 
         const response = await fetch(
             "/chat",
             {
                 method: "POST",
-
                 headers: {
                     "Content-Type":
-                    "application/json"
+                        "application/json"
                 },
-
                 body: JSON.stringify({
                     message: message
                 })
             }
         );
 
-
         const data =
             await response.json();
-
 
         if (data.answer) {
 
@@ -564,8 +522,6 @@ async function sendQuestion() {
             currentAnswer =
                 data.answer;
 
-
-            // Save to history
             addToHistory(
                 message,
                 data.answer
@@ -581,31 +537,22 @@ async function sendQuestion() {
 
         }
 
-
-        // =================================================
-        // IMAGES
-        // =================================================
-
         if (
             Array.isArray(data.images) &&
             data.images.length > 0
         ) {
 
             let html = `
-
                 <div class="image-title">
                     🖼️ Related Medical Images
                 </div>
 
                 <div class="image-grid">
-
             `;
-
 
             data.images.forEach(function(image) {
 
                 html += `
-
                     <div class="image-card">
 
                         <a
@@ -616,7 +563,7 @@ async function sendQuestion() {
 
                             <img
                                 src="${image.image_url}"
-                                alt="${image.title}"
+                                alt="${escapeHtml(image.title)}"
                                 loading="lazy"
                             >
 
@@ -629,43 +576,29 @@ async function sendQuestion() {
                                 target="_blank"
                                 rel="noopener noreferrer"
                             >
-
-                                ${image.title}
-
+                                ${escapeHtml(image.title)}
                             </a>
 
                         </div>
 
                     </div>
-
                 `;
 
             });
 
-
-            html += `
-                </div>
-            `;
-
+            html += "</div>";
 
             images.innerHTML = html;
-
 
         } else {
 
             images.innerHTML = `
-
                 <div class="no-image">
-
                     🖼️ No suitable image was found
                     for this topic.
-
                 </div>
-
             `;
-
         }
-
 
     } catch (error) {
 
@@ -676,7 +609,6 @@ async function sendQuestion() {
 
     }
 
-
     button.disabled = false;
 
     button.innerText =
@@ -684,53 +616,32 @@ async function sendQuestion() {
 }
 
 
-// =========================================================
-// HISTORY
-// =========================================================
+/* History */
 
 function addToHistory(question, answer) {
 
-    const item = {
-
+    history.unshift({
         question: question,
-
         answer: answer,
+        date: new Date().toLocaleString()
+    });
 
-        date:
-            new Date().toLocaleString()
-
-    };
-
-
-    history.unshift(item);
-
-
-    // Keep only latest 50
     history =
         history.slice(0, 50);
-
 
     localStorage.setItem(
         "medai_history",
         JSON.stringify(history)
     );
 
-
     renderHistory();
 }
 
 
-// =========================================================
-// SHOW / HIDE HISTORY
-// =========================================================
-
 function toggleHistory() {
 
     const panel =
-        document.getElementById(
-            "historyPanel"
-        );
-
+        document.getElementById("historyPanel");
 
     if (
         panel.style.display === "none" ||
@@ -746,21 +657,13 @@ function toggleHistory() {
         panel.style.display = "none";
 
     }
-
 }
 
-
-// =========================================================
-// RENDER HISTORY
-// =========================================================
 
 function renderHistory() {
 
     const list =
-        document.getElementById(
-            "historyList"
-        );
-
+        document.getElementById("historyList");
 
     if (history.length === 0) {
 
@@ -773,14 +676,11 @@ function renderHistory() {
         return;
     }
 
-
     let html = "";
-
 
     history.forEach(function(item, index) {
 
         html += `
-
             <div class="history-item">
 
                 <div
@@ -812,40 +712,28 @@ function renderHistory() {
                 </div>
 
             </div>
-
         `;
 
     });
 
-
     list.innerHTML = html;
 }
 
-
-// =========================================================
-// LOAD HISTORY
-// =========================================================
 
 function loadHistory(index) {
 
     const item =
         history[index];
 
-
     if (!item) {
         return;
     }
 
-
-    document.getElementById("msg")
-        .value =
+    document.getElementById("msg").value =
         item.question;
 
-
-    document.getElementById("answer")
-        .innerText =
+    document.getElementById("answer").innerText =
         item.answer;
-
 
     currentQuestion =
         item.question;
@@ -853,42 +741,29 @@ function loadHistory(index) {
     currentAnswer =
         item.answer;
 
-
     document.getElementById(
         "historyPanel"
     ).style.display = "none";
-
 
     window.scrollTo({
         top: 0,
         behavior: "smooth"
     });
-
 }
 
-
-// =========================================================
-// DELETE HISTORY
-// =========================================================
 
 function deleteHistory(index) {
 
     history.splice(index, 1);
-
 
     localStorage.setItem(
         "medai_history",
         JSON.stringify(history)
     );
 
-
     renderHistory();
 }
 
-
-// =========================================================
-// CLEAR HISTORY
-// =========================================================
 
 function clearHistory() {
 
@@ -900,22 +775,17 @@ function clearHistory() {
         return;
     }
 
-
     history = [];
-
 
     localStorage.removeItem(
         "medai_history"
     );
 
-
     renderHistory();
 }
 
 
-// =========================================================
-// SAVE FAVORITE
-// =========================================================
+/* Favorites */
 
 function saveCurrentAnswer() {
 
@@ -931,7 +801,6 @@ function saveCurrentAnswer() {
         return;
     }
 
-
     const exists =
         favorites.some(function(item) {
 
@@ -942,18 +811,14 @@ function saveCurrentAnswer() {
 
         });
 
-
     if (exists) {
 
         alert(
             "دا ځواب مخکې خوندي شوی."
         );
 
-        renderFavorites();
-
         return;
     }
-
 
     favorites.unshift({
 
@@ -968,60 +833,21 @@ function saveCurrentAnswer() {
 
     });
 
-
     favorites =
         favorites.slice(0, 50);
-
 
     localStorage.setItem(
         "medai_favorites",
         JSON.stringify(favorites)
     );
 
-
     alert(
         "⭐ ځواب خوندي شو."
     );
 
-
     renderFavorites();
-
 }
 
-
-// =========================================================
-// FAVORITES PANEL
-// =========================================================
-
-function toggleFavorites() {
-
-    const panel =
-        document.getElementById(
-            "favoritesPanel"
-        );
-
-
-    if (
-        panel.style.display === "none" ||
-        panel.style.display === ""
-    ) {
-
-        panel.style.display = "block";
-
-        renderFavorites();
-
-    } else {
-
-        panel.style.display = "none";
-
-    }
-
-}
-
-
-// =========================================================
-// RENDER FAVORITES
-// =========================================================
 
 function renderFavorites() {
 
@@ -1029,7 +855,6 @@ function renderFavorites() {
         document.getElementById(
             "favoritesList"
         );
-
 
     if (favorites.length === 0) {
 
@@ -1042,14 +867,11 @@ function renderFavorites() {
         return;
     }
 
-
     let html = "";
-
 
     favorites.forEach(function(item, index) {
 
         html += `
-
             <div class="favorite-item">
 
                 <div class="favorite-question">
@@ -1082,40 +904,28 @@ function renderFavorites() {
                 </div>
 
             </div>
-
         `;
 
     });
 
-
     list.innerHTML = html;
 }
 
-
-// =========================================================
-// LOAD FAVORITE
-// =========================================================
 
 function loadFavorite(index) {
 
     const item =
         favorites[index];
 
-
     if (!item) {
         return;
     }
 
-
-    document.getElementById("msg")
-        .value =
+    document.getElementById("msg").value =
         item.question;
 
-
-    document.getElementById("answer")
-        .innerText =
+    document.getElementById("answer").innerText =
         item.answer;
-
 
     currentQuestion =
         item.question;
@@ -1123,42 +933,31 @@ function loadFavorite(index) {
     currentAnswer =
         item.answer;
 
-
     document.getElementById(
         "favoritesPanel"
     ).style.display = "none";
-
 
     window.scrollTo({
         top: 0,
         behavior: "smooth"
     });
-
 }
 
-
-// =========================================================
-// DELETE FAVORITE
-// =========================================================
 
 function deleteFavorite(index) {
 
     favorites.splice(index, 1);
-
 
     localStorage.setItem(
         "medai_favorites",
         JSON.stringify(favorites)
     );
 
-
     renderFavorites();
 }
 
 
-// =========================================================
-// ESCAPE HTML
-// =========================================================
+/* Escape HTML */
 
 function escapeHtml(text) {
 
@@ -1171,31 +970,12 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-
-// =========================================================
-// WIKIMEDIA IMAGE SEARCH
-// =========================================================
-
-function searchImages() {
-    // Images are handled by Flask backend.
-}
-
-
-// =========================================================
-// GEMINI + IMAGE BACKEND
-// =========================================================
-
 </script>
 
 </body>
-
 </html>
 """
 
-
-# =========================================================
-# WIKIMEDIA IMAGE SEARCH
-# =========================================================
 
 def search_wikimedia_images(search_term):
 
@@ -1205,49 +985,31 @@ def search_wikimedia_images(search_term):
     )
 
     params = {
-
         "action": "query",
-
         "format": "json",
-
         "formatversion": "2",
-
         "generator": "search",
-
         "gsrsearch": search_term,
-
         "gsrnamespace": "6",
-
         "gsrlimit": "6",
-
         "prop": "imageinfo",
-
         "iiprop": "url",
-
         "iiurlwidth": "600"
-
     }
 
     headers = {
-
         "User-Agent":
-        "MedAI/1.0 "
-        "(medical educational application)"
-
+            "MedAI/1.0 "
+            "(medical educational application)"
     }
 
     try:
 
         response = requests.get(
-
             api_url,
-
             params=params,
-
             headers=headers,
-
             timeout=20
-
         )
 
         response.raise_for_status()
@@ -1263,7 +1025,6 @@ def search_wikimedia_images(search_term):
         results = []
 
         if isinstance(pages, dict):
-
             pages = pages.values()
 
         for page in pages:
@@ -1286,10 +1047,8 @@ def search_wikimedia_images(search_term):
             if not image_url:
                 continue
 
-            page_url = (
-                info.get(
-                    "descriptionurl"
-                )
+            page_url = info.get(
+                "descriptionurl"
             )
 
             title = page.get(
@@ -1308,7 +1067,6 @@ def search_wikimedia_images(search_term):
                 )
 
             results.append({
-
                 "title":
                     title.replace(
                         "File:",
@@ -1320,7 +1078,6 @@ def search_wikimedia_images(search_term):
 
                 "page_url":
                     page_url
-
             })
 
         return results
@@ -1334,10 +1091,6 @@ def search_wikimedia_images(search_term):
 
         return []
 
-
-# =========================================================
-# GEMINI AI
-# =========================================================
 
 @app.route(
     "/chat",
@@ -1361,12 +1114,9 @@ def chat():
     if not message:
 
         return jsonify({
-
             "error":
-            "Please enter your question."
-
+                "Please enter your question."
         }), 400
-
 
     api_key = os.getenv(
         "GEMINI_API_KEY"
@@ -1375,16 +1125,9 @@ def chat():
     if not api_key:
 
         return jsonify({
-
             "error":
-            "GEMINI_API_KEY پیدا نه شو."
-
+                "GEMINI_API_KEY پیدا نه شو."
         }), 500
-
-
-    # =====================================================
-    # MULTILINGUAL MEDICAL PROMPT
-    # =====================================================
 
     prompt = f"""
 You are MedAI, a multilingual educational medical information assistant.
@@ -1394,10 +1137,9 @@ LANGUAGE RULES:
 - Automatically detect the language of the user's question.
 - Answer in the SAME language as the user's question.
 - Support as many languages as possible.
-- Do not force the user to select a language.
 - If the user mixes languages, use the main language.
 - Keep medical terminology accurate.
-- Explain difficult medical terminology in simple language.
+- Explain difficult medical terminology simply.
 - Section headings must also be written in the user's language.
 
 MEDICAL SAFETY:
@@ -1412,7 +1154,7 @@ MEDICAL SAFETY:
 
 MEDICAL STRUCTURE:
 
-For medical questions, use the following sections when relevant:
+For medical questions, use these sections when relevant:
 
 Definition
 Causes
@@ -1444,296 +1186,160 @@ USER QUESTION:
 {message}
 """
 
-
-    # =====================================================
-    # GEMINI API
-    # =====================================================
-
     gemini_url = (
-
         "https://generativelanguage.googleapis.com/"
         "v1beta/models/"
         "gemini-3.5-flash-lite:"
         "generateContent?key="
-
         + api_key
-
     )
-
 
     try:
 
         response = requests.post(
-
             gemini_url,
-
             headers={
                 "Content-Type":
-                "application/json"
+                    "application/json"
             },
-
             json={
-
                 "contents": [
-
                     {
-
                         "parts": [
-
                             {
                                 "text":
-                                prompt
+                                    prompt
                             }
-
                         ]
-
                     }
-
                 ]
-
             },
-
             timeout=60
-
         )
 
-
         gemini_data = response.json()
-
 
         if response.status_code != 200:
 
             return jsonify({
-
                 "error":
-                "Gemini API خطا ورکړه: "
-                + str(gemini_data)
-
+                    "Gemini API خطا ورکړه: "
+                    + str(gemini_data)
             }), 500
-
 
         candidates = (
             gemini_data
-            .get(
-                "candidates",
-                []
-            )
+            .get("candidates", [])
         )
-
 
         if not candidates:
 
             return jsonify({
-
                 "error":
-                "Gemini هېڅ ځواب رانه کړ."
-
+                    "Gemini هېڅ ځواب رانه کړ."
             }), 500
 
-
         parts = (
-
             candidates[0]
-
-            .get(
-                "content",
-                {}
-            )
-
-            .get(
-                "parts",
-                []
-            )
-
+            .get("content", {})
+            .get("parts", [])
         )
-
 
         if not parts:
 
             return jsonify({
-
                 "error":
-                "د Gemini ځواب خالي دی."
-
+                    "د Gemini ځواب خالي دی."
             }), 500
-
 
         answer = (
             parts[0]
-            .get(
-                "text",
-                ""
-            )
+            .get("text", "")
         )
-
 
         if not answer:
 
             return jsonify({
-
                 "error":
-                "AI ځواب پیدا نه شو."
-
+                    "AI ځواب پیدا نه شو."
             }), 500
-
-
-        # =================================================
-        # IMAGE SEARCH
-        # =================================================
 
         search_term = message
 
-
         translations = {
+            "بکتریا": "bacteria",
+            "باکتریا": "bacteria",
+            "bacteria": "bacteria",
 
-            "بکتریا":
-                "bacteria",
+            "سینه بغل": "pneumonia",
+            "pneumonia": "pneumonia",
 
-            "باکتریا":
-                "bacteria",
+            "شکر": "diabetes",
+            "ډایبېټس": "diabetes",
+            "diabetes": "diabetes",
 
-            "bacteria":
-                "bacteria",
+            "فشار": "hypertension",
+            "لوړ فشار": "hypertension",
+            "hypertension": "hypertension",
 
-            "سینه بغل":
-                "pneumonia",
+            "زړه": "heart",
+            "د زړه": "heart disease",
+            "heart": "heart",
 
-            "pneumonia":
-                "pneumonia",
+            "سږي": "lungs",
+            "سږو": "lungs",
 
-            "شکر":
-                "diabetes",
+            "معده": "stomach",
+            "ځیګر": "liver",
+            "پښتورګي": "kidney",
+            "دماغ": "brain",
+            "پوستکی": "skin",
+            "هډوکي": "bone",
 
-            "ډایبېټس":
-                "diabetes",
+            "انفلونزا": "influenza",
+            "influenza": "influenza",
 
-            "diabetes":
-                "diabetes",
+            "سرطان": "cancer",
+            "cancer": "cancer",
 
-            "فشار":
-                "hypertension",
+            "وینه": "blood",
+            "blood": "blood",
 
-            "لوړ فشار":
-                "hypertension",
+            "ویروس": "virus",
+            "virus": "virus",
 
-            "hypertension":
-                "hypertension",
-
-            "زړه":
-                "heart",
-
-            "د زړه":
-                "heart disease",
-
-            "heart":
-                "heart",
-
-            "سږي":
-                "lungs",
-
-            "سږو":
-                "lungs",
-
-            "معده":
-                "stomach",
-
-            "ځیګر":
-                "liver",
-
-            "پښتورګي":
-                "kidney",
-
-            "دماغ":
-                "brain",
-
-            "پوستکی":
-                "skin",
-
-            "هډوکي":
-                "bone",
-
-            "انفلونزا":
-                "influenza",
-
-            "influenza":
-                "influenza",
-
-            "سرطان":
-                "cancer",
-
-            "cancer":
-                "cancer",
-
-            "وینه":
-                "blood",
-
-            "blood":
-                "blood",
-
-            "ویروس":
-                "virus",
-
-            "virus":
-                "virus",
-
-            "coronavirus":
-                "coronavirus",
-
-            "covid":
-                "COVID-19",
-
-            "کووېډ":
-                "COVID-19"
-
+            "coronavirus": "coronavirus",
+            "covid": "COVID-19",
+            "کووېډ": "COVID-19"
         }
 
+        lower_message = message.lower()
 
-        lower_message = (
-            message.lower()
-        )
-
-
-        for word, english in (
-            translations.items()
-        ):
+        for word, english in translations.items():
 
             if word.lower() in lower_message:
 
                 search_term = english
-
                 break
-
 
         images = search_wikimedia_images(
             search_term
         )
 
-
-        # =================================================
-        # FINAL RESPONSE
-        # =================================================
-
         return jsonify({
-
             "answer":
                 answer,
-
             "images":
                 images
-
         })
-
 
     except requests.exceptions.Timeout:
 
         return jsonify({
-
             "error":
-            "د AI ځواب ډېر وخت ونیو. "
-            "بیا هڅه وکړئ."
-
+                "د AI ځواب ډېر وخت ونیو. "
+                "بیا هڅه وکړئ."
         }), 504
-
 
     except Exception as e:
 
@@ -1743,29 +1349,20 @@ USER QUESTION:
         )
 
         return jsonify({
-
             "error":
-            "د AI سره د اړیکې ستونزه: "
-            + str(e)
-
+                "د AI سره د اړیکې ستونزه: "
+                + str(e)
         }), 500
 
-
-# =========================================================
-# RUN
-# =========================================================
 
 if __name__ == "__main__":
 
     app.run(
-
         host="0.0.0.0",
-
         port=int(
             os.environ.get(
                 "PORT",
                 5000
             )
         )
-
     )
