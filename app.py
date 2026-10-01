@@ -15,7 +15,7 @@ WIKIMEDIA_URL = "https://commons.wikimedia.org/w/api.php"
 
 
 # =========================================================
-# GEMINI AI
+# GEMINI
 # =========================================================
 
 def ask_gemini(prompt):
@@ -30,9 +30,7 @@ def ask_gemini(prompt):
                 "contents": [
                     {
                         "parts": [
-                            {
-                                "text": prompt
-                            }
+                            {"text": prompt}
                         ]
                     }
                 ]
@@ -44,7 +42,6 @@ def ask_gemini(prompt):
             return "د AI سره د اړیکې پر مهال ستونزه رامنځته شوه."
 
         data = response.json()
-
         candidates = data.get("candidates", [])
 
         if not candidates:
@@ -61,42 +58,36 @@ def ask_gemini(prompt):
     except requests.exceptions.Timeout:
         return "د AI ځواب ډېر وخت ونیو. بیا هڅه وکړئ."
 
-    except Exception:
-        return "د AI سره د اړیکې پر مهال تېروتنه رامنځته شوه."
+    except Exception as error:
+        return "د AI سره د اړیکې پر مهال ستونزه رامنځته شوه."
 
-
-# =========================================================
-# MEDICAL PROMPT
-# =========================================================
 
 def build_prompt(instruction, user_text):
     return f"""
 You are MedAI, an educational medical information assistant.
 
-IMPORTANT RULES:
+RULES:
 - Answer in the SAME LANGUAGE as the user's question.
-- Use simple and understandable language.
-- Give educational medical information only.
-- Do not diagnose a person from symptoms alone.
-- Do not claim that you examined the patient.
-- Do not invent medical facts.
-- Do not provide personalized prescription or medication dosing instructions.
-- Do not tell a person to start, stop, or change prescription medicine based only on this answer.
-- If the situation may be an emergency, clearly advise seeking urgent professional medical care.
-- Mention that laboratory reference ranges can differ between laboratories when discussing lab results.
-- Distinguish general information from personal medical advice.
-- Be medically responsible and concise but useful.
+- Use simple language.
+- Provide educational information only.
+- Do not diagnose from symptoms alone.
+- Do not claim to examine the patient.
+- Do not invent facts.
+- Do not provide personalized prescription or medication dosing.
+- Do not tell users to start, stop, or change prescription medicines.
+- If emergency warning signs are present, advise urgent professional medical care.
+- Do not replace a doctor or other qualified healthcare professional.
 
-REQUEST:
+TASK:
 {instruction}
 
-USER QUESTION / INFORMATION:
+USER INFORMATION:
 {user_text}
 """
 
 
 # =========================================================
-# WIKIMEDIA MEDICAL IMAGES
+# WIKIMEDIA IMAGES
 # =========================================================
 
 def get_medical_images(query):
@@ -128,20 +119,17 @@ def get_medical_images(query):
             return []
 
         data = response.json()
-
         pages = data.get("query", {}).get("pages", {})
 
         images = []
 
         for page in pages.values():
-            imageinfo = page.get("imageinfo", [])
+            info = page.get("imageinfo", [])
 
-            if not imageinfo:
+            if not info:
                 continue
 
-            info = imageinfo[0]
-
-            image_url = info.get("thumburl") or info.get("url")
+            image_url = info[0].get("thumburl") or info[0].get("url")
 
             if image_url:
                 images.append({
@@ -168,7 +156,7 @@ HTML = r"""
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>MedAI - Medical AI</title>
+<title>MedAI</title>
 
 <style>
 
@@ -179,21 +167,21 @@ HTML = r"""
 body {
     margin: 0;
     font-family: Arial, Tahoma, sans-serif;
-    background: #f4f7fb;
+    background: #f3f6fa;
     color: #172033;
-    transition: 0.3s;
+    transition: .3s;
 }
 
 body.dark {
-    background: #101522;
-    color: #f1f5f9;
+    background: #0f172a;
+    color: #f8fafc;
 }
 
 header {
-    background: linear-gradient(135deg, #087f8c, #0b5ed7);
+    background: linear-gradient(135deg,#087f8c,#0b5ed7);
     color: white;
-    padding: 25px 15px;
     text-align: center;
+    padding: 25px 15px;
 }
 
 header h1 {
@@ -202,24 +190,7 @@ header h1 {
 }
 
 header p {
-    margin: 10px 0 0;
-    font-size: 16px;
-}
-
-.top-buttons {
-    display: flex;
-    justify-content: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin-top: 18px;
-}
-
-.top-buttons button {
-    width: auto;
-    padding: 10px 16px;
-    margin: 0;
-    background: white;
-    color: #075985;
+    margin: 8px 0 15px;
 }
 
 .container {
@@ -230,15 +201,14 @@ header p {
 
 .card {
     background: white;
-    border-radius: 18px;
     padding: 20px;
     margin-bottom: 20px;
-    box-shadow: 0 5px 22px rgba(0,0,0,0.08);
+    border-radius: 18px;
+    box-shadow: 0 5px 20px rgba(0,0,0,.08);
 }
 
 .dark .card {
-    background: #182131;
-    box-shadow: 0 5px 22px rgba(0,0,0,0.25);
+    background: #1e293b;
 }
 
 .card h2 {
@@ -254,13 +224,11 @@ textarea,
 input,
 select {
     width: 100%;
-    padding: 14px;
-    border: 1px solid #ccd5e0;
-    border-radius: 12px;
+    padding: 13px;
+    border: 1px solid #cbd5e1;
+    border-radius: 11px;
     font-size: 16px;
-    margin: 8px 0 12px;
-    background: white;
-    color: #111827;
+    margin: 7px 0 12px;
 }
 
 .dark textarea,
@@ -268,46 +236,66 @@ select {
 .dark select {
     background: #0f172a;
     color: white;
-    border-color: #334155;
+    border-color: #475569;
 }
 
 button {
     width: 100%;
-    border: none;
-    padding: 13px 16px;
+    border: 0;
+    border-radius: 11px;
+    padding: 13px;
     margin: 5px 0;
-    border-radius: 12px;
-    background: #0b78a8;
+    background: #087f8c;
     color: white;
     font-size: 16px;
     cursor: pointer;
 }
 
 button:hover {
-    opacity: 0.9;
+    opacity: .9;
 }
 
-button.secondary {
+.secondary {
     background: #64748b;
 }
 
-button.success {
-    background: #16803c;
-}
-
-button.warning {
-    background: #b45309;
-}
-
-button.danger {
+.danger {
     background: #b91c1c;
 }
 
+.success {
+    background: #15803d;
+}
+
+.warning {
+    background: #b45309;
+}
+
+.top-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.top-buttons button {
+    width: auto;
+    padding: 10px 15px;
+    background: white;
+    color: #075985;
+}
+
+.topics {
+    display: grid;
+    grid-template-columns: repeat(4,1fr);
+    gap: 8px;
+}
+
 .result {
+    margin-top: 12px;
+    padding: 15px;
     background: #f8fafc;
     border-radius: 12px;
-    padding: 16px;
-    margin-top: 12px;
     line-height: 1.9;
     white-space: pre-wrap;
 }
@@ -319,24 +307,14 @@ button.danger {
 .loading {
     display: none;
     text-align: center;
-    padding: 12px;
-    color: #0b78a8;
+    padding: 10px;
+    color: #087f8c;
     font-weight: bold;
-}
-
-.topic-buttons {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
-}
-
-.topic-buttons button {
-    font-size: 14px;
 }
 
 .images {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(4,1fr);
     gap: 12px;
 }
 
@@ -347,27 +325,26 @@ button.danger {
     border-radius: 12px;
 }
 
-.image-title {
-    font-size: 12px;
-    margin-top: 4px;
-}
-
 .history-item,
-.favorite-item {
-    background: #f1f5f9;
+.favorite-item,
+.tracker-item,
+.reminder-item {
     padding: 12px;
     margin: 8px 0;
     border-radius: 10px;
+    background: #eef2f7;
 }
 
 .dark .history-item,
-.dark .favorite-item {
+.dark .favorite-item,
+.dark .tracker-item,
+.dark .reminder-item {
     background: #0f172a;
 }
 
 .small {
-    font-size: 13px;
     color: #64748b;
+    font-size: 13px;
 }
 
 .dark .small {
@@ -376,46 +353,34 @@ button.danger {
 
 footer {
     text-align: center;
-    padding: 30px 15px;
+    padding: 30px;
     color: #64748b;
 }
 
-@media (max-width: 800px) {
-
-    .topic-buttons {
-        grid-template-columns: repeat(2, 1fr);
-    }
-
+@media(max-width:800px) {
+    .topics,
     .images {
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(2,1fr);
     }
-
 }
 
-@media (max-width: 500px) {
-
-    header h1 {
-        font-size: 27px;
-    }
-
+@media(max-width:500px) {
     .container {
         padding: 10px;
     }
 
     .card {
         padding: 15px;
-        border-radius: 14px;
     }
 
-    .topic-buttons,
+    .topics,
     .images {
         grid-template-columns: 1fr;
     }
 
-    .images img {
-        height: 220px;
+    header h1 {
+        font-size: 28px;
     }
-
 }
 
 </style>
@@ -432,17 +397,11 @@ footer {
 
 <div class="top-buttons">
 
-<button onclick="toggleDarkMode()">
-🌙 Dark Mode
-</button>
+<button onclick="toggleDark()">🌙 Dark Mode</button>
 
-<button onclick="startVoice()">
-🎤 Voice Question
-</button>
+<button onclick="startVoice()">🎤 Voice</button>
 
-<button onclick="stopVoice()">
-⏹️ Stop Voice
-</button>
+<button onclick="stopVoice()">⏹️ Stop</button>
 
 </div>
 
@@ -458,27 +417,17 @@ footer {
 
 <h2>🤖 Medical AI Chat</h2>
 
-<textarea
-id="question"
+<textarea id="question"
 rows="5"
-placeholder="خپله طبي پوښتنه دلته ولیکئ..."
-></textarea>
+placeholder="خپله طبي پوښتنه ولیکئ..."></textarea>
 
-<button onclick="askAI()">
-🤖 له MedAI څخه پوښتنه وکړئ
-</button>
+<button onclick="askAI()">🤖 له MedAI څخه پوښتنه</button>
 
-<button class="secondary" onclick="speakCurrentAnswer()">
-🔊 ځواب واورئ
-</button>
+<button class="secondary" onclick="speakAnswer()">🔊 ځواب واورئ</button>
 
-<div id="mainLoading" class="loading">
-AI کار کوي...
-</div>
+<div id="mainLoading" class="loading">AI کار کوي...</div>
 
-<div id="answer" class="result">
-دلته به ستاسو ځواب ښکاره شي.
-</div>
+<div id="answer" class="result"></div>
 
 </div>
 
@@ -489,22 +438,15 @@ AI کار کوي...
 
 <h2>🩺 Medical Topics</h2>
 
-<div class="topic-buttons">
+<div class="topics">
 
 <button onclick="setTopic('Diabetes')">🩸 Diabetes</button>
-
 <button onclick="setTopic('Hypertension')">❤️ فشار</button>
-
 <button onclick="setTopic('Heart Disease')">❤️ زړه</button>
-
 <button onclick="setTopic('Asthma')">🫁 Asthma</button>
-
 <button onclick="setTopic('Cancer')">🧬 Cancer</button>
-
 <button onclick="setTopic('Kidney Disease')">🫘 Kidney</button>
-
 <button onclick="setTopic('Liver Disease')">🧫 Liver</button>
-
 <button onclick="setTopic('Infection')">🦠 Infection</button>
 
 </div>
@@ -518,20 +460,15 @@ AI کار کوي...
 
 <h2>🧠 Symptom Education</h2>
 
-<textarea
-id="symptomsInput"
+<textarea id="symptomsInput"
 rows="4"
-placeholder="مثلاً: تبه، ټوخی او ستونی درد..."
-></textarea>
+placeholder="مثلاً: تبه، ټوخی، ستونی درد..."></textarea>
 
-<button onclick="explainSymptoms()">
+<button onclick="special('/symptoms','symptomsInput','symptomsResult','symptomsLoading')">
 🧠 نښې تشریح کړه
 </button>
 
-<div id="symptomsLoading" class="loading">
-AI کار کوي...
-</div>
-
+<div id="symptomsLoading" class="loading">AI کار کوي...</div>
 <div id="symptomsResult" class="result"></div>
 
 </div>
@@ -543,74 +480,52 @@ AI کار کوي...
 
 <h2>❤️ Vital Signs Guide</h2>
 
-<textarea
-id="vitalsInput"
+<textarea id="vitalsInput"
 rows="4"
-placeholder="مثلاً: Blood Pressure 140/90, pulse 85..."
-></textarea>
+placeholder="مثلاً Blood Pressure 140/90, pulse 85..."></textarea>
 
-<button onclick="explainVitals()">
+<button onclick="special('/vitals','vitalsInput','vitalsResult','vitalsLoading')">
 ❤️ حیاتي نښې تشریح کړه
 </button>
 
-<div id="vitalsLoading" class="loading">
-AI کار کوي...
-</div>
-
+<div id="vitalsLoading" class="loading">AI کار کوي...</div>
 <div id="vitalsResult" class="result"></div>
 
 </div>
 
 
-<!-- DISEASE COMPARISON -->
+<!-- COMPARISON -->
 
 <div class="card">
 
 <h2>⚖️ Disease Comparison</h2>
 
-<input
-id="disease1"
-placeholder="لومړۍ ناروغي"
-/>
+<input id="disease1" placeholder="لومړۍ ناروغي">
+<input id="disease2" placeholder="دوهمه ناروغي">
 
-<input
-id="disease2"
-placeholder="دوهمه ناروغي"
-/>
+<button onclick="compare()">⚖️ پرتله یې کړه</button>
 
-<button onclick="compareDiseases()">
-⚖️ پرتله یې کړه
-</button>
-
-<div id="compareLoading" class="loading">
-AI کار کوي...
-</div>
-
+<div id="compareLoading" class="loading">AI کار کوي...</div>
 <div id="compareResult" class="result"></div>
 
 </div>
 
 
-<!-- DOCTOR ASSISTANT -->
+<!-- DOCTOR -->
 
 <div class="card">
 
 <h2>👨‍⚕️ Doctor Visit Assistant</h2>
 
-<textarea
-id="doctorInput"
+<textarea id="doctorInput"
 rows="6"
-placeholder="خپلې نښې، د پیل وخت، درمل، ټیسټونه او نور معلومات ولیکئ..."
-></textarea>
+placeholder="خپلې نښې، د پیل وخت، درمل او ټیسټونه ولیکئ..."></textarea>
 
-<button onclick="prepareDoctorVisit()">
+<button onclick="special('/doctor','doctorInput','doctorResult','doctorLoading')">
 👨‍⚕️ معلومات منظم کړه
 </button>
 
-<div id="doctorLoading" class="loading">
-AI کار کوي...
-</div>
-
+<div id="doctorLoading" class="loading">AI کار کوي...</div>
 <div id="doctorResult" class="result"></div>
 
 </div>
@@ -622,20 +537,15 @@ AI کار کوي...
 
 <h2>🧪 Lab Report Explainer</h2>
 
-<textarea
-id="labInput"
+<textarea id="labInput"
 rows="6"
-placeholder="د لابراتوار راپور یا د ټیسټ نوم او نتیجه ولیکئ..."
-></textarea>
+placeholder="د لابراتوار راپور یا ټیسټ ولیکئ..."></textarea>
 
-<button onclick="explainLab()">
+<button onclick="special('/lab','labInput','labResult','labLoading')">
 🧪 راپور تشریح کړه
 </button>
 
-<div id="labLoading" class="loading">
-AI کار کوي...
-</div>
-
+<div id="labLoading" class="loading">AI کار کوي...</div>
 <div id="labResult" class="result"></div>
 
 </div>
@@ -647,44 +557,34 @@ AI کار کوي...
 
 <h2>💊 Medicine Information</h2>
 
-<textarea
-id="medicineInput"
+<textarea id="medicineInput"
 rows="4"
-placeholder="د درملو نوم ولیکئ..."
-></textarea>
+placeholder="د درملو نوم ولیکئ..."></textarea>
 
-<button onclick="explainMedicine()">
-💊 د درملو معلومات
+<button onclick="special('/medicine','medicineInput','medicineResult','medicineLoading')">
+💊 معلومات
 </button>
 
-<div id="medicineLoading" class="loading">
-AI کار کوي...
-</div>
-
+<div id="medicineLoading" class="loading">AI کار کوي...</div>
 <div id="medicineResult" class="result"></div>
 
 </div>
 
 
-<!-- MEDICAL DICTIONARY -->
+<!-- DICTIONARY -->
 
 <div class="card">
 
 <h2>📖 Medical Dictionary</h2>
 
-<input
-id="dictionaryInput"
-placeholder="طبي اصطلاح ولیکئ، مثلاً: Hypertension"
-/>
+<input id="dictionaryInput"
+placeholder="مثلاً Hypertension">
 
-<button onclick="explainDictionary()">
-📖 اصطلاح تشریح کړه
+<button onclick="special('/dictionary','dictionaryInput','dictionaryResult','dictionaryLoading')">
+📖 تشریح
 </button>
 
-<div id="dictionaryLoading" class="loading">
-AI کار کوي...
-</div>
-
+<div id="dictionaryLoading" class="loading">AI کار کوي...</div>
 <div id="dictionaryResult" class="result"></div>
 
 </div>
@@ -696,39 +596,31 @@ AI کار کوي...
 
 <h2>🚨 Emergency Checker</h2>
 
-<textarea
-id="emergencyInput"
+<textarea id="emergencyInput"
 rows="4"
-placeholder="عمومي نښې ولیکئ..."
-></textarea>
+placeholder="عمومي نښې ولیکئ..."></textarea>
 
-<button class="danger" onclick="checkEmergency()">
+<button class="danger"
+onclick="special('/emergency','emergencyInput','emergencyResult','emergencyLoading')">
 🚨 بیړنۍ نښې وګوره
 </button>
 
-<div id="emergencyLoading" class="loading">
-AI کار کوي...
-</div>
-
+<div id="emergencyLoading" class="loading">AI کار کوي...</div>
 <div id="emergencyResult" class="result"></div>
 
 </div>
 
 
-<!-- SEARCH -->
+<!-- MEDICAL SEARCH -->
 
 <div class="card">
 
 <h2>🔎 Medical Search</h2>
 
-<input
-id="searchInput"
-placeholder="طبي موضوع ولټوئ..."
-/>
+<input id="searchInput"
+placeholder="طبي موضوع ولټوئ...">
 
-<button onclick="searchMedical()">
-🔎 Search
-</button>
+<button onclick="medicalSearch()">🔎 Search</button>
 
 <div id="searchResult" class="result"></div>
 
@@ -741,69 +633,53 @@ placeholder="طبي موضوع ولټوئ..."
 
 <h2>🖼️ Medical Images</h2>
 
-<input
-id="imageInput"
-placeholder="مثلاً: human heart"
-/>
+<input id="imageInput"
+placeholder="مثلاً human heart">
 
-<button onclick="displayImages()">
-🖼️ انځورونه راوړه
-</button>
+<button onclick="loadImages()">🖼️ انځورونه</button>
 
-<div id="imageLoading" class="loading">
-انځورونه لټول کېږي...
-</div>
+<div id="imageLoading" class="loading">انځورونه لټول کېږي...</div>
 
 <div id="images" class="images"></div>
 
 </div>
 
 
-<!-- MEDICINE INTERACTION -->
+<!-- INTERACTION -->
 
 <div class="card">
 
 <h2>💊 Medicine Interaction Checker</h2>
 
-<textarea
-id="interactionInput"
+<textarea id="interactionInput"
 rows="4"
-placeholder="مثلاً: Drug A + Drug B یا د څو درملو نومونه..."
-></textarea>
+placeholder="د دوو یا څو درملو نومونه ولیکئ..."></textarea>
 
-<button onclick="checkInteraction()">
-💊 احتمالي تداخل تشریح کړه
+<button onclick="special('/interaction','interactionInput','interactionResult','interactionLoading')">
+💊 تداخل وګوره
 </button>
 
-<div id="interactionLoading" class="loading">
-AI کار کوي...
-</div>
-
+<div id="interactionLoading" class="loading">AI کار کوي...</div>
 <div id="interactionResult" class="result"></div>
 
 </div>
 
 
-<!-- MEDICAL REPORT -->
+<!-- REPORT -->
 
 <div class="card">
 
 <h2>📄 Medical Report Explainer</h2>
 
-<textarea
-id="reportInput"
+<textarea id="reportInput"
 rows="7"
-placeholder="خپل طبي راپور یا د راپور متن دلته ولیکئ..."
-></textarea>
+placeholder="د طبي راپور متن ولیکئ..."></textarea>
 
-<button onclick="explainMedicalReport()">
+<button onclick="special('/report','reportInput','reportResult','reportLoading')">
 📄 راپور تشریح کړه
 </button>
 
-<div id="reportLoading" class="loading">
-AI کار کوي...
-</div>
-
+<div id="reportLoading" class="loading">AI کار کوي...</div>
 <div id="reportResult" class="result"></div>
 
 </div>
@@ -815,19 +691,14 @@ AI کار کوي...
 
 <h2>🩹 First Aid Guide</h2>
 
-<input
-id="firstAidInput"
-placeholder="مثلاً: minor burn, nosebleed, cut..."
-/>
+<input id="firstAidInput"
+placeholder="مثلاً minor burn, cut, nosebleed">
 
-<button onclick="firstAidGuide()">
-🩹 د لومړنۍ مرستې لارښود
+<button onclick="special('/firstaid','firstAidInput','firstAidResult','firstAidLoading')">
+🩹 لومړنۍ مرسته
 </button>
 
-<div id="firstAidLoading" class="loading">
-AI کار کوي...
-</div>
-
+<div id="firstAidLoading" class="loading">AI کار کوي...</div>
 <div id="firstAidResult" class="result"></div>
 
 </div>
@@ -839,20 +710,15 @@ AI کار کوي...
 
 <h2>🧬 Medical Glossary</h2>
 
-<textarea
-id="glossaryInput"
+<textarea id="glossaryInput"
 rows="4"
-placeholder="یوه یا څو طبي اصطلاحات ولیکئ..."
-></textarea>
+placeholder="یو یا څو طبي اصطلاحات..."></textarea>
 
-<button onclick="explainGlossary()">
-🧬 اصطلاحات ساده کړه
+<button onclick="special('/glossary','glossaryInput','glossaryResult','glossaryLoading')">
+🧬 ساده تشریح
 </button>
 
-<div id="glossaryLoading" class="loading">
-AI کار کوي...
-</div>
-
+<div id="glossaryLoading" class="loading">AI کار کوي...</div>
 <div id="glossaryResult" class="result"></div>
 
 </div>
@@ -864,19 +730,122 @@ AI کار کوي...
 
 <h2>🧠 Medical Quiz</h2>
 
-<p>
-د پوښتنې لپاره لاندې تڼۍ کېکاږئ.
-</p>
+<button onclick="quiz()">🧠 Quiz جوړ کړه</button>
 
-<button onclick="generateQuiz()">
-🧠 Quiz جوړ کړه
+<div id="quizLoading" class="loading">AI کار کوي...</div>
+<div id="quizResult" class="result"></div>
+
+</div>
+
+
+<!-- =====================================================
+     NEW FEATURE 1
+===================================================== -->
+
+<div class="card">
+
+<h2>🧠 Medical Risk Assessment</h2>
+
+<textarea id="riskInput"
+rows="6"
+placeholder="خپلې نښې، عمر، د ستونزې موده او نور اړوند معلومات ولیکئ..."></textarea>
+
+<button class="warning"
+onclick="special('/risk','riskInput','riskResult','riskLoading')">
+🧠 د خطر نښې وڅېړه
 </button>
 
-<div id="quizLoading" class="loading">
+<div id="riskLoading" class="loading">AI کار کوي...</div>
+<div id="riskResult" class="result"></div>
+
+</div>
+
+
+<!-- =====================================================
+     NEW FEATURE 2
+===================================================== -->
+
+<div class="card">
+
+<h2>⏰ Medication Reminder</h2>
+
+<input id="reminderMedicine"
+placeholder="د درملو نوم">
+
+<input id="reminderTime"
+type="time">
+
+<input id="reminderNote"
+placeholder="یادونه، مثلاً: سهار">
+
+<button onclick="addReminder()">
+⏰ Reminder اضافه کړه
+</button>
+
+<div id="reminders"></div>
+
+</div>
+
+
+<!-- =====================================================
+     NEW FEATURE 3
+===================================================== -->
+
+<div class="card">
+
+<h2>🩸 Health Tracker</h2>
+
+<select id="trackerType">
+
+<option value="Blood Pressure">Blood Pressure</option>
+<option value="Pulse">Pulse</option>
+<option value="Temperature">Temperature</option>
+<option value="Weight">Weight</option>
+<option value="Blood Sugar">Blood Sugar</option>
+<option value="Oxygen">Oxygen</option>
+
+</select>
+
+<input id="trackerValue"
+placeholder="Value، مثلاً 120/80">
+
+<input id="trackerNote"
+placeholder="یادونه">
+
+<button onclick="addTracker()">
+🩸 معلومات ثبت کړه
+</button>
+
+<div id="trackerList"></div>
+
+<button class="danger" onclick="clearTracker()">
+ټول Tracker پاک کړه
+</button>
+
+</div>
+
+
+<!-- =====================================================
+     NEW FEATURE 4
+===================================================== -->
+
+<div class="card">
+
+<h2>📊 Health Report Generator</h2>
+
+<textarea id="healthReportInput"
+rows="7"
+placeholder="خپل Health Tracker معلومات، نښې او نور معلومات ولیکئ..."></textarea>
+
+<button onclick="generateHealthReport()">
+📊 روغتیايي راپور جوړ کړه
+</button>
+
+<div id="healthReportLoading" class="loading">
 AI کار کوي...
 </div>
 
-<div id="quizResult" class="result"></div>
+<div id="healthReportResult" class="result"></div>
 
 </div>
 
@@ -922,18 +891,21 @@ MedAI — Educational Medical AI
 <script>
 
 let currentAnswer = "";
+let recognition = null;
 
 
 /* =====================================================
-   GENERAL HELPERS
+   HELPERS
 ===================================================== */
 
-function showLoading(id, show) {
+function loading(id, show) {
+
     const el = document.getElementById(id);
 
-    if (!el) return;
+    if (el) {
+        el.style.display = show ? "block" : "none";
+    }
 
-    el.style.display = show ? "block" : "none";
 }
 
 
@@ -944,63 +916,7 @@ function escapeHTML(text) {
     div.textContent = text;
 
     return div.innerHTML;
-}
 
-
-async function sendSpecialRequest(
-    endpoint,
-    inputId,
-    resultId,
-    loadingId
-) {
-
-    const input = document.getElementById(inputId);
-    const result = document.getElementById(resultId);
-
-    if (!input || !result) return;
-
-    const text = input.value.trim();
-
-    if (!text) {
-        result.textContent = "مهرباني وکړئ معلومات ولیکئ.";
-        return;
-    }
-
-    showLoading(loadingId, true);
-
-    result.textContent = "";
-
-    try {
-
-        const response = await fetch(endpoint, {
-
-            method: "POST",
-
-            headers: {
-                "Content-Type": "application/json"
-            },
-
-            body: JSON.stringify({
-                text: text
-            })
-
-        });
-
-        const data = await response.json();
-
-        result.textContent =
-            data.answer || data.error || "ځواب ترلاسه نه شو.";
-
-    } catch (error) {
-
-        result.textContent =
-            "د سرور سره د اړیکې ستونزه رامنځته شوه.";
-
-    } finally {
-
-        showLoading(loadingId, false);
-
-    }
 }
 
 
@@ -1019,12 +935,12 @@ async function askAI() {
     if (!question) {
 
         answer.textContent =
-            "مهرباني وکړئ خپله پوښتنه ولیکئ.";
+            "مهرباني وکړئ پوښتنه ولیکئ.";
 
         return;
     }
 
-    showLoading("mainLoading", true);
+    loading("mainLoading", true);
 
     answer.textContent = "";
 
@@ -1049,167 +965,85 @@ async function askAI() {
         currentAnswer =
             data.answer || data.error || "";
 
-        answer.textContent = currentAnswer;
+        answer.textContent =
+            currentAnswer;
 
-        saveHistory(question, currentAnswer);
+        saveHistory(
+            question,
+            currentAnswer
+        );
 
     } catch (error) {
 
         answer.textContent =
-            "د سرور سره د اړیکې ستونزه رامنځته شوه.";
+            "د سرور سره د اړیکې ستونزه.";
 
     } finally {
 
-        showLoading("mainLoading", false);
+        loading("mainLoading", false);
 
     }
-}
-
-
-/* =====================================================
-   SYMPTOMS
-===================================================== */
-
-function explainSymptoms() {
-
-    sendSpecialRequest(
-        "/symptoms",
-        "symptomsInput",
-        "symptomsResult",
-        "symptomsLoading"
-    );
 
 }
 
 
 /* =====================================================
-   VITALS
+   SPECIAL REQUEST
 ===================================================== */
 
-function explainVitals() {
+async function special(
+    endpoint,
+    inputId,
+    resultId,
+    loadingId
+) {
 
-    sendSpecialRequest(
-        "/vitals",
-        "vitalsInput",
-        "vitalsResult",
-        "vitalsLoading"
-    );
-
-}
-
-
-/* =====================================================
-   LAB
-===================================================== */
-
-function explainLab() {
-
-    sendSpecialRequest(
-        "/lab",
-        "labInput",
-        "labResult",
-        "labLoading"
-    );
-
-}
-
-
-/* =====================================================
-   MEDICINE
-===================================================== */
-
-function explainMedicine() {
-
-    sendSpecialRequest(
-        "/medicine",
-        "medicineInput",
-        "medicineResult",
-        "medicineLoading"
-    );
-
-}
-
-
-/* =====================================================
-   DICTIONARY
-===================================================== */
-
-function explainDictionary() {
-
-    sendSpecialRequest(
-        "/dictionary",
-        "dictionaryInput",
-        "dictionaryResult",
-        "dictionaryLoading"
-    );
-
-}
-
-
-/* =====================================================
-   EMERGENCY
-===================================================== */
-
-function checkEmergency() {
-
-    sendSpecialRequest(
-        "/emergency",
-        "emergencyInput",
-        "emergencyResult",
-        "emergencyLoading"
-    );
-
-}
-
-
-/* =====================================================
-   DISEASE COMPARISON
-===================================================== */
-
-async function compareDiseases() {
-
-    const disease1 =
-        document.getElementById("disease1").value.trim();
-
-    const disease2 =
-        document.getElementById("disease2").value.trim();
+    const input =
+        document.getElementById(inputId);
 
     const result =
-        document.getElementById("compareResult");
+        document.getElementById(resultId);
 
-    if (!disease1 || !disease2) {
+    const text =
+        input.value.trim();
+
+    if (!text) {
 
         result.textContent =
-            "مهرباني وکړئ دواړه ناروغۍ ولیکئ.";
+            "مهرباني وکړئ معلومات ولیکئ.";
 
         return;
     }
 
-    showLoading("compareLoading", true);
+    loading(loadingId, true);
 
     result.textContent = "";
 
     try {
 
-        const response = await fetch("/compare", {
+        const response = await fetch(
+            endpoint,
+            {
+                method: "POST",
 
-            method: "POST",
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                },
 
-            headers: {
-                "Content-Type": "application/json"
-            },
+                body: JSON.stringify({
+                    text: text
+                })
+            }
+        );
 
-            body: JSON.stringify({
-                disease1: disease1,
-                disease2: disease2
-            })
-
-        });
-
-        const data = await response.json();
+        const data =
+            await response.json();
 
         result.textContent =
-            data.answer || data.error || "ځواب ترلاسه نه شو.";
+            data.answer ||
+            data.error ||
+            "ځواب ترلاسه نه شو.";
 
     } catch (error) {
 
@@ -1218,7 +1052,7 @@ async function compareDiseases() {
 
     } finally {
 
-        showLoading("compareLoading", false);
+        loading(loadingId, false);
 
     }
 
@@ -1226,81 +1060,69 @@ async function compareDiseases() {
 
 
 /* =====================================================
-   DOCTOR VISIT
+   COMPARISON
 ===================================================== */
 
-function prepareDoctorVisit() {
+async function compare() {
 
-    sendSpecialRequest(
-        "/doctor",
-        "doctorInput",
-        "doctorResult",
-        "doctorLoading"
-    );
+    const disease1 =
+        document.getElementById("disease1")
+        .value.trim();
 
-}
+    const disease2 =
+        document.getElementById("disease2")
+        .value.trim();
 
+    const result =
+        document.getElementById("compareResult");
 
-/* =====================================================
-   MEDICINE INTERACTION
-===================================================== */
+    if (!disease1 || !disease2) {
 
-function checkInteraction() {
+        result.textContent =
+            "دواړه ناروغۍ ولیکئ.";
 
-    sendSpecialRequest(
-        "/interaction",
-        "interactionInput",
-        "interactionResult",
-        "interactionLoading"
-    );
+        return;
+    }
 
-}
+    loading("compareLoading", true);
 
+    try {
 
-/* =====================================================
-   MEDICAL REPORT
-===================================================== */
+        const response =
+            await fetch("/compare", {
 
-function explainMedicalReport() {
+                method: "POST",
 
-    sendSpecialRequest(
-        "/report",
-        "reportInput",
-        "reportResult",
-        "reportLoading"
-    );
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                },
 
-}
+                body: JSON.stringify({
+                    disease1: disease1,
+                    disease2: disease2
+                })
 
+            });
 
-/* =====================================================
-   FIRST AID
-===================================================== */
+        const data =
+            await response.json();
 
-function firstAidGuide() {
+        result.textContent =
+            data.answer ||
+            data.error ||
+            "ځواب ترلاسه نه شو.";
 
-    sendSpecialRequest(
-        "/firstaid",
-        "firstAidInput",
-        "firstAidResult",
-        "firstAidLoading"
-    );
+    } catch (error) {
 
-}
+        result.textContent =
+            "د سرور ستونزه.";
 
+    } finally {
 
-/* =====================================================
-   GLOSSARY
-===================================================== */
+        loading("compareLoading", false);
 
-function explainGlossary() {
-
-    sendSpecialRequest(
-        "/glossary",
-        "glossaryInput",
-        "glossaryResult",
-        "glossaryLoading"
-    );
+    }
 
 }
 
@@ -1309,10 +1131,11 @@ function explainGlossary() {
    SEARCH
 ===================================================== */
 
-async function searchMedical() {
+async function medicalSearch() {
 
     const query =
-        document.getElementById("searchInput").value.trim();
+        document.getElementById("searchInput")
+        .value.trim();
 
     const result =
         document.getElementById("searchResult");
@@ -1320,7 +1143,7 @@ async function searchMedical() {
     if (!query) {
 
         result.textContent =
-            "مهرباني وکړئ د لټون موضوع ولیکئ.";
+            "موضوع ولیکئ.";
 
         return;
     }
@@ -1330,31 +1153,36 @@ async function searchMedical() {
 
     try {
 
-        const response = await fetch("/chat", {
+        const response =
+            await fetch("/chat", {
 
-            method: "POST",
+                method: "POST",
 
-            headers: {
-                "Content-Type": "application/json"
-            },
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                },
 
-            body: JSON.stringify({
-                question:
-                    "Provide educational medical information about: "
-                    + query
-            })
+                body: JSON.stringify({
+                    question:
+                        "Give educational medical information about "
+                        + query
+                })
 
-        });
+            });
 
-        const data = await response.json();
+        const data =
+            await response.json();
 
         result.textContent =
-            data.answer || data.error || "نتیجه ونه موندل شوه.";
+            data.answer ||
+            data.error ||
+            "نتیجه پیدا نه شوه.";
 
     } catch (error) {
 
         result.textContent =
-            "د لټون ستونزه رامنځته شوه.";
+            "د لټون ستونزه.";
 
     }
 
@@ -1365,10 +1193,11 @@ async function searchMedical() {
    IMAGES
 ===================================================== */
 
-async function displayImages() {
+async function loadImages() {
 
     const query =
-        document.getElementById("imageInput").value.trim();
+        document.getElementById("imageInput")
+        .value.trim();
 
     const container =
         document.getElementById("images");
@@ -1376,24 +1205,28 @@ async function displayImages() {
     if (!query) {
 
         container.innerHTML =
-            "<p>مهرباني وکړئ موضوع ولیکئ.</p>";
+            "<p>موضوع ولیکئ.</p>";
 
         return;
     }
 
-    showLoading("imageLoading", true);
+    loading("imageLoading", true);
 
     container.innerHTML = "";
 
     try {
 
-        const response = await fetch(
-            "/images?q=" + encodeURIComponent(query)
-        );
+        const response =
+            await fetch(
+                "/images?q=" +
+                encodeURIComponent(query)
+            );
 
-        const data = await response.json();
+        const data =
+            await response.json();
 
-        if (!data.images || data.images.length === 0) {
+        if (!data.images ||
+            data.images.length === 0) {
 
             container.innerHTML =
                 "<p>انځورونه پیدا نه شول.</p>";
@@ -1401,43 +1234,45 @@ async function displayImages() {
             return;
         }
 
-        data.images.forEach(function(image) {
+        data.images.forEach(function(item) {
 
-            const wrapper =
+            const div =
                 document.createElement("div");
 
             const img =
                 document.createElement("img");
 
-            img.src = image.url;
+            img.src = item.url;
 
-            img.alt = image.title;
+            img.alt = item.title;
 
             img.loading = "lazy";
 
             const title =
                 document.createElement("div");
 
-            title.className = "image-title";
+            title.className =
+                "small";
 
-            title.textContent = image.title;
+            title.textContent =
+                item.title;
 
-            wrapper.appendChild(img);
+            div.appendChild(img);
 
-            wrapper.appendChild(title);
+            div.appendChild(title);
 
-            container.appendChild(wrapper);
+            container.appendChild(div);
 
         });
 
     } catch (error) {
 
         container.innerHTML =
-            "<p>د انځورونو په راوړلو کې ستونزه.</p>";
+            "<p>د انځورونو ستونزه.</p>";
 
     } finally {
 
-        showLoading("imageLoading", false);
+        loading("imageLoading", false);
 
     }
 
@@ -1448,49 +1283,53 @@ async function displayImages() {
    QUIZ
 ===================================================== */
 
-async function generateQuiz() {
+async function quiz() {
 
     const result =
         document.getElementById("quizResult");
 
-    showLoading("quizLoading", true);
-
-    result.textContent = "";
+    loading("quizLoading", true);
 
     try {
 
-        const response = await fetch("/chat", {
+        const response =
+            await fetch("/chat", {
 
-            method: "POST",
+                method: "POST",
 
-            headers: {
-                "Content-Type": "application/json"
-            },
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                },
 
-            body: JSON.stringify({
+                body: JSON.stringify({
 
-                question:
-                    "Create a short educational medical quiz with 5 multiple-choice questions. "
-                    + "Give four options for each question and provide the correct answer after each question. "
-                    + "Use the same language as this request."
+                    question:
+                        "Create a 5-question educational medical quiz. "
+                        + "Give four choices for each question and "
+                        + "show the correct answer. "
+                        + "Answer in the same language as the user."
 
-            })
+                })
 
-        });
+            });
 
-        const data = await response.json();
+        const data =
+            await response.json();
 
         result.textContent =
-            data.answer || data.error || "Quiz جوړ نه شو.";
+            data.answer ||
+            data.error ||
+            "Quiz جوړ نه شو.";
 
     } catch (error) {
 
         result.textContent =
-            "د Quiz جوړولو ستونزه.";
+            "د Quiz ستونزه.";
 
     } finally {
 
-        showLoading("quizLoading", false);
+        loading("quizLoading", false);
 
     }
 
@@ -1498,10 +1337,8 @@ async function generateQuiz() {
 
 
 /* =====================================================
-   VOICE QUESTION
+   VOICE
 ===================================================== */
-
-let recognition = null;
 
 function startVoice() {
 
@@ -1512,7 +1349,7 @@ function startVoice() {
     if (!SpeechRecognition) {
 
         alert(
-            "ستاسو browser د Voice Question ملاتړ نه کوي."
+            "ستاسو browser Voice ملاتړ نه کوي."
         );
 
         return;
@@ -1527,21 +1364,25 @@ function startVoice() {
 
     recognition.continuous = false;
 
-    recognition.onresult = function(event) {
+    recognition.onresult =
+        function(event) {
 
-        const text =
-            event.results[0][0].transcript;
+            document.getElementById(
+                "question"
+            ).value =
+                event.results[0][0]
+                .transcript;
 
-        document.getElementById("question").value =
-            text;
+        };
 
-    };
+    recognition.onerror =
+        function() {
 
-    recognition.onerror = function() {
+            alert(
+                "Voice کې ستونزه رامنځته شوه."
+            );
 
-        alert("Voice Question کې ستونزه رامنځته شوه.");
-
-    };
+        };
 
     recognition.start();
 
@@ -1560,29 +1401,26 @@ function stopVoice() {
 
     if ("speechSynthesis" in window) {
 
-        window.speechSynthesis.cancel();
+        speechSynthesis.cancel();
 
     }
 
 }
 
 
-/* =====================================================
-   VOICE OUTPUT
-===================================================== */
+function speakAnswer() {
 
-function speakCurrentAnswer() {
+    const text =
+        currentAnswer ||
+        document.getElementById(
+            "answer"
+        ).textContent;
 
-    if (!currentAnswer) {
+    if (!text) {
 
-        currentAnswer =
-            document.getElementById("answer").textContent;
-
-    }
-
-    if (!currentAnswer) {
-
-        alert("لومړی یو AI ځواب ترلاسه کړئ.");
+        alert(
+            "لومړی AI ځواب ترلاسه کړئ."
+        );
 
         return;
     }
@@ -1590,22 +1428,22 @@ function speakCurrentAnswer() {
     if (!("speechSynthesis" in window)) {
 
         alert(
-            "ستاسو browser د Voice Output ملاتړ نه کوي."
+            "ستاسو browser Voice Output نه لري."
         );
 
         return;
     }
 
-    window.speechSynthesis.cancel();
+    speechSynthesis.cancel();
 
     const utterance =
-        new SpeechSynthesisUtterance(currentAnswer);
+        new SpeechSynthesisUtterance(text);
 
     utterance.lang = "ps-AF";
 
     utterance.rate = 0.9;
 
-    window.speechSynthesis.speak(
+    speechSynthesis.speak(
         utterance
     );
 
@@ -1616,7 +1454,7 @@ function speakCurrentAnswer() {
    DARK MODE
 ===================================================== */
 
-function toggleDarkMode() {
+function toggleDark() {
 
     document.body.classList.toggle("dark");
 
@@ -1627,11 +1465,11 @@ function toggleDarkMode() {
 
 }
 
-
-if (localStorage.getItem("medai_dark") === "true") {
-
+if (
+    localStorage.getItem("medai_dark")
+    === "true"
+) {
     document.body.classList.add("dark");
-
 }
 
 
@@ -1641,10 +1479,16 @@ if (localStorage.getItem("medai_dark") === "true") {
 
 function setTopic(topic) {
 
-    document.getElementById("question").value =
-        "د " + topic + " په اړه طبي معلومات راکړه.";
+    document.getElementById(
+        "question"
+    ).value =
+        "د " +
+        topic +
+        " په اړه طبي معلومات راکړه.";
 
-    document.getElementById("question").focus();
+    document.getElementById(
+        "question"
+    ).focus();
 
 }
 
@@ -1655,27 +1499,30 @@ function setTopic(topic) {
 
 function saveHistory(question, answer) {
 
-    let history =
+    let items =
         JSON.parse(
-            localStorage.getItem("medai_history") || "[]"
+            localStorage.getItem(
+                "medai_history"
+            ) || "[]"
         );
 
-    history.unshift({
+    items.unshift({
 
         question: question,
 
         answer: answer,
 
-        time: new Date().toLocaleString()
+        time: new Date()
+            .toLocaleString()
 
     });
 
-    history =
-        history.slice(0, 30);
+    items =
+        items.slice(0,30);
 
     localStorage.setItem(
         "medai_history",
-        JSON.stringify(history)
+        JSON.stringify(items)
     );
 
     loadHistory();
@@ -1686,14 +1533,18 @@ function saveHistory(question, answer) {
 function loadHistory() {
 
     const container =
-        document.getElementById("history");
-
-    let history =
-        JSON.parse(
-            localStorage.getItem("medai_history") || "[]"
+        document.getElementById(
+            "history"
         );
 
-    if (!history.length) {
+    let items =
+        JSON.parse(
+            localStorage.getItem(
+                "medai_history"
+            ) || "[]"
+        );
+
+    if (!items.length) {
 
         container.innerHTML =
             "<p class='small'>History خالي دی.</p>";
@@ -1703,7 +1554,7 @@ function loadHistory() {
 
     container.innerHTML = "";
 
-    history.forEach(function(item, index) {
+    items.forEach(function(item,index) {
 
         const div =
             document.createElement("div");
@@ -1711,14 +1562,22 @@ function loadHistory() {
         div.className =
             "history-item";
 
-        div.innerHTML = `
-            <strong>${escapeHTML(item.question)}</strong>
-            <div class="small">${escapeHTML(item.time)}</div>
-            <p>${escapeHTML(item.answer)}</p>
-            <button onclick="saveFavorite(${index})">
-                ⭐ Favorite
-            </button>
-        `;
+        div.innerHTML =
+            "<strong>" +
+            escapeHTML(item.question) +
+            "</strong>" +
+
+            "<div class='small'>" +
+            escapeHTML(item.time) +
+            "</div>" +
+
+            "<p>" +
+            escapeHTML(item.answer) +
+            "</p>" +
+
+            "<button onclick='favorite(" +
+            index +
+            ")'>⭐ Favorite</button>";
 
         container.appendChild(div);
 
@@ -1738,25 +1597,26 @@ function clearHistory() {
 }
 
 
-loadHistory();
-
-
 /* =====================================================
    FAVORITES
 ===================================================== */
 
-function saveFavorite(index) {
+function favorite(index) {
 
     let history =
         JSON.parse(
-            localStorage.getItem("medai_history") || "[]"
+            localStorage.getItem(
+                "medai_history"
+            ) || "[]"
         );
 
     if (!history[index]) return;
 
     let favorites =
         JSON.parse(
-            localStorage.getItem("medai_favorites") || "[]"
+            localStorage.getItem(
+                "medai_favorites"
+            ) || "[]"
         );
 
     favorites.unshift(
@@ -1764,7 +1624,7 @@ function saveFavorite(index) {
     );
 
     favorites =
-        favorites.slice(0, 30);
+        favorites.slice(0,30);
 
     localStorage.setItem(
         "medai_favorites",
@@ -1779,14 +1639,18 @@ function saveFavorite(index) {
 function loadFavorites() {
 
     const container =
-        document.getElementById("favorites");
-
-    let favorites =
-        JSON.parse(
-            localStorage.getItem("medai_favorites") || "[]"
+        document.getElementById(
+            "favorites"
         );
 
-    if (!favorites.length) {
+    let items =
+        JSON.parse(
+            localStorage.getItem(
+                "medai_favorites"
+            ) || "[]"
+        );
+
+    if (!items.length) {
 
         container.innerHTML =
             "<p class='small'>Favorites خالي دي.</p>";
@@ -1796,7 +1660,7 @@ function loadFavorites() {
 
     container.innerHTML = "";
 
-    favorites.forEach(function(item) {
+    items.forEach(function(item) {
 
         const div =
             document.createElement("div");
@@ -1804,11 +1668,18 @@ function loadFavorites() {
         div.className =
             "favorite-item";
 
-        div.innerHTML = `
-            <strong>${escapeHTML(item.question)}</strong>
-            <div class="small">${escapeHTML(item.time)}</div>
-            <p>${escapeHTML(item.answer)}</p>
-        `;
+        div.innerHTML =
+            "<strong>" +
+            escapeHTML(item.question) +
+            "</strong>" +
+
+            "<div class='small'>" +
+            escapeHTML(item.time) +
+            "</div>" +
+
+            "<p>" +
+            escapeHTML(item.answer) +
+            "</p>";
 
         container.appendChild(div);
 
@@ -1828,7 +1699,405 @@ function clearFavorites() {
 }
 
 
+/* =====================================================
+   MEDICATION REMINDER
+===================================================== */
+
+function addReminder() {
+
+    const medicine =
+        document.getElementById(
+            "reminderMedicine"
+        ).value.trim();
+
+    const time =
+        document.getElementById(
+            "reminderTime"
+        ).value;
+
+    const note =
+        document.getElementById(
+            "reminderNote"
+        ).value.trim();
+
+    if (!medicine || !time) {
+
+        alert(
+            "د درملو نوم او وخت ولیکئ."
+        );
+
+        return;
+    }
+
+    let reminders =
+        JSON.parse(
+            localStorage.getItem(
+                "medai_reminders"
+            ) || "[]"
+        );
+
+    reminders.push({
+
+        medicine: medicine,
+
+        time: time,
+
+        note: note
+
+    });
+
+    localStorage.setItem(
+        "medai_reminders",
+        JSON.stringify(reminders)
+    );
+
+    document.getElementById(
+        "reminderMedicine"
+    ).value = "";
+
+    document.getElementById(
+        "reminderTime"
+    ).value = "";
+
+    document.getElementById(
+        "reminderNote"
+    ).value = "";
+
+    loadReminders();
+
+}
+
+
+function loadReminders() {
+
+    const container =
+        document.getElementById(
+            "reminders"
+        );
+
+    let reminders =
+        JSON.parse(
+            localStorage.getItem(
+                "medai_reminders"
+            ) || "[]"
+        );
+
+    container.innerHTML = "";
+
+    reminders.forEach(function(item,index) {
+
+        const div =
+            document.createElement("div");
+
+        div.className =
+            "reminder-item";
+
+        div.innerHTML =
+            "<strong>💊 " +
+            escapeHTML(item.medicine) +
+            "</strong>" +
+
+            "<p>⏰ " +
+            escapeHTML(item.time) +
+            "</p>" +
+
+            "<p>" +
+            escapeHTML(item.note || "") +
+            "</p>" +
+
+            "<button class='danger' " +
+            "onclick='deleteReminder(" +
+            index +
+            ")'>حذف</button>";
+
+        container.appendChild(div);
+
+    });
+
+}
+
+
+function deleteReminder(index) {
+
+    let reminders =
+        JSON.parse(
+            localStorage.getItem(
+                "medai_reminders"
+            ) || "[]"
+        );
+
+    reminders.splice(index,1);
+
+    localStorage.setItem(
+        "medai_reminders",
+        JSON.stringify(reminders)
+    );
+
+    loadReminders();
+
+}
+
+
+/* =====================================================
+   HEALTH TRACKER
+===================================================== */
+
+function addTracker() {
+
+    const type =
+        document.getElementById(
+            "trackerType"
+        ).value;
+
+    const value =
+        document.getElementById(
+            "trackerValue"
+        ).value.trim();
+
+    const note =
+        document.getElementById(
+            "trackerNote"
+        ).value.trim();
+
+    if (!value) {
+
+        alert(
+            "Value ولیکئ."
+        );
+
+        return;
+    }
+
+    let records =
+        JSON.parse(
+            localStorage.getItem(
+                "medai_tracker"
+            ) || "[]"
+        );
+
+    records.unshift({
+
+        type: type,
+
+        value: value,
+
+        note: note,
+
+        time: new Date()
+            .toLocaleString()
+
+    });
+
+    records =
+        records.slice(0,100);
+
+    localStorage.setItem(
+        "medai_tracker",
+        JSON.stringify(records)
+    );
+
+    document.getElementById(
+        "trackerValue"
+    ).value = "";
+
+    document.getElementById(
+        "trackerNote"
+    ).value = "";
+
+    loadTracker();
+
+}
+
+
+function loadTracker() {
+
+    const container =
+        document.getElementById(
+            "trackerList"
+        );
+
+    let records =
+        JSON.parse(
+            localStorage.getItem(
+                "medai_tracker"
+            ) || "[]"
+        );
+
+    container.innerHTML = "";
+
+    if (!records.length) {
+
+        container.innerHTML =
+            "<p class='small'>تر اوسه معلومات نشته.</p>";
+
+        return;
+    }
+
+    records.forEach(function(item,index) {
+
+        const div =
+            document.createElement("div");
+
+        div.className =
+            "tracker-item";
+
+        div.innerHTML =
+            "<strong>" +
+            escapeHTML(item.type) +
+            "</strong>" +
+
+            "<p>Value: " +
+            escapeHTML(item.value) +
+            "</p>" +
+
+            "<p>" +
+            escapeHTML(item.note || "") +
+            "</p>" +
+
+            "<div class='small'>" +
+            escapeHTML(item.time) +
+            "</div>" +
+
+            "<button class='danger' " +
+            "onclick='deleteTracker(" +
+            index +
+            ")'>حذف</button>";
+
+        container.appendChild(div);
+
+    });
+
+}
+
+
+function deleteTracker(index) {
+
+    let records =
+        JSON.parse(
+            localStorage.getItem(
+                "medai_tracker"
+            ) || "[]"
+        );
+
+    records.splice(index,1);
+
+    localStorage.setItem(
+        "medai_tracker",
+        JSON.stringify(records)
+    );
+
+    loadTracker();
+
+}
+
+
+function clearTracker() {
+
+    localStorage.removeItem(
+        "medai_tracker"
+    );
+
+    loadTracker();
+
+}
+
+
+/* =====================================================
+   HEALTH REPORT
+===================================================== */
+
+async function generateHealthReport() {
+
+    const manual =
+        document.getElementById(
+            "healthReportInput"
+        ).value.trim();
+
+    let tracker =
+        JSON.parse(
+            localStorage.getItem(
+                "medai_tracker"
+            ) || "[]"
+        );
+
+    const result =
+        document.getElementById(
+            "healthReportResult"
+        );
+
+    const combined =
+        "User notes:\n" +
+        manual +
+        "\n\nHealth Tracker records:\n" +
+        JSON.stringify(tracker);
+
+    if (!manual && !tracker.length) {
+
+        result.textContent =
+            "لومړی Health Tracker کې معلومات ثبت کړئ یا خپل معلومات ولیکئ.";
+
+        return;
+    }
+
+    loading(
+        "healthReportLoading",
+        true
+    );
+
+    try {
+
+        const response =
+            await fetch(
+                "/health-report",
+                {
+
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        text: combined
+                    })
+
+                }
+            );
+
+        const data =
+            await response.json();
+
+        result.textContent =
+            data.answer ||
+            data.error ||
+            "راپور جوړ نه شو.";
+
+    } catch (error) {
+
+        result.textContent =
+            "د راپور جوړولو ستونزه.";
+
+    } finally {
+
+        loading(
+            "healthReportLoading",
+            false
+        );
+
+    }
+
+}
+
+
+/* =====================================================
+   LOAD LOCAL DATA
+===================================================== */
+
+loadHistory();
 loadFavorites();
+loadReminders();
+loadTracker();
 
 </script>
 
@@ -1838,13 +2107,17 @@ loadFavorites();
 
 
 # =========================================================
-# ROUTES
+# HOME
 # =========================================================
 
 @app.route("/")
 def home():
     return HTML
 
+
+# =========================================================
+# MAIN CHAT
+# =========================================================
 
 @app.route("/chat", methods=["POST"])
 def chat():
@@ -1864,27 +2137,29 @@ def chat():
         """
 Give a structured medical educational answer.
 
-Use these sections when relevant:
-1. Definition
-2. Causes
-3. Types
-4. Risk Factors
-5. Signs and Symptoms
-6. Diagnosis
-7. Treatment
-8. Prevention
-9. Complications
-10. Important Points
+Use these sections when appropriate:
+Definition
+Causes
+Types
+Risk Factors
+Signs and Symptoms
+Diagnosis
+Treatment
+Prevention
+Complications
+Important Points
 """,
         question
     )
 
-    answer = ask_gemini(prompt)
-
     return jsonify({
-        "answer": answer
+        "answer": ask_gemini(prompt)
     })
 
+
+# =========================================================
+# SYMPTOMS
+# =========================================================
 
 @app.route("/symptoms", methods=["POST"])
 def symptoms():
@@ -1897,19 +2172,19 @@ def symptoms():
 
     if not text:
         return jsonify({
-            "error": "نښې خالي دي."
+            "error": "نښې ولیکئ."
         }), 400
 
     prompt = build_prompt(
         """
-Explain the reported symptoms educationally.
+Explain the symptoms educationally.
 
 Include:
 - What the symptoms can generally mean
-- Body systems that may be associated
+- Possible body systems involved
 - Common conditions that can sometimes cause them
-- Warning signs requiring urgent medical attention
-- When professional medical evaluation may be appropriate
+- Warning signs
+- When professional evaluation may be appropriate
 
 Do not diagnose the user.
 """,
@@ -1920,6 +2195,10 @@ Do not diagnose the user.
         "answer": ask_gemini(prompt)
     })
 
+
+# =========================================================
+# VITALS
+# =========================================================
 
 @app.route("/vitals", methods=["POST"])
 def vitals():
@@ -1932,22 +2211,21 @@ def vitals():
 
     if not text:
         return jsonify({
-            "error": "Vital signs معلومات خالي دي."
+            "error": "Vital signs معلومات ولیکئ."
         }), 400
 
     prompt = build_prompt(
         """
-Explain the provided vital signs educationally.
+Explain the provided vital signs.
 
-Discuss:
+Explain:
 - What each measurement means
-- General adult reference concepts where appropriate
+- General reference concepts
 - Factors that can affect readings
-- Why repeated measurements may matter
-- When a reading may need professional attention
+- Why repeated measurements can matter
+- When professional evaluation may be appropriate
 
-Do not diagnose the person.
-Do not provide personalized treatment or medication instructions.
+Do not diagnose.
 """,
         text
     )
@@ -1957,8 +2235,12 @@ Do not provide personalized treatment or medication instructions.
     })
 
 
+# =========================================================
+# COMPARISON
+# =========================================================
+
 @app.route("/compare", methods=["POST"])
-def compare():
+def compare_route():
 
     data = request.get_json(silent=True) or {}
 
@@ -1975,27 +2257,27 @@ def compare():
             "error": "دواړه ناروغۍ ولیکئ."
         }), 400
 
-    text = f"""
-Disease 1: {disease1}
-Disease 2: {disease2}
-"""
+    text = (
+        "Disease 1: " + disease1 +
+        "\nDisease 2: " + disease2
+    )
 
     prompt = build_prompt(
         """
-Compare the two medical conditions.
+Compare the two conditions.
 
-Use:
+Include:
 - Definition
 - Causes
 - Risk factors
 - Symptoms
 - Diagnosis
 - Treatment approaches
-- Main differences
+- Differences
 - Similarities
 - Warning signs
 
-Keep the comparison educational and do not diagnose the user.
+Do not diagnose the user.
 """,
         text
     )
@@ -2004,6 +2286,10 @@ Keep the comparison educational and do not diagnose the user.
         "answer": ask_gemini(prompt)
     })
 
+
+# =========================================================
+# DOCTOR
+# =========================================================
 
 @app.route("/doctor", methods=["POST"])
 def doctor():
@@ -2016,24 +2302,23 @@ def doctor():
 
     if not text:
         return jsonify({
-            "error": "معلومات خالي دي."
+            "error": "معلومات ولیکئ."
         }), 400
 
     prompt = build_prompt(
         """
-Organize the user's notes so they can be easier to discuss with a doctor.
+Organize the user's notes for a doctor visit.
 
 Create:
 - Main concern
 - Symptoms
-- When symptoms started
-- How symptoms changed
-- Current medicines mentioned by the user
-- Measurements or tests mentioned
-- Important questions to ask the doctor
+- Onset
+- Changes
+- Medicines mentioned
+- Tests or measurements
+- Questions to ask the doctor
 
-Do not add facts that the user did not provide.
-Do not diagnose.
+Do not add information not provided by the user.
 """,
         text
     )
@@ -2042,6 +2327,10 @@ Do not diagnose.
         "answer": ask_gemini(prompt)
     })
 
+
+# =========================================================
+# LAB
+# =========================================================
 
 @app.route("/lab", methods=["POST"])
 def lab():
@@ -2054,20 +2343,19 @@ def lab():
 
     if not text:
         return jsonify({
-            "error": "Lab معلومات خالي دي."
+            "error": "Lab معلومات ولیکئ."
         }), 400
 
     prompt = build_prompt(
         """
-Explain the laboratory test or results educationally.
+Explain the laboratory test or results.
 
-For each test where possible:
+Include:
 - What the test measures
-- Why it may be ordered
-- What higher or lower results can sometimes be associated with
-- Factors that can affect results
+- Why it may be used
+- What high or low values can sometimes be associated with
+- Factors affecting results
 - Why reference ranges differ between laboratories
-- When discussing abnormal results, explain that interpretation depends on clinical context
 
 Do not diagnose from laboratory results alone.
 """,
@@ -2078,6 +2366,10 @@ Do not diagnose from laboratory results alone.
         "answer": ask_gemini(prompt)
     })
 
+
+# =========================================================
+# MEDICINE
+# =========================================================
 
 @app.route("/medicine", methods=["POST"])
 def medicine():
@@ -2095,19 +2387,18 @@ def medicine():
 
     prompt = build_prompt(
         """
-Provide general educational information about the medicine.
+Provide general information about the medicine.
 
 Include:
 - What it is
 - Common uses
-- General mechanism if useful
+- General mechanism
 - Common side effects
-- Important precautions
+- Precautions
 - General interaction categories
-- Situations where professional advice is important
+- When professional advice is important
 
-Do not provide personalized dosage instructions.
-Do not tell the user to start, stop, or change prescription medicine.
+Do not give personalized dosage instructions.
 """,
         text
     )
@@ -2116,6 +2407,10 @@ Do not tell the user to start, stop, or change prescription medicine.
         "answer": ask_gemini(prompt)
     })
 
+
+# =========================================================
+# DICTIONARY
+# =========================================================
 
 @app.route("/dictionary", methods=["POST"])
 def dictionary():
@@ -2137,8 +2432,8 @@ Explain the medical term in simple language.
 
 Include:
 - Simple definition
-- Why it matters medically
-- A short example if helpful
+- Why it matters
+- Short example
 - Related terms if useful
 """,
         text
@@ -2148,6 +2443,10 @@ Include:
         "answer": ask_gemini(prompt)
     })
 
+
+# =========================================================
+# EMERGENCY
+# =========================================================
 
 @app.route("/emergency", methods=["POST"])
 def emergency():
@@ -2165,17 +2464,16 @@ def emergency():
 
     prompt = build_prompt(
         """
-Assess only for general emergency warning signs.
+Look only for general emergency warning signs.
 
-Clearly separate:
+Separate:
 - Emergency warning signs
 - Other information
-- What action is generally appropriate if an emergency sign is present
+- What action is generally appropriate
 
 If serious warning signs are present, advise urgent professional medical care.
 
 Do not diagnose.
-The absence of a warning sign does not guarantee that the person is safe.
 """,
         text
     )
@@ -2186,8 +2484,7 @@ The absence of a warning sign does not guarantee that the person is safe.
 
 
 # =========================================================
-# NEW FEATURE 1
-# MEDICINE INTERACTION CHECKER
+# MEDICINE INTERACTION
 # =========================================================
 
 @app.route("/interaction", methods=["POST"])
@@ -2206,22 +2503,19 @@ def interaction():
 
     prompt = build_prompt(
         """
-Review the listed medicines for known or potentially important interaction
-categories using general medical information.
+Review the listed medicines for known or potentially important interactions.
 
-For each possible interaction, explain:
-- Which medicines are involved
-- What type of interaction may occur
+Explain:
+- Medicines involved
+- Type of possible interaction
 - Why it may matter
-- What symptoms or effects may be important
-- Whether a pharmacist or doctor should review the combination
+- Important possible effects
+- Why a pharmacist or doctor may need to review it
 
-Important:
-- Do not assume the exact dose or patient history.
-- Do not tell the user to stop or change medicines.
-- Mention that interaction risk can depend on dose, age, kidney/liver function,
-  other medicines, supplements, and medical conditions.
-- If the medicine names are unclear, say so.
+Interaction risk can depend on dose, age, kidney/liver function,
+other medicines, supplements and medical conditions.
+
+Do not tell the user to stop or change medicines.
 """,
         text
     )
@@ -2232,8 +2526,7 @@ Important:
 
 
 # =========================================================
-# NEW FEATURE 2
-# MEDICAL REPORT EXPLAINER
+# MEDICAL REPORT
 # =========================================================
 
 @app.route("/report", methods=["POST"])
@@ -2247,26 +2540,24 @@ def report():
 
     if not text:
         return jsonify({
-            "error": "د طبي راپور معلومات ولیکئ."
+            "error": "طبي راپور ولیکئ."
         }), 400
 
     prompt = build_prompt(
         """
 Explain the medical report in simple language.
 
-Organize the explanation into:
+Organize:
 1. What the report is about
 2. Important findings
-3. Meaning of medical terms
-4. Tests or measurements mentioned
+3. Medical terms
+4. Tests and measurements
 5. What findings can generally be associated with
-6. Questions the patient could ask their doctor
+6. Questions for the doctor
 7. Important limitations
 
-Do not diagnose from the report alone.
+Do not diagnose.
 Do not invent missing information.
-If the report contains a reference range, explain that ranges can vary
-between laboratories or institutions.
 """,
         text
     )
@@ -2277,8 +2568,7 @@ between laboratories or institutions.
 
 
 # =========================================================
-# NEW FEATURE 3
-# FIRST AID GUIDE
+# FIRST AID
 # =========================================================
 
 @app.route("/firstaid", methods=["POST"])
@@ -2292,24 +2582,21 @@ def firstaid():
 
     if not text:
         return jsonify({
-            "error": "د حالت نوم ولیکئ."
+            "error": "حالت ولیکئ."
         }), 400
 
     prompt = build_prompt(
         """
-Provide a general first-aid educational guide for the described situation.
+Provide a general first-aid educational guide.
 
-Structure it as:
+Structure:
 1. Immediate priorities
 2. Basic first-aid steps
 3. What NOT to do
-4. When emergency services or urgent medical care are needed
-5. When professional evaluation is appropriate
+4. Emergency warning signs
+5. When professional evaluation is needed
 
 Keep instructions simple and safety-focused.
-Do not diagnose.
-Do not give dangerous or invasive instructions.
-If the situation could be life-threatening, emphasize emergency medical care.
 """,
         text
     )
@@ -2320,8 +2607,7 @@ If the situation could be life-threatening, emphasize emergency medical care.
 
 
 # =========================================================
-# NEW FEATURE 4
-# MEDICAL GLOSSARY
+# GLOSSARY
 # =========================================================
 
 @app.route("/glossary", methods=["POST"])
@@ -2335,21 +2621,19 @@ def glossary():
 
     if not text:
         return jsonify({
-            "error": "طبي اصطلاحات ولیکئ."
+            "error": "اصطلاحات ولیکئ."
         }), 400
 
     prompt = build_prompt(
         """
-Explain the listed medical terms in very simple language.
+Explain each medical term in very simple language.
 
-For each term provide:
+For each:
 - Term
 - Simple meaning
 - Why it is used in medicine
-- Short example when helpful
-- Related term when useful
-
-Keep every explanation understandable to a general audience.
+- Short example
+- Related term if useful
 """,
         text
     )
@@ -2360,7 +2644,92 @@ Keep every explanation understandable to a general audience.
 
 
 # =========================================================
-# MEDICAL IMAGES ROUTE
+# NEW: RISK ASSESSMENT
+# =========================================================
+
+@app.route("/risk", methods=["POST"])
+def risk():
+
+    data = request.get_json(silent=True) or {}
+
+    text = str(
+        data.get("text", "")
+    ).strip()
+
+    if not text:
+        return jsonify({
+            "error": "معلومات ولیکئ."
+        }), 400
+
+    prompt = build_prompt(
+        """
+Review the information for GENERAL medical risk indicators.
+
+Do not calculate a fake medical score.
+
+Organize:
+- Important reported factors
+- Potential warning signs
+- Factors that may increase concern
+- Information that is missing
+- When urgent care may be appropriate
+- When routine professional evaluation may be appropriate
+
+Do not diagnose the person.
+Do not predict their outcome.
+""",
+        text
+    )
+
+    return jsonify({
+        "answer": ask_gemini(prompt)
+    })
+
+
+# =========================================================
+# NEW: HEALTH REPORT
+# =========================================================
+
+@app.route("/health-report", methods=["POST"])
+def health_report():
+
+    data = request.get_json(silent=True) or {}
+
+    text = str(
+        data.get("text", "")
+    ).strip()
+
+    if not text:
+        return jsonify({
+            "error": "د روغتیا معلومات ولیکئ."
+        }), 400
+
+    prompt = build_prompt(
+        """
+Create a clear educational health summary from the information provided.
+
+Use:
+- Summary
+- Recorded measurements
+- Symptoms or concerns mentioned
+- Trends that can be directly observed from the provided data
+- Questions to discuss with a healthcare professional
+- Important limitations
+
+Do not diagnose.
+Do not invent missing information.
+Do not give personalized prescriptions.
+""",
+        text
+    )
+
+    return jsonify({
+        "answer": ask_gemini(prompt)
+    })
+
+
+# =========================================================
+# IMAGES
 # =========================================================
 
 @app.route("/images", methods=["GET"])
@@ -2377,7 +2746,8 @@ def images():
         })
 
     return jsonify({
-        "images": get_medical_images(query)
+        "images":
+            get_medical_images(query)
     })
 
 
