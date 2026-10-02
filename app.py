@@ -1,389 +1,2850 @@
-from flask import Flask
-
-app = Flask(__name__)
 import os
-import json
 import time
-import base64
-import mimetypes
-import urllib.request
-import urllib.error
+import logging
+from collections import defaultdict, deque
+from datetime import datetime, timezone
 
-from flask import Flask, request, jsonify, render_template_string
+import requests
+from flask import Flask, jsonify, request, render_template_string
 
 app = Flask(__name__)
 
 # =========================================================
-# CONFIG
+# MedAI - Single File Medical AI Web App
 # =========================================================
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash").strip()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.getenv(
+    "GEMINI_MODEL",
+    "gemini-3.5-flash-lite"
+).strip()
 
 GEMINI_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    + GEMINI_MODEL
-    + ":generateContent"
+    "https://generativelanguage.googleapis.com/"
+    f"v1beta/models/{GEMINI_MODEL}:generateContent"
 )
 
-MAX_MESSAGE_LENGTH = 12000
-MAX_HISTORY = 16
-MAX_FILE_BYTES = 12 * 1024 * 1024
+WIKIMEDIA_URL = "https://commons.wikimedia.org/w/api.php"
+
+MAX_TEXT = 12000
+RATE_LIMIT = 30
+RATE_WINDOW = 60
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("MedAI")
+
+rate_store = defaultdict(deque)
 
 
 # =========================================================
-# MEDICAL SYSTEM PROMPT
+# Security
 # =========================================================
 
-SYSTEM_PROMPT = """
-You are MedAI, a multilingual medical information assistant.
-
-IMPORTANT SAFETY RULES:
-- You provide general medical information, not a medical diagnosis.
-- Never claim certainty about a diagnosis.
-- Do not replace a doctor, nurse, pharmacist, or emergency service.
-- Never invent laboratory values, medical records, medications, or sources.
-- Do not give dangerous instructions.
-- If a user describes a possible emergency, clearly recommend immediate
-  emergency medical care.
-- If a medication is discussed, explain general uses, common precautions,
-  and advise checking the official label or a pharmacist/doctor.
-- Do not tell users to stop or change prescribed treatment without
-  professional medical advice.
-- For children, pregnancy, severe symptoms, allergies, or serious
-  conditions, recommend professional medical evaluation.
-
-RESPONSE STYLE:
-- Answer in the same language as the user when possible.
-- Support Pashto, Dari, English, and mixed-language questions.
-- Use clear headings and bullet points.
-- Keep normal answers concise but useful.
-- For symptoms use:
-  Possible explanations
-  Warning signs
-  What to do now
-  When to see a doctor
-- For medicine questions use:
-  What it is
-  Common uses
-  Important precautions
-  When to contact a professional
-- For lab reports:
-  Explain each provided result in simple language.
-  Do not diagnose from one number alone.
-  Mention that reference ranges differ by laboratory.
-- For uploaded images/documents:
-  Only describe what can actually be read or observed.
-  If the image is unclear, say so.
-"""
+@app.after_request
+def security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "microphone=(self)"
+    return response
 
 
-# =========================================================
-# HELPERS
-# =========================================================
-
-def clean_history(history):
-    """Keep only safe, small conversation history."""
-    if not isinstance(history, list):
-        return []
-
-    result = []
-
-    for item in history[-MAX_HISTORY:]:
-        if not isinstance(item, dict):
-            continue
-
-        role = item.get("role")
-        text = str(item.get("text", "")).strip()
-
-        if role not in ("user", "assistant"):
-            continue
-
-        if not text:
-            continue
-
-        result.append({
-            "role": role,
-            "text": text[:6000]
-        })
-
-    return result
+def get_client_ip():
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.remote_addr or "unknown"
 
 
-def make_text_contents(message, history):
-    contents = []
+def is_rate_limited():
+    now = time.time()
+    ip = get_client_ip()
+    q = rate_store[ip]
 
-    for item in clean_history(history):
-        contents.append({
-            "role": "user" if item["role"] == "user" else "model",
-            "parts": [
-                {
-                    "text": item["text"]
-                }
-            ]
-        })
+    while q and now - q[0] > RATE_WINDOW:
+        q.popleft()
 
-    contents.append({
-        "role": "user",
-        "parts": [
-            {
-                "text": message
-            }
-        ]
-    })
+    if len(q) >= RATE_LIMIT:
+        return True
 
-    return contents
+    q.append(now)
+    return False
 
 
-def extract_gemini_text(data):
-    candidates = data.get("candidates") or []
-
-    if not candidates:
+def clean_text(value, limit=MAX_TEXT):
+    if not isinstance(value, str):
         return ""
-
-    candidate = candidates[0] or {}
-    content = candidate.get("content") or {}
-    parts = content.get("parts") or []
-
-    text_parts = []
-
-    for part in parts:
-        if isinstance(part, dict) and part.get("text"):
-            text_parts.append(str(part["text"]))
-
-    return "\n".join(text_parts).strip()
+    return value.strip()[:limit]
 
 
-def gemini_request(payload, retries=3):
-    """Gemini REST request with retry for temporary errors."""
+# =========================================================
+# Medical Prompt
+# =========================================================
+
+def medical_prompt(task, text):
+    return f"""
+You are MedAI, an educational medical AI assistant.
+
+Developer: Toyebullah Dawoodzay
+Year: 2026
+
+RULES:
+
+- Reply in the same language as the user.
+- If the user writes Pashto, reply in simple clear Pashto.
+- Give educational medical information only.
+- You are not a doctor.
+- Do not claim to examine the patient.
+- Do not diagnose from symptoms alone.
+- Do not invent medical facts.
+- Do not invent laboratory reference ranges.
+- Do not invent medicine information.
+- Do not provide personalized prescription dosing.
+- Do not tell a patient to start, stop, or change prescription medicine.
+- For medicine questions, provide general educational information only.
+- Clearly mention uncertainty when necessary.
+- For severe symptoms, children, pregnancy, elderly patients,
+  chronic disease, or possible drug interactions, recommend
+  professional medical evaluation.
+- If there may be an emergency, advise urgent medical care first.
+- Never delay emergency treatment because of an AI response.
+
+TASK:
+{task}
+
+USER:
+{text}
+""".strip()
+
+
+# =========================================================
+# Gemini
+# =========================================================
+
+def ask_gemini(prompt):
 
     if not GEMINI_API_KEY:
-        raise RuntimeError(
-            "GEMINI_API_KEY is missing in Vercel Environment Variables."
+        return (
+            "⚠️ Gemini API Key تنظیم شوی نه دی.\n\n"
+            "په خپل hosting کې GEMINI_API_KEY "
+            "Environment Variable اضافه کړه."
         )
-
-    body = json.dumps(payload).encode("utf-8")
 
     headers = {
         "Content-Type": "application/json",
-        "x-goog-api-key": GEMINI_API_KEY,
+        "x-goog-api-key": GEMINI_API_KEY
     }
-
-    last_error = "Unknown Gemini error"
-
-    for attempt in range(retries):
-
-        req = urllib.request.Request(
-            GEMINI_URL,
-            data=body,
-            headers=headers,
-            method="POST",
-        )
-
-        try:
-
-            with urllib.request.urlopen(req, timeout=60) as response:
-                raw = response.read().decode("utf-8")
-
-            try:
-                return json.loads(raw)
-            except json.JSONDecodeError:
-                raise RuntimeError(
-                    "Gemini returned invalid JSON."
-                )
-
-        except urllib.error.HTTPError as error:
-
-            try:
-                detail = error.read().decode("utf-8")
-            except Exception:
-                detail = ""
-
-            last_error = (
-                f"Gemini API HTTP {error.code}"
-                + (f": {detail[:700]}" if detail else "")
-            )
-
-            # Temporary server/rate-limit errors.
-            if error.code in (429, 500, 502, 503, 504):
-                if attempt < retries - 1:
-                    time.sleep(2 ** attempt)
-                    continue
-
-            if error.code == 400:
-                raise RuntimeError(
-                    "Gemini rejected the request. "
-                    + detail[:500]
-                )
-
-            if error.code == 401 or error.code == 403:
-                raise RuntimeError(
-                    "Gemini API key is invalid or does not have access."
-                )
-
-            raise RuntimeError(last_error)
-
-        except urllib.error.URLError as error:
-
-            last_error = f"Gemini connection error: {error}"
-
-            if attempt < retries - 1:
-                time.sleep(2 ** attempt)
-                continue
-
-            raise RuntimeError(last_error)
-
-        except TimeoutError:
-
-            last_error = "Gemini request timed out."
-
-            if attempt < retries - 1:
-                time.sleep(2 ** attempt)
-                continue
-
-            raise RuntimeError(last_error)
-
-    raise RuntimeError(last_error)
-
-
-# =========================================================
-# TEXT CHAT
-# =========================================================
-
-def ask_gemini(message, history=None):
 
     payload = {
-        "system_instruction": {
-            "parts": [
-                {
-                    "text": SYSTEM_PROMPT
-                }
-            ]
-        },
-
-        "contents": make_text_contents(
-            message,
-            history or []
-        ),
-
-        "generationConfig": {
-            "maxOutputTokens": 1800,
-            "thinkingConfig": {
-                "thinkingLevel": "medium"
-            }
-        }
-    }
-
-    data = gemini_request(payload)
-
-    answer = extract_gemini_text(data)
-
-    if not answer:
-        raise RuntimeError(
-            "Gemini returned an empty answer."
-        )
-
-    return answer
-
-
-# =========================================================
-# MULTIMODAL CHAT
-# IMAGE / PDF
-# =========================================================
-
-def ask_gemini_with_file(message, file_bytes, filename, mimetype):
-
-    if not file_bytes:
-        raise RuntimeError("Uploaded file is empty.")
-
-    if len(file_bytes) > MAX_FILE_BYTES:
-        raise RuntimeError(
-            "File is too large. Maximum allowed size is 12 MB."
-        )
-
-    if not mimetype:
-        mimetype = (
-            mimetypes.guess_type(filename)[0]
-            or "application/octet-stream"
-        )
-
-    allowed = {
-        "image/jpeg",
-        "image/png",
-        "image/webp",
-        "image/heic",
-        "image/heif",
-        "application/pdf",
-    }
-
-    if mimetype not in allowed:
-        raise RuntimeError(
-            "Supported files: JPG, PNG, WEBP, HEIC, HEIF and PDF."
-        )
-
-    encoded = base64.b64encode(file_bytes).decode("utf-8")
-
-    prompt = f"""
-{SYSTEM_PROMPT}
-
-The user uploaded this file:
-{filename}
-
-User request:
-{message}
-
-Analyze the uploaded file only as far as the visible/readable content allows.
-Clearly mention uncertainty if something cannot be read.
-"""
-
-    payload = {
-        "system_instruction": {
-            "parts": [
-                {
-                    "text": SYSTEM_PROMPT
-                }
-            ]
-        },
-
         "contents": [
             {
-                "role": "user",
                 "parts": [
                     {
                         "text": prompt
-                    },
-                    {
-                        "inline_data": {
-                            "mime_type": mimetype,
-                            "data": encoded
-                        }
                     }
                 ]
             }
         ],
-
         "generationConfig": {
-            "maxOutputTokens": 2000,
-            "thinkingConfig": {
-                "thinkingLevel": "medium"
-            }
+            "temperature": 0.2,
+            "maxOutputTokens": 1800
         }
     }
 
-    data = gemini_request(payload)
-
-    answer = extract_gemini_text(data)
-
-    if not answer:
-        raise RuntimeError(
-            "Gemini could not analyze this file."
+    try:
+        r = requests.post(
+            GEMINI_URL,
+            headers=headers,
+            json=payload,
+            timeout=45
         )
 
-    return answer
+        if r.status_code >= 400:
+            logger.error(
+                "Gemini error %s: %s",
+                r.status_code,
+                r.text[:1000]
+            )
+
+            return (
+                "⚠️ د AI خدمت سره ستونزه ده.\n"
+                "Gemini Model یا API Key وګوره."
+            )
+
+        data = r.json()
+
+        candidates = data.get("candidates", [])
+
+        if not candidates:
+            return "AI ځواب ونه شو ترلاسه کېدای."
+
+        parts = (
+            candidates[0]
+            .get("content", {})
+            .get("parts", [])
+        )
+
+        answer = "\n".join(
+            p.get("text", "")
+            for p in parts
+            if p.get("text")
+        )
+
+        return answer.strip() or "AI خالي ځواب ورکړ."
+
+    except requests.Timeout:
+        return "⏳ د AI ځواب ډېر وخت ونیو. بیا هڅه وکړه."
+
+    except requests.RequestException:
+        logger.exception("Gemini network error")
+        return "🌐 د AI خدمت سره د شبکې ستونزه ده."
+
+    except Exception:
+        logger.exception("Gemini error")
+        return "یوه ناڅاپي ستونزه رامنځته شوه."
+
+
+def ai_tool(task, text):
+    text = clean_text(text)
+
+    if not text:
+        return jsonify({
+            "answer": "مهرباني وکړه معلومات ولیکه."
+        }), 400
+
+    if is_rate_limited():
+        return jsonify({
+            "answer":
+                "ډېرې غوښتنې وشوې. لږه شېبه وروسته بیا هڅه وکړه."
+        }), 429
+
+    return jsonify({
+        "answer": ask_gemini(
+            medical_prompt(task, text)
+        )
+    })
 
 
 # =========================================================
-# HOME
+# MAIN HTML
+# =========================================================
+
+HTML = r"""
+<!DOCTYPE html>
+<html lang="ps" dir="rtl">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+      content="width=device-width,initial-scale=1">
+
+<meta name="theme-color"
+      content="#0f766e">
+
+<title>MedAI - Medical AI</title>
+
+<style>
+
+*{
+box-sizing:border-box;
+}
+
+:root{
+--bg:#f3f7f8;
+--card:#ffffff;
+--text:#172027;
+--muted:#68777d;
+--primary:#0f766e;
+--primary2:#115e59;
+--border:#dce6e8;
+--danger:#b42318;
+--shadow:0 10px 30px rgba(0,0,0,.07);
+}
+
+body.dark{
+--bg:#0d1516;
+--card:#172122;
+--text:#edf6f5;
+--muted:#a7b6b8;
+--border:#2a393b;
+--shadow:0 10px 30px rgba(0,0,0,.3);
+}
+
+body{
+margin:0;
+background:var(--bg);
+color:var(--text);
+font-family:
+system-ui,
+-apple-system,
+"Segoe UI",
+"Noto Sans Arabic",
+sans-serif;
+line-height:1.8;
+}
+
+button,input,textarea{
+font:inherit;
+}
+
+button{
+cursor:pointer;
+}
+
+.top{
+position:sticky;
+top:0;
+z-index:100;
+height:68px;
+background:var(--card);
+border-bottom:1px solid var(--border);
+display:flex;
+align-items:center;
+justify-content:space-between;
+padding:0 16px;
+}
+
+.logo{
+display:flex;
+align-items:center;
+gap:10px;
+}
+
+.logoIcon{
+width:42px;
+height:42px;
+border-radius:13px;
+display:grid;
+place-items:center;
+background:var(--primary);
+color:#fff;
+font-size:23px;
+}
+
+.logo b{
+font-size:20px;
+display:block;
+}
+
+.logo small{
+font-size:10px;
+color:var(--muted);
+display:block;
+}
+
+.actions{
+display:flex;
+gap:7px;
+}
+
+.icon{
+width:42px;
+height:42px;
+border:1px solid var(--border);
+border-radius:12px;
+background:transparent;
+color:var(--text);
+}
+
+.drawer{
+position:fixed;
+right:-340px;
+top:0;
+bottom:0;
+width:320px;
+z-index:200;
+overflow-y:auto;
+background:var(--card);
+border-left:1px solid var(--border);
+padding:16px;
+transition:.25s;
+}
+
+.drawer.open{
+right:0;
+}
+
+.overlay{
+display:none;
+position:fixed;
+inset:0;
+z-index:150;
+background:rgba(0,0,0,.45);
+}
+
+.overlay.show{
+display:block;
+}
+
+.drawerHeader{
+display:flex;
+align-items:center;
+justify-content:space-between;
+margin-bottom:15px;
+}
+
+.nav{
+width:100%;
+border:0;
+background:transparent;
+color:var(--text);
+padding:11px;
+border-radius:10px;
+text-align:right;
+margin:2px 0;
+}
+
+.nav:hover{
+background:rgba(15,118,110,.1);
+color:var(--primary);
+}
+
+.navTitle{
+font-size:12px;
+color:var(--muted);
+margin:12px 10px 5px;
+}
+
+main{
+max-width:1050px;
+margin:auto;
+padding:20px 14px 100px;
+}
+
+.hidden{
+display:none!important;
+}
+
+.hero{
+background:linear-gradient(
+135deg,
+#0f766e,
+#164e63
+);
+color:white;
+border-radius:24px;
+padding:28px;
+display:flex;
+align-items:center;
+justify-content:space-between;
+box-shadow:var(--shadow);
+}
+
+.hero h1{
+margin:7px 0;
+font-size:31px;
+}
+
+.hero h1 span{
+color:#b9f4eb;
+}
+
+.hero p{
+margin:0;
+opacity:.9;
+}
+
+.heroIcon{
+font-size:70px;
+}
+
+.badge{
+display:inline-block;
+background:rgba(255,255,255,.14);
+border-radius:50px;
+padding:4px 10px;
+font-size:11px;
+}
+
+.warning{
+margin:15px 0;
+background:#fff7e6;
+border:1px solid #efd39e;
+color:#654b1b;
+border-radius:14px;
+padding:13px;
+}
+
+.quick{
+display:grid;
+grid-template-columns:repeat(4,1fr);
+gap:10px;
+margin:15px 0;
+}
+
+.quick button{
+background:var(--card);
+color:var(--text);
+border:1px solid var(--border);
+border-radius:15px;
+padding:15px 7px;
+box-shadow:var(--shadow);
+font-size:23px;
+}
+
+.quick span{
+display:block;
+font-size:12px;
+margin-top:3px;
+}
+
+.card{
+background:var(--card);
+border:1px solid var(--border);
+border-radius:20px;
+box-shadow:var(--shadow);
+padding:16px;
+}
+
+.chatHead{
+display:flex;
+align-items:center;
+justify-content:space-between;
+padding-bottom:10px;
+border-bottom:1px solid var(--border);
+}
+
+.online{
+color:var(--primary);
+font-size:12px;
+}
+
+.messages{
+height:430px;
+overflow-y:auto;
+padding:15px 3px;
+}
+
+.message{
+max-width:86%;
+padding:11px 14px;
+border-radius:16px;
+margin:9px 0;
+white-space:pre-wrap;
+word-break:break-word;
+}
+
+.bot{
+background:var(--bg);
+margin-left:auto;
+}
+
+.user{
+background:var(--primary);
+color:white;
+margin-right:auto;
+}
+
+.quickPrompts{
+display:flex;
+gap:7px;
+overflow-x:auto;
+padding:8px 0;
+}
+
+.quickPrompts button{
+white-space:nowrap;
+background:var(--bg);
+color:var(--text);
+border:1px solid var(--border);
+border-radius:50px;
+padding:7px 11px;
+font-size:11px;
+}
+
+.composer{
+display:flex;
+gap:8px;
+align-items:end;
+padding-top:10px;
+border-top:1px solid var(--border);
+}
+
+.composer textarea{
+flex:1;
+resize:none;
+min-height:48px;
+max-height:150px;
+background:var(--bg);
+color:var(--text);
+border:1px solid var(--border);
+border-radius:14px;
+padding:11px;
+outline:none;
+}
+
+.send{
+width:50px;
+height:50px;
+border:0;
+border-radius:14px;
+background:var(--primary);
+color:#fff;
+}
+
+.mic{
+width:50px;
+height:50px;
+border:1px solid var(--border);
+border-radius:14px;
+background:var(--card);
+color:var(--text);
+}
+
+.voice{
+display:flex;
+gap:8px;
+margin-top:8px;
+}
+
+.small{
+background:var(--bg);
+color:var(--text);
+border:1px solid var(--border);
+border-radius:50px;
+padding:7px 11px;
+font-size:11px;
+}
+
+.sectionHead{
+display:flex;
+align-items:center;
+justify-content:space-between;
+gap:10px;
+margin-bottom:15px;
+}
+
+.sectionHead h2{
+margin:0;
+}
+
+.back{
+border:1px solid var(--border);
+background:var(--card);
+color:var(--text);
+border-radius:10px;
+padding:7px 12px;
+}
+
+textarea.toolInput{
+width:100%;
+min-height:180px;
+resize:vertical;
+background:var(--bg);
+color:var(--text);
+border:1px solid var(--border);
+border-radius:14px;
+padding:13px;
+outline:none;
+}
+
+.row{
+display:flex;
+gap:8px;
+margin-top:10px;
+flex-wrap:wrap;
+}
+
+.primary{
+border:0;
+background:var(--primary);
+color:#fff;
+border-radius:11px;
+padding:10px 16px;
+}
+
+.secondary{
+border:1px solid var(--border);
+background:var(--card);
+color:var(--text);
+border-radius:11px;
+padding:10px 16px;
+}
+
+.result{
+margin-top:15px;
+background:var(--bg);
+border-radius:14px;
+padding:15px;
+white-space:pre-wrap;
+word-break:break-word;
+}
+
+.list{
+display:grid;
+gap:10px;
+}
+
+.item{
+background:var(--card);
+border:1px solid var(--border);
+border-radius:15px;
+padding:13px;
+}
+
+.itemTop{
+display:flex;
+align-items:center;
+justify-content:space-between;
+gap:8px;
+}
+
+.item p{
+white-space:pre-wrap;
+}
+
+.danger{
+border:1px solid #e8aaa5;
+background:transparent;
+color:var(--danger);
+border-radius:8px;
+padding:5px 9px;
+}
+
+.form{
+display:grid;
+grid-template-columns:repeat(2,1fr);
+gap:12px;
+margin-bottom:15px;
+}
+
+label{
+display:flex;
+flex-direction:column;
+gap:5px;
+font-size:13px;
+}
+
+input{
+background:var(--bg);
+color:var(--text);
+border:1px solid var(--border);
+border-radius:10px;
+padding:10px;
+outline:none;
+}
+
+.muted{
+color:var(--muted);
+font-size:13px;
+}
+
+.prose{
+line-height:2;
+}
+
+.images{
+display:grid;
+grid-template-columns:repeat(2,1fr);
+gap:12px;
+}
+
+.imageCard{
+overflow:hidden;
+border:1px solid var(--border);
+border-radius:14px;
+background:var(--card);
+color:var(--text);
+text-decoration:none;
+}
+
+.imageCard img{
+width:100%;
+height:190px;
+object-fit:cover;
+display:block;
+}
+
+.imageCard div{
+padding:9px;
+font-size:12px;
+}
+
+.toast{
+position:fixed;
+bottom:25px;
+left:50%;
+transform:translate(-50%,100px);
+background:#172027;
+color:#fff;
+padding:9px 15px;
+border-radius:10px;
+z-index:500;
+transition:.25s;
+}
+
+.toast.show{
+transform:translate(-50%,0);
+}
+
+.loading{
+opacity:.65;
+pointer-events:none;
+}
+
+@media(max-width:700px){
+
+main{
+padding:12px 9px 80px;
+}
+
+.hero{
+padding:20px;
+}
+
+.hero h1{
+font-size:24px;
+}
+
+.heroIcon{
+font-size:48px;
+}
+
+.quick{
+grid-template-columns:repeat(2,1fr);
+}
+
+.messages{
+height:360px;
+}
+
+.form,
+.images{
+grid-template-columns:1fr;
+}
+
+.drawer{
+width:290px;
+}
+
+}
+
+</style>
+</head>
+
+<body>
+
+<header class="top">
+
+<div class="logo">
+
+<div class="logoIcon">🩺</div>
+
+<div>
+<b>MedAI</b>
+<small>Medical AI Assistant</small>
+</div>
+
+</div>
+
+<div class="actions">
+
+<button class="icon" id="darkBtn">☾</button>
+
+<button class="icon" id="menuBtn">☰</button>
+
+</div>
+
+</header>
+
+
+<aside class="drawer" id="drawer">
+
+<div class="drawerHeader">
+
+<b>MedAI</b>
+
+<button class="icon" id="closeMenu">×</button>
+
+</div>
+
+<button class="nav" data-view="home">
+🏠 کور
+</button>
+
+<button class="nav" data-view="history">
+🕘 History
+</button>
+
+<button class="nav" data-view="favorites">
+⭐ Favorites
+</button>
+
+<button class="nav" data-view="tracker">
+❤️ Health Tracker
+</button>
+
+<button class="nav" data-view="reminders">
+💊 Medicine Reminder
+</button>
+
+<div class="navTitle">
+Medical Tools
+</div>
+
+<button class="nav" data-tool="symptoms">🩺 Symptoms</button>
+<button class="nav" data-tool="vitals">❤️ Vital Signs</button>
+<button class="nav" data-tool="compare">⚖️ Disease Compare</button>
+<button class="nav" data-tool="doctor">👨‍⚕️ Doctor Assistant</button>
+<button class="nav" data-tool="lab">🧪 Lab Report</button>
+<button class="nav" data-tool="medicine">💊 Medicine Info</button>
+<button class="nav" data-tool="dictionary">📖 Medical Dictionary</button>
+<button class="nav" data-tool="emergency">🚨 Emergency Checker</button>
+<button class="nav" data-tool="interaction">🔄 Drug Interaction</button>
+<button class="nav" data-tool="report">📋 Medical Report</button>
+<button class="nav" data-tool="firstaid">🩹 First Aid</button>
+<button class="nav" data-tool="glossary">📚 Medical Glossary</button>
+<button class="nav" data-tool="risk">📊 Risk Assessment</button>
+<button class="nav" data-tool="health-report">📈 Health Report</button>
+<button class="nav" data-tool="quiz">🧠 Medical Quiz</button>
+<button class="nav" data-tool="images">🖼️ Medical Images</button>
+
+<div class="navTitle">
+Other
+</div>
+
+<button class="nav" data-view="privacy">
+🔒 Privacy & Safety
+</button>
+
+</aside>
+
+<div class="overlay" id="overlay"></div>
+
+
+<main>
+
+
+<!-- HOME -->
+
+<section id="home">
+
+<div class="hero">
+
+<div>
+
+<span class="badge">
+AI • Medical Education
+</span>
+
+<h1>
+سلام! زه
+<span>MedAI</span>
+یم 👋
+</h1>
+
+<p>
+د روغتیا او طب په اړه تعلیمي معلومات ترلاسه کړه.
+</p>
+
+</div>
+
+<div class="heroIcon">
+🩺
+</div>
+
+</div>
+
+
+<div class="warning">
+
+<b>⚠️ مهم:</b>
+
+MedAI د ډاکټر بدیل نه دی.
+که د سینې سخت درد، د ساه ستونزه،
+بې‌هوښي، شدید خونریزي یا بل بیړنی حالت وي،
+عاجله طبي مرسته وغواړه.
+
+</div>
+
+
+<div class="quick">
+
+<button data-tool="symptoms">
+🩺
+<span>Symptoms</span>
+</button>
+
+<button data-tool="vitals">
+❤️
+<span>Vital Signs</span>
+</button>
+
+<button data-tool="medicine">
+💊
+<span>Medicine</span>
+</button>
+
+<button data-tool="lab">
+🧪
+<span>Lab Report</span>
+</button>
+
+<button data-tool="firstaid">
+🩹
+<span>First Aid</span>
+</button>
+
+<button data-tool="emergency">
+🚨
+<span>Emergency</span>
+</button>
+
+<button data-tool="interaction">
+🔄
+<span>Interaction</span>
+</button>
+
+<button data-tool="quiz">
+🧠
+<span>Quiz</span>
+</button>
+
+</div>
+
+
+<div class="card">
+
+<div class="chatHead">
+
+<b>MedAI Chat</b>
+
+<span class="online">
+● Online
+</span>
+
+</div>
+
+
+<div class="messages" id="messages">
+
+<div class="message bot">
+سلام! خپله طبي پوښتنه ولیکه.
+زه به په ساده پښتو کې تعلیمي معلومات درکړم.
+</div>
+
+</div>
+
+
+<div class="quickPrompts">
+
+<button>
+د وینې فشار څه معنا لري؟
+</button>
+
+<button>
+د تبې عام لاملونه څه دي؟
+</button>
+
+<button>
+د شکر ناروغۍ عامې نښې څه دي؟
+</button>
+
+</div>
+
+
+<div class="composer">
+
+<button class="mic" id="micBtn">
+🎙️
+</button>
+
+<textarea
+id="message"
+placeholder="خپله پوښتنه ولیکه..."
+rows="1"
+></textarea>
+
+<button class="send" id="sendBtn">
+➤
+</button>
+
+</div>
+
+
+<div class="voice">
+
+<button class="small" id="speakBtn">
+🔊 وروستی ځواب
+</button>
+
+<button class="small" id="stopBtn">
+⏹️ Stop
+</button>
+
+</div>
+
+</div>
+
+</section>
+
+
+<!-- TOOL -->
+
+<section id="toolPage" class="hidden">
+
+<div class="sectionHead">
+
+<div>
+<h2 id="toolTitle"></h2>
+<div class="muted" id="toolDescription"></div>
+</div>
+
+<button class="back" id="backHome">
+← کور
+</button>
+
+</div>
+
+
+<div class="card">
+
+<textarea
+class="toolInput"
+id="toolInput"
+placeholder="معلومات دلته ولیکه..."
+></textarea>
+
+
+<div class="row">
+
+<button class="primary" id="runTool">
+AI ځواب
+</button>
+
+<button class="secondary" id="clearTool">
+پاکول
+</button>
+
+</div>
+
+
+<div
+id="toolResult"
+class="result hidden"
+></div>
+
+</div>
+
+</section>
+
+
+<!-- HISTORY -->
+
+<section id="history" class="hidden">
+
+<div class="sectionHead">
+
+<h2>🕘 History</h2>
+
+<button class="secondary" id="clearHistory">
+ټول پاکول
+</button>
+
+</div>
+
+<div class="list" id="historyList"></div>
+
+</section>
+
+
+<!-- FAVORITES -->
+
+<section id="favorites" class="hidden">
+
+<div class="sectionHead">
+
+<h2>⭐ Favorites</h2>
+
+<button class="secondary" id="clearFavorites">
+ټول پاکول
+</button>
+
+</div>
+
+<div class="list" id="favoriteList"></div>
+
+</section>
+
+
+<!-- TRACKER -->
+
+<section id="tracker" class="hidden">
+
+<div class="sectionHead">
+
+<h2>❤️ Health Tracker</h2>
+
+</div>
+
+
+<div class="card">
+
+<div class="form">
+
+<label>
+Blood Pressure
+<input id="bp" placeholder="120/80">
+</label>
+
+<label>
+Pulse
+<input id="pulse" type="number" placeholder="72">
+</label>
+
+<label>
+Temperature
+<input id="temperature" type="number" step="0.1" placeholder="37.0">
+</label>
+
+<label>
+Weight
+<input id="weight" type="number" step="0.1" placeholder="70">
+</label>
+
+<label>
+Blood Sugar
+<input id="sugar" placeholder="100">
+</label>
+
+<label>
+Oxygen %
+<input id="oxygen" type="number" placeholder="98">
+</label>
+
+</div>
+
+<button class="primary" id="saveTracker">
+Save
+</button>
+
+</div>
+
+
+<br>
+
+<div class="list" id="trackerList"></div>
+
+</section>
+
+
+<!-- REMINDERS -->
+
+<section id="reminders" class="hidden">
+
+<div class="sectionHead">
+
+<h2>💊 Medicine Reminder</h2>
+
+</div>
+
+
+<div class="card">
+
+<div class="form">
+
+<label>
+Medicine
+<input id="medicineName"
+placeholder="د درمل نوم">
+</label>
+
+<label>
+Time
+<input id="medicineTime"
+type="time">
+</label>
+
+<label>
+Note
+<input id="medicineNote"
+placeholder="یادونه">
+</label>
+
+</div>
+
+
+<button
+class="primary"
+id="addReminder"
+>
+Reminder اضافه کړه
+</button>
+
+
+<p class="muted">
+Reminder په دې browser کې ساتل کېږي.
+Notification اجازه ورکړه چې خبرتیاوې فعاله شي.
+</p>
+
+</div>
+
+
+<br>
+
+<div class="list" id="reminderList"></div>
+
+</section>
+
+
+<!-- PRIVACY -->
+
+<section id="privacy" class="hidden">
+
+<div class="card prose">
+
+<h2>🔒 Privacy & Safety</h2>
+
+<h3>Data</h3>
+
+<p>
+History، Favorites، Health Tracker او Medicine Reminders
+په browser کې localStorage کې ساتل کېږي.
+په دې نسخه کې User Account او Cloud Database نشته.
+</p>
+
+<h3>AI Safety</h3>
+
+<p>
+MedAI د تعلیمي طبي معلوماتو لپاره دی.
+دا د ډاکټر، نرس، pharmacist یا emergency service بدیل نه دی.
+</p>
+
+<h3>Emergency</h3>
+
+<p>
+که حالت بیړنی وي، د AI ځواب ته انتظار مه کوه.
+له عاجلو طبي خدماتو سره اړیکه ونیسه یا روغتون ته لاړ شه.
+</p>
+
+</div>
+
+</section>
+
+
+<div class="toast" id="toast"></div>
+
+</main>
+
+
+<script>
+
+const TOOL_INFO = {
+
+symptoms:[
+"🩺 Symptoms",
+"خپلې نښې ولیکه؛ احتمالي لاملونه او د خطر نښې به تشریح شي."
+],
+
+vitals:[
+"❤️ Vital Signs",
+"د وینې فشار، نبض، تودوخه، اکسیجن یا نور vital signs ولیکه."
+],
+
+compare:[
+"⚖️ Disease Compare",
+"د دوو یا څو ناروغیو نومونه ولیکه."
+],
+
+doctor:[
+"👨‍⚕️ Doctor Assistant",
+"د ډاکټر لپاره خپل حالت یا پوښتنې تنظیم کړه."
+],
+
+lab:[
+"🧪 Lab Report",
+"د لابراتوار result ولیکه."
+],
+
+medicine:[
+"💊 Medicine Info",
+"د درمل نوم ولیکه."
+],
+
+dictionary:[
+"📖 Medical Dictionary",
+"د طبي اصطلاح نوم ولیکه."
+],
+
+emergency:[
+"🚨 Emergency Checker",
+"خپل اوسنی حالت ولیکه."
+],
+
+interaction:[
+"🔄 Drug Interaction",
+"د درملو نومونه ولیکه."
+],
+
+report:[
+"📋 Medical Report",
+"خپل طبي یادښتونه ولیکه."
+],
+
+firstaid:[
+"🩹 First Aid",
+"د ټپ یا حالت معلومات ولیکه."
+],
+
+glossary:[
+"📚 Medical Glossary",
+"طبي اصطلاح ولیکه."
+],
+
+risk:[
+"📊 Risk Assessment",
+"خپل اړوند روغتیايي معلومات ولیکه."
+],
+
+"health-report":[
+"📈 Health Report",
+"خپل health measurements ولیکه."
+],
+
+quiz:[
+"🧠 Medical Quiz",
+"د quiz موضوع ولیکه."
+],
+
+images:[
+"🖼️ Medical Images",
+"د طبي انځور موضوع ولیکه."
+]
+
+};
+
+
+const TASKS = {
+
+symptoms:
+"Explain possible causes and warning signs of the described symptoms. Do not diagnose.",
+
+vitals:
+"Explain the supplied vital signs educationally. Consider context and do not diagnose.",
+
+compare:
+"Compare the mentioned diseases by symptoms, causes, diagnosis and important differences. Do not diagnose.",
+
+doctor:
+"Help the user prepare for a healthcare professional visit. Organize information and suggest useful questions.",
+
+lab:
+"Explain laboratory results educationally. Explain what tests generally measure and possible meanings. Do not diagnose or invent reference ranges.",
+
+medicine:
+"Give general educational information about the medicine, common uses, common side effects, warnings and interaction concerns. Do not prescribe or give personalized dosing.",
+
+dictionary:
+"Define the medical term in simple Pashto.",
+
+emergency:
+"Look for emergency warning signs. If there may be an emergency, advise urgent medical care immediately.",
+
+interaction:
+"Explain possible drug-drug, drug-food and drug-condition interactions. If information is insufficient, say so.",
+
+report:
+"Organize the supplied medical notes into a clear educational medical summary without inventing missing information.",
+
+firstaid:
+"Give general first-aid information and prioritize emergency escalation for life-threatening conditions.",
+
+glossary:
+"Explain the requested medical glossary term or terms in simple Pashto.",
+
+risk:
+"Explain relevant health risk factors and warning signs. Do not calculate a validated risk score without required validated inputs.",
+
+"health-report":
+"Create an educational health summary from supplied measurements. Separate facts from possible interpretations.",
+
+quiz:
+"Create a short educational medical quiz with multiple choices, correct answers and explanations."
+
+};
+
+
+// =========================================================
+// Storage
+// =========================================================
+
+let history =
+JSON.parse(
+localStorage.getItem("medai_history") || "[]"
+);
+
+let favorites =
+JSON.parse(
+localStorage.getItem("medai_favorites") || "[]"
+);
+
+let tracker =
+JSON.parse(
+localStorage.getItem("medai_tracker") || "[]"
+);
+
+let reminders =
+JSON.parse(
+localStorage.getItem("medai_reminders") || "[]"
+);
+
+let lastAnswer = "";
+
+
+// =========================================================
+// Helpers
+// =========================================================
+
+function $(id){
+return document.getElementById(id);
+}
+
+function escapeHTML(value){
+
+return String(value ?? "")
+.replace(/[&<>"']/g,function(c){
+
+return {
+"&":"&amp;",
+"<":"&lt;",
+">":"&gt;",
+'"':"&quot;",
+"'":"&#039;"
+
+}[c];
+
+});
+
+}
+
+function save(key,value){
+
+localStorage.setItem(
+key,
+JSON.stringify(value)
+);
+
+}
+
+function toast(text){
+
+$("toast").textContent = text;
+
+$("toast").classList.add("show");
+
+setTimeout(
+() => $("toast").classList.remove("show"),
+2200
+);
+
+}
+
+
+// =========================================================
+// Navigation
+// =========================================================
+
+const pages = [
+"home",
+"toolPage",
+"history",
+"favorites",
+"tracker",
+"reminders",
+"privacy"
+];
+
+
+function showPage(page){
+
+pages.forEach(p =>
+$(p).classList.add("hidden")
+);
+
+$(page).classList.remove("hidden");
+
+window.scrollTo({
+top:0,
+behavior:"smooth"
+});
+
+}
+
+
+function closeDrawer(){
+
+$("drawer").classList.remove("open");
+
+$("overlay").classList.remove("show");
+
+}
+
+
+$("menuBtn").onclick = () => {
+
+$("drawer").classList.add("open");
+
+$("overlay").classList.add("show");
+
+};
+
+
+$("closeMenu").onclick =
+closeDrawer;
+
+$("overlay").onclick =
+closeDrawer;
+
+
+document.querySelectorAll("[data-view]")
+.forEach(btn => {
+
+btn.onclick = () => {
+
+closeDrawer();
+
+const view = btn.dataset.view;
+
+showPage(view);
+
+if(view === "history")
+renderHistory();
+
+if(view === "favorites")
+renderFavorites();
+
+if(view === "tracker")
+renderTracker();
+
+if(view === "reminders")
+renderReminders();
+
+};
+
+});
+
+
+document.querySelectorAll("[data-tool]")
+.forEach(btn => {
+
+btn.onclick = () => {
+
+openTool(btn.dataset.tool);
+
+};
+
+});
+
+
+function openTool(tool){
+
+closeDrawer();
+
+const info = TOOL_INFO[tool];
+
+if(!info)
+return;
+
+$("toolTitle").textContent =
+info[0];
+
+$("toolDescription").textContent =
+info[1];
+
+$("toolInput").value = "";
+
+$("toolResult").classList.add("hidden");
+
+$("runTool").dataset.tool =
+tool;
+
+showPage("toolPage");
+
+}
+
+
+// =========================================================
+// Chat
+// =========================================================
+
+function addMessage(text,type){
+
+const div =
+document.createElement("div");
+
+div.className =
+"message " + type;
+
+div.textContent =
+text;
+
+$("messages").appendChild(div);
+
+$("messages").scrollTop =
+$("messages").scrollHeight;
+
+}
+
+
+async function sendMessage(){
+
+const input =
+$("message");
+
+const text =
+input.value.trim();
+
+if(!text)
+return;
+
+addMessage(
+text,
+"user"
+);
+
+input.value = "";
+
+$("sendBtn").disabled = true;
+
+
+try{
+
+const response =
+await fetch(
+"/chat",
+{
+method:"POST",
+headers:{
+"Content-Type":
+"application/json"
+},
+body:JSON.stringify({
+message:text
+})
+}
+);
+
+const data =
+await response.json();
+
+if(!response.ok)
+throw new Error(
+data.answer ||
+data.error ||
+"Request failed"
+);
+
+const answer =
+data.answer || "";
+
+lastAnswer =
+answer;
+
+addMessage(
+answer,
+"bot"
+);
+
+
+history.unshift({
+
+id:
+Date.now().toString(),
+
+question:
+text,
+
+answer:
+answer,
+
+date:
+new Date().toLocaleString("ps-AF")
+
+});
+
+
+history =
+history.slice(0,100);
+
+save(
+"medai_history",
+history
+);
+
+
+}catch(error){
+
+addMessage(
+error.message ||
+"یوه ستونزه راغله.",
+"bot"
+);
+
+}finally{
+
+$("sendBtn").disabled = false;
+
+}
+
+}
+
+
+$("sendBtn").onclick =
+sendMessage;
+
+
+$("message").addEventListener(
+"keydown",
+function(e){
+
+if(
+e.key === "Enter" &&
+!e.shiftKey
+){
+
+e.preventDefault();
+
+sendMessage();
+
+}
+
+}
+);
+
+
+// =========================================================
+// Quick Prompts
+// =========================================================
+
+document.querySelectorAll(
+".quickPrompts button"
+).forEach(btn => {
+
+btn.onclick = () => {
+
+$("message").value =
+btn.textContent.trim();
+
+sendMessage();
+
+};
+
+});
+
+
+// =========================================================
+// Tool Runner
+// =========================================================
+
+$("runTool").onclick =
+async function(){
+
+const tool =
+this.dataset.tool;
+
+const text =
+$("toolInput").value.trim();
+
+if(!text){
+
+toast("معلومات ولیکه.");
+
+return;
+
+}
+
+
+const result =
+$("toolResult");
+
+result.classList.remove("hidden");
+
+result.textContent =
+"⏳ AI ځواب جوړوي...";
+
+
+if(tool === "images"){
+
+await loadImages(text);
+
+return;
+
+}
+
+
+try{
+
+const response =
+await fetch(
+"/" + tool,
+{
+method:"POST",
+headers:{
+"Content-Type":
+"application/json"
+},
+body:JSON.stringify({
+text:text
+})
+}
+);
+
+const data =
+await response.json();
+
+if(!response.ok)
+throw new Error(
+data.answer ||
+data.error ||
+"Request failed"
+);
+
+result.textContent =
+data.answer || "";
+
+lastAnswer =
+data.answer || "";
+
+}catch(error){
+
+result.textContent =
+error.message ||
+"ستونزه راغله.";
+
+}
+
+};
+
+
+$("clearTool").onclick =
+() => {
+
+$("toolInput").value = "";
+
+$("toolResult").classList.add(
+"hidden"
+);
+
+};
+
+
+$("backHome").onclick =
+() => showPage("home");
+
+
+// =========================================================
+// Images
+// =========================================================
+
+async function loadImages(query){
+
+const result =
+$("toolResult");
+
+result.textContent =
+"🖼️ انځورونه لټول کېږي...";
+
+try{
+
+const response =
+await fetch(
+"/images?q=" +
+encodeURIComponent(query)
+);
+
+const data =
+await response.json();
+
+if(
+!data.items ||
+!data.items.length
+){
+
+result.textContent =
+"انځورونه ونه موندل شول.";
+
+return;
+
+}
+
+
+result.innerHTML =
+
+'<div class="images">' +
+
+data.items.map(item => {
+
+const image =
+escapeHTML(item.url);
+
+const source =
+escapeHTML(item.source);
+
+const title =
+escapeHTML(item.title);
+
+return `
+
+<a
+class="imageCard"
+href="${source}"
+target="_blank"
+rel="noopener noreferrer"
+>
+
+<img
+src="${image}"
+alt="${title}"
+loading="lazy"
+>
+
+<div>
+${title}
+<br>
+<small>
+Wikimedia Commons
+</small>
+</div>
+
+</a>
+
+`;
+
+}).join("") +
+
+"</div>";
+
+
+}catch{
+
+result.textContent =
+"د انځورونو په لټون کې ستونزه راغله.";
+
+}
+
+}
+
+
+// =========================================================
+// Dark Mode
+// =========================================================
+
+$("darkBtn").onclick =
+() => {
+
+document.body.classList.toggle(
+"dark"
+);
+
+localStorage.setItem(
+"medai_dark",
+document.body.classList.contains("dark")
+? "1"
+: "0"
+);
+
+};
+
+
+if(
+localStorage.getItem("medai_dark")
+===
+"1"
+){
+
+document.body.classList.add("dark");
+
+}
+
+
+// =========================================================
+// History
+// =========================================================
+
+function renderHistory(){
+
+const box =
+$("historyList");
+
+if(!history.length){
+
+box.innerHTML =
+`
+<div class="item">
+History خالي دی.
+</div>
+`;
+
+return;
+
+}
+
+
+box.innerHTML =
+history.map(
+(item,index) => `
+
+<div class="item">
+
+<div class="itemTop">
+
+<b>
+${escapeHTML(item.question)}
+</b>
+
+<div>
+
+<button
+class="secondary"
+onclick="favoriteItem(${index})"
+>
+⭐
+</button>
+
+<button
+class="danger"
+onclick="deleteHistory(${index})"
+>
+حذف
+</button>
+
+</div>
+
+</div>
+
+<small class="muted">
+${escapeHTML(item.date)}
+</small>
+
+<p>
+${escapeHTML(item.answer)}
+</p>
+
+</div>
+
+`
+).join("");
+
+}
+
+
+window.deleteHistory =
+function(index){
+
+history.splice(
+index,
+1
+);
+
+save(
+"medai_history",
+history
+);
+
+renderHistory();
+
+};
+
+
+window.favoriteItem =
+function(index){
+
+const item =
+history[index];
+
+const exists =
+favorites.some(
+f =>
+f.question === item.question &&
+f.answer === item.answer
+);
+
+if(exists){
+
+toast(
+"له مخکې Favorites کې شته."
+);
+
+return;
+
+}
+
+favorites.unshift(item);
+
+save(
+"medai_favorites",
+favorites
+);
+
+toast(
+"⭐ Favorites ته اضافه شو."
+);
+
+};
+
+
+$("clearHistory").onclick =
+() => {
+
+history = [];
+
+save(
+"medai_history",
+history
+);
+
+renderHistory();
+
+};
+
+
+// =========================================================
+// Favorites
+// =========================================================
+
+function renderFavorites(){
+
+const box =
+$("favoriteList");
+
+if(!favorites.length){
+
+box.innerHTML =
+`
+<div class="item">
+Favorites خالي دی.
+</div>
+`;
+
+return;
+
+}
+
+
+box.innerHTML =
+favorites.map(
+(item,index) => `
+
+<div class="item">
+
+<div class="itemTop">
+
+<b>
+${escapeHTML(item.question)}
+</b>
+
+<button
+class="danger"
+onclick="deleteFavorite(${index})"
+>
+حذف
+</button>
+
+</div>
+
+<small class="muted">
+${escapeHTML(item.date)}
+</small>
+
+<p>
+${escapeHTML(item.answer)}
+</p>
+
+</div>
+
+`
+).join("");
+
+}
+
+
+window.deleteFavorite =
+function(index){
+
+favorites.splice(
+index,
+1
+);
+
+save(
+"medai_favorites",
+favorites
+);
+
+renderFavorites();
+
+};
+
+
+$("clearFavorites").onclick =
+() => {
+
+favorites = [];
+
+save(
+"medai_favorites",
+favorites
+);
+
+renderFavorites();
+
+};
+
+
+// =========================================================
+// Health Tracker
+// =========================================================
+
+$("saveTracker").onclick =
+() => {
+
+const item = {
+
+id:
+Date.now().toString(),
+
+date:
+new Date().toLocaleString("ps-AF"),
+
+bp:
+$("bp").value.trim(),
+
+pulse:
+$("pulse").value.trim(),
+
+temperature:
+$("temperature").value.trim(),
+
+weight:
+$("weight").value.trim(),
+
+sugar:
+$("sugar").value.trim(),
+
+oxygen:
+$("oxygen").value.trim()
+
+};
+
+
+if(
+!item.bp &&
+!item.pulse &&
+!item.temperature &&
+!item.weight &&
+!item.sugar &&
+!item.oxygen
+){
+
+toast(
+"لږ تر لږه یو measurement ولیکه."
+);
+
+return;
+
+}
+
+
+tracker.unshift(item);
+
+tracker =
+tracker.slice(0,100);
+
+save(
+"medai_tracker",
+tracker
+);
+
+renderTracker();
+
+toast(
+"❤️ Health data خوندي شو."
+);
+
+};
+
+
+function renderTracker(){
+
+const box =
+$("trackerList");
+
+if(!tracker.length){
+
+box.innerHTML =
+`
+<div class="item">
+تر اوسه Health data نشته.
+</div>
+`;
+
+return;
+
+}
+
+
+box.innerHTML =
+tracker.map(
+(item,index) => `
+
+<div class="item">
+
+<div class="itemTop">
+
+<b>
+${escapeHTML(item.date)}
+</b>
+
+<button
+class="danger"
+onclick="deleteTracker(${index})"
+>
+حذف
+</button>
+
+</div>
+
+<p>
+
+BP:
+${escapeHTML(item.bp || "-")}
+
+<br>
+
+Pulse:
+${escapeHTML(item.pulse || "-")}
+
+<br>
+
+Temperature:
+${escapeHTML(item.temperature || "-")}
+
+<br>
+
+Weight:
+${escapeHTML(item.weight || "-")}
+
+<br>
+
+Sugar:
+${escapeHTML(item.sugar || "-")}
+
+<br>
+
+Oxygen:
+${escapeHTML(item.oxygen || "-")}
+
+</p>
+
+</div>
+
+`
+).join("");
+
+}
+
+
+window.deleteTracker =
+function(index){
+
+tracker.splice(
+index,
+1
+);
+
+save(
+"medai_tracker",
+tracker
+);
+
+renderTracker();
+
+};
+
+
+// =========================================================
+// Medicine Reminder
+// =========================================================
+
+$("addReminder").onclick =
+async () => {
+
+const name =
+$("medicineName").value.trim();
+
+const time =
+$("medicineTime").value;
+
+const note =
+$("medicineNote").value.trim();
+
+
+if(!name || !time){
+
+toast(
+"د درمل نوم او وخت ولیکه."
+);
+
+return;
+
+}
+
+
+reminders.push({
+
+id:
+Date.now().toString(),
+
+name:name,
+
+time:time,
+
+note:note
+
+});
+
+
+save(
+"medai_reminders",
+reminders
+);
+
+renderReminders();
+
+$("medicineName").value = "";
+
+$("medicineTime").value = "";
+
+$("medicineNote").value = "";
+
+
+if(
+"Notification" in window &&
+Notification.permission ===
+"default"
+){
+
+try{
+
+await Notification.requestPermission();
+
+}catch{}
+
+}
+
+
+toast(
+"💊 Reminder اضافه شو."
+);
+
+};
+
+
+function renderReminders(){
+
+const box =
+$("reminderList");
+
+if(!reminders.length){
+
+box.innerHTML =
+`
+<div class="item">
+تر اوسه Reminder نشته.
+</div>
+`;
+
+return;
+
+}
+
+
+box.innerHTML =
+reminders.map(
+(item,index) => `
+
+<div class="item">
+
+<div class="itemTop">
+
+<b>
+💊 ${escapeHTML(item.name)}
+</b>
+
+<button
+class="danger"
+onclick="deleteReminder(${index})"
+>
+حذف
+</button>
+
+</div>
+
+<p>
+⏰ ${escapeHTML(item.time)}
+
+${
+item.note
+?
+"<br>📝 " +
+escapeHTML(item.note)
+:
+""
+}
+
+</p>
+
+</div>
+
+`
+).join("");
+
+}
+
+
+window.deleteReminder =
+function(index){
+
+reminders.splice(
+index,
+1
+);
+
+save(
+"medai_reminders",
+reminders
+);
+
+renderReminders();
+
+};
+
+
+// =========================================================
+// Reminder Checker
+// =========================================================
+
+setInterval(
+function(){
+
+const now =
+new Date();
+
+const hh =
+String(now.getHours())
+.padStart(2,"0");
+
+const mm =
+String(now.getMinutes())
+.padStart(2,"0");
+
+const current =
+hh + ":" + mm;
+
+reminders.forEach(
+item => {
+
+if(
+item.time !== current
+)
+return;
+
+
+const key =
+"medai_notified_" +
+item.id +
+"_" +
+now.toDateString() +
+"_" +
+current;
+
+
+if(
+localStorage.getItem(key)
+)
+return;
+
+
+localStorage.setItem(
+key,
+"1"
+);
+
+
+if(
+"Notification" in window &&
+Notification.permission ===
+"granted"
+){
+
+new Notification(
+"MedAI 💊 Reminder",
+{
+body:
+"د درملو وخت: " +
+item.name
+}
+);
+
+}else{
+
+toast(
+"💊 د درملو وخت: " +
+item.name
+);
+
+}
+
+}
+);
+
+},
+15000
+);
+
+
+// =========================================================
+// Voice Input
+// =========================================================
+
+let recognition = null;
+
+if(
+"SpeechRecognition" in window ||
+"webkitSpeechRecognition" in window
+){
+
+const SR =
+window.SpeechRecognition ||
+window.webkitSpeechRecognition;
+
+recognition =
+new SR();
+
+recognition.lang =
+"ps-AF";
+
+recognition.interimResults =
+false;
+
+recognition.maxAlternatives =
+1;
+
+recognition.onresult =
+event => {
+
+$("message").value =
+event.results[0][0]
+.transcript;
+
+};
+
+recognition.onerror =
+() => {
+
+toast(
+"Voice input فعال نه شو."
+);
+
+};
+
+}else{
+
+$("micBtn").disabled =
+true;
+
+}
+
+
+$("micBtn").onclick =
+() => {
+
+if(recognition){
+
+try{
+
+recognition.start();
+
+}catch{}
+
+}
+
+};
+
+
+// =========================================================
+// Voice Output
+// =========================================================
+
+$("speakBtn").onclick =
+() => {
+
+if(!lastAnswer){
+
+toast(
+"تر اوسه AI ځواب نشته."
+);
+
+return;
+
+}
+
+if(
+!("speechSynthesis" in window)
+){
+
+toast(
+"Voice output په browser کې نشته."
+);
+
+return;
+
+}
+
+speechSynthesis.cancel();
+
+const speech =
+new SpeechSynthesisUtterance(
+lastAnswer
+);
+
+speech.lang =
+"ps-AF";
+
+speech.rate =
+0.9;
+
+speechSynthesis.speak(
+speech
+);
+
+};
+
+
+$("stopBtn").onclick =
+() => {
+
+if("speechSynthesis" in window)
+speechSynthesis.cancel();
+
+};
+
+
+// =========================================================
+// API - Chat
+// =========================================================
+
+</script>
+
+</body>
+</html>
+"""
+
+
+# =========================================================
+# ROUTES
 # =========================================================
 
 @app.route("/")
@@ -391,1822 +2852,408 @@ def home():
     return render_template_string(HTML)
 
 
-# =========================================================
-# HEALTH
-# =========================================================
-
-@app.route("/health")
+@app.get("/health")
 def health():
-
     return jsonify({
         "status": "ok",
-        "service": "MedAI",
+        "app": "MedAI",
+        "year": 2026,
         "gemini_configured": bool(GEMINI_API_KEY),
-        "model": GEMINI_MODEL
+        "model": GEMINI_MODEL,
+        "time": datetime.now(timezone.utc).isoformat()
+    })
+
+
+@app.post("/chat")
+def chat():
+
+    data = request.get_json(silent=True) or {}
+
+    message = clean_text(
+        data.get("message")
+    )
+
+    if not message:
+        return jsonify({
+            "answer": "مهرباني وکړه خپله پوښتنه ولیکه."
+        }), 400
+
+    if is_rate_limited():
+        return jsonify({
+            "answer":
+                "ډېرې غوښتنې وشوې. لږه شېبه وروسته بیا هڅه وکړه."
+        }), 429
+
+    prompt = medical_prompt(
+        "Answer the user's medical question.",
+        message
+    )
+
+    return jsonify({
+        "answer": ask_gemini(prompt)
     })
 
 
 # =========================================================
-# CHAT API
+# Medical Tools
 # =========================================================
 
-@app.route("/api/chat", methods=["POST"])
-def chat():
+@app.post("/symptoms")
+def symptoms():
+
+    data = request.get_json(silent=True) or {}
+
+    return ai_tool(
+        TASKS["symptoms"],
+        data.get("text")
+    )
+
+
+@app.post("/vitals")
+def vitals():
+
+    data = request.get_json(silent=True) or {}
+
+    return ai_tool(
+        TASKS["vitals"],
+        data.get("text")
+    )
+
+
+@app.post("/compare")
+def compare():
+
+    data = request.get_json(silent=True) or {}
+
+    return ai_tool(
+        TASKS["compare"],
+        data.get("text")
+    )
+
+
+@app.post("/doctor")
+def doctor():
+
+    data = request.get_json(silent=True) or {}
+
+    return ai_tool(
+        TASKS["doctor"],
+        data.get("text")
+    )
+
+
+@app.post("/lab")
+def lab():
+
+    data = request.get_json(silent=True) or {}
+
+    return ai_tool(
+        TASKS["lab"],
+        data.get("text")
+    )
+
+
+@app.post("/medicine")
+def medicine():
+
+    data = request.get_json(silent=True) or {}
+
+    return ai_tool(
+        TASKS["medicine"],
+        data.get("text")
+    )
+
+
+@app.post("/dictionary")
+def dictionary():
+
+    data = request.get_json(silent=True) or {}
+
+    return ai_tool(
+        TASKS["dictionary"],
+        data.get("text")
+    )
+
+
+@app.post("/emergency")
+def emergency():
+
+    data = request.get_json(silent=True) or {}
+
+    return ai_tool(
+        TASKS["emergency"],
+        data.get("text")
+    )
+
+
+@app.post("/interaction")
+def interaction():
+
+    data = request.get_json(silent=True) or {}
+
+    return ai_tool(
+        TASKS["interaction"],
+        data.get("text")
+    )
+
+
+@app.post("/report")
+def report():
+
+    data = request.get_json(silent=True) or {}
+
+    return ai_tool(
+        TASKS["report"],
+        data.get("text")
+    )
+
+
+@app.post("/firstaid")
+def firstaid():
+
+    data = request.get_json(silent=True) or {}
+
+    return ai_tool(
+        TASKS["firstaid"],
+        data.get("text")
+    )
+
+
+@app.post("/glossary")
+def glossary():
+
+    data = request.get_json(silent=True) or {}
+
+    return ai_tool(
+        TASKS["glossary"],
+        data.get("text")
+    )
+
+
+@app.post("/risk")
+def risk():
+
+    data = request.get_json(silent=True) or {}
+
+    return ai_tool(
+        TASKS["risk"],
+        data.get("text")
+    )
+
+
+@app.post("/health-report")
+def health_report():
+
+    data = request.get_json(silent=True) or {}
+
+    return ai_tool(
+        TASKS["health-report"],
+        data.get("text")
+    )
+
+
+@app.post("/quiz")
+def quiz():
+
+    data = request.get_json(silent=True) or {}
+
+    return ai_tool(
+        TASKS["quiz"],
+        data.get("text")
+    )
+
+
+# =========================================================
+# Wikimedia Images
+# =========================================================
+
+@app.get("/images")
+def images():
+
+    if is_rate_limited():
+
+        return jsonify({
+            "items": [],
+            "error":
+                "Too many requests"
+        }), 429
+
+
+    query =
+    clean_text(
+        request.args.get("q", ""),
+        200
+    )
+
+
+    if not query:
+
+        return jsonify({
+            "items": []
+        })
+
+
+    params = {
+
+        "action":
+            "query",
+
+        "generator":
+            "search",
+
+        "gsrsearch":
+            query,
+
+        "gsrnamespace":
+            6,
+
+        "gsrlimit":
+            8,
+
+        "prop":
+            "imageinfo",
+
+        "iiprop":
+            "url",
+
+        "iiurlwidth":
+            600,
+
+        "format":
+            "json",
+
+        "origin":
+            "*"
+
+    }
+
 
     try:
 
-        data = request.get_json(silent=True) or {}
-
-        message = str(
-            data.get("message", "")
-        ).strip()
-
-        history = data.get("history", [])
-
-        if not message:
-            return jsonify({
-                "error": "Please enter a message."
-            }), 400
-
-        if len(message) > MAX_MESSAGE_LENGTH:
-            return jsonify({
-                "error": "Message is too long."
-            }), 400
-
-        answer = ask_gemini(
-            message,
-            history
+        r = requests.get(
+            WIKIMEDIA_URL,
+            params=params,
+            timeout=15
         )
 
+        r.raise_for_status()
+
+        pages =
+        r.json().get(
+            "query",
+            {}
+        ).get(
+            "pages",
+            {}
+        )
+
+
+        items = []
+
+
+        for page in pages.values():
+
+            info =
+            (
+                page.get(
+                    "imageinfo"
+                ) or [{}]
+            )[0]
+
+
+            items.append({
+
+                "title":
+                    page.get(
+                        "title",
+                        ""
+                    ),
+
+                "url":
+                    info.get(
+                        "thumburl"
+                    ) or info.get(
+                        "url",
+                        ""
+                    ),
+
+                "source":
+                    info.get(
+                        "descriptionurl"
+                    ) or
+                    "https://commons.wikimedia.org/"
+
+            })
+
+
         return jsonify({
-            "answer": answer,
-            "model": GEMINI_MODEL
+            "items": items
         })
 
-    except Exception as error:
 
-        return jsonify({
-            "error": str(error)
-        }), 500
+    except Exception:
 
-
-# =========================================================
-# FILE CHAT API
-# =========================================================
-
-@app.route("/api/analyze", methods=["POST"])
-def analyze_file():
-
-    try:
-
-        message = (
-            request.form.get("message")
-            or "Please explain this medical document."
-        ).strip()
-
-        if len(message) > 6000:
-            return jsonify({
-                "error": "Request is too long."
-            }), 400
-
-        uploaded = request.files.get("file")
-
-        if not uploaded:
-            return jsonify({
-                "error": "No file was uploaded."
-            }), 400
-
-        filename = uploaded.filename or "uploaded-file"
-
-        file_bytes = uploaded.read()
-
-        answer = ask_gemini_with_file(
-            message,
-            file_bytes,
-            filename,
-            uploaded.mimetype
+        logger.exception(
+            "Wikimedia error"
         )
 
         return jsonify({
-            "answer": answer,
-            "filename": filename,
-            "model": GEMINI_MODEL
-        })
-
-    except Exception as error:
-
-        return jsonify({
-            "error": str(error)
-        }), 500
+            "items": [],
+            "error":
+                "انځورونه ونه موندل شول."
+        }), 502
 
 
 # =========================================================
-# FRONTEND
+# Error Handling
 # =========================================================
 
-HTML = r"""
-<!DOCTYPE html>
+@app.errorhandler(413)
+def too_large(error):
 
-<html lang="en">
+    return jsonify({
+        "answer":
+            "غوښتنه ډېره لویه ده. متن لنډ کړه."
+    }), 413
 
-<head>
 
-<meta charset="UTF-8">
+@app.errorhandler(404)
+def not_found(error):
 
-<meta name="viewport"
-      content="width=device-width, initial-scale=1.0">
+    return jsonify({
+        "error":
+            "دا صفحه ونه موندل شوه."
+    }), 404
 
-<title>MedAI</title>
 
-<style>
+@app.errorhandler(500)
+def server_error(error):
 
-:root {
-    --bg: #ffffff;
-    --panel: #f7f7f8;
-    --card: #ffffff;
-    --text: #171717;
-    --muted: #6b7280;
-    --border: #e5e7eb;
-    --primary: #10a37f;
-    --primary-dark: #087f63;
-    --user: #f0f2f5;
-    --danger: #dc2626;
-}
+    logger.exception(
+        "Internal server error"
+    )
 
-body.dark {
-    --bg: #212121;
-    --panel: #171717;
-    --card: #212121;
-    --text: #f5f5f5;
-    --muted: #a1a1aa;
-    --border: #3f3f46;
-    --user: #303030;
-}
-
-* {
-    box-sizing: border-box;
-}
-
-html,
-body {
-    margin: 0;
-    width: 100%;
-    height: 100%;
-}
-
-body {
-    font-family:
-        Inter,
-        system-ui,
-        -apple-system,
-        BlinkMacSystemFont,
-        "Segoe UI",
-        sans-serif;
-
-    background: var(--bg);
-    color: var(--text);
-    overflow: hidden;
-}
-
-button,
-textarea,
-input {
-    font: inherit;
-}
-
-button {
-    cursor: pointer;
-}
-
-
-/* =====================================================
-   APP
-===================================================== */
-
-.app {
-    display: flex;
-    height: 100vh;
-}
-
-
-/* =====================================================
-   SIDEBAR
-===================================================== */
-
-.sidebar {
-    width: 270px;
-    background: var(--panel);
-    border-right: 1px solid var(--border);
-    padding: 15px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    flex-shrink: 0;
-}
-
-.logo {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px;
-    font-size: 21px;
-    font-weight: 800;
-}
-
-.logo-icon {
-    width: 38px;
-    height: 38px;
-    border-radius: 12px;
-    background: var(--primary);
-    color: white;
-    display: grid;
-    place-items: center;
-    font-size: 21px;
-}
-
-.new-chat {
-    width: 100%;
-    border: 1px solid var(--border);
-    background: var(--card);
-    color: var(--text);
-    padding: 12px;
-    border-radius: 10px;
-}
-
-.new-chat:hover {
-    background: var(--user);
-}
-
-.history-title {
-    color: var(--muted);
-    font-size: 11px;
-    padding: 8px;
-    text-transform: uppercase;
-}
-
-.history {
-    flex: 1;
-    overflow-y: auto;
-}
-
-.history-item {
-    padding: 10px;
-    border-radius: 9px;
-    font-size: 13px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.history-item:hover {
-    background: var(--user);
-}
-
-.side-actions {
-    display: grid;
-    gap: 5px;
-}
-
-.side-button {
-    border: 0;
-    background: transparent;
-    color: var(--text);
-    text-align: left;
-    padding: 10px;
-    border-radius: 8px;
-}
-
-.side-button:hover {
-    background: var(--user);
-}
-
-
-/* =====================================================
-   MAIN
-===================================================== */
-
-.main {
-    min-width: 0;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-}
-
-.topbar {
-    height: 62px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 18px;
-}
-
-.top-title {
-    font-weight: 700;
-}
-
-.top-status {
-    color: var(--muted);
-    font-size: 12px;
-    display: flex;
-    align-items: center;
-    gap: 7px;
-}
-
-.dot {
-    width: 8px;
-    height: 8px;
-    background: #22c55e;
-    border-radius: 50%;
-}
-
-
-/* =====================================================
-   CHAT
-===================================================== */
-
-.chat {
-    flex: 1;
-    overflow-y: auto;
-    padding: 30px 15px 180px;
-}
-
-.chat-inner {
-    max-width: 900px;
-    margin: auto;
-}
-
-.welcome {
-    text-align: center;
-    padding-top: 50px;
-}
-
-.welcome-logo {
-    width: 75px;
-    height: 75px;
-    border-radius: 24px;
-    background: var(--primary);
-    color: white;
-    display: grid;
-    place-items: center;
-    font-size: 35px;
-    margin: auto auto 18px;
-}
-
-.welcome h1 {
-    font-size: 32px;
-    margin: 0 0 10px;
-}
-
-.welcome p {
-    color: var(--muted);
-    line-height: 1.6;
-    margin: auto;
-    max-width: 620px;
-}
-
-
-/* =====================================================
-   QUICK ACTIONS
-===================================================== */
-
-.quick {
-    display: grid;
-    grid-template-columns:
-        repeat(4, 1fr);
-
-    gap: 10px;
-    margin: 28px auto;
-}
-
-.quick button {
-    border: 1px solid var(--border);
-    background: var(--card);
-    color: var(--text);
-    border-radius: 14px;
-    padding: 15px 10px;
-}
-
-.quick button:hover {
-    border-color: var(--primary);
-}
-
-.quick-icon {
-    font-size: 23px;
-    margin-bottom: 6px;
-}
-
-.quick-text {
-    font-size: 12px;
-}
-
-
-/* =====================================================
-   MESSAGE
-===================================================== */
-
-.message {
-    display: flex;
-    gap: 13px;
-    padding: 23px 8px;
-    border-bottom: 1px solid var(--border);
-}
-
-.avatar {
-    min-width: 35px;
-    height: 35px;
-    border-radius: 10px;
-    display: grid;
-    place-items: center;
-}
-
-.avatar.ai {
-    background: var(--primary);
-    color: white;
-}
-
-.avatar.user {
-    background: #64748b;
-    color: white;
-}
-
-.message-body {
-    flex: 1;
-    min-width: 0;
-}
-
-.message-name {
-    font-weight: 700;
-    margin-bottom: 6px;
-}
-
-.message-text {
-    white-space: pre-wrap;
-    line-height: 1.7;
-    overflow-wrap: anywhere;
-}
-
-.message-actions {
-    display: flex;
-    gap: 5px;
-    margin-top: 9px;
-}
-
-.message-actions button {
-    border: 0;
-    background: transparent;
-    color: var(--muted);
-    padding: 5px 8px;
-    border-radius: 6px;
-}
-
-.message-actions button:hover {
-    background: var(--user);
-}
-
-
-/* =====================================================
-   INPUT
-===================================================== */
-
-.input-area {
-    position: fixed;
-    bottom: 0;
-    left: 270px;
-    right: 0;
-    padding: 28px 15px 15px;
-    background:
-        linear-gradient(
-            transparent,
-            var(--bg) 30%
-        );
-}
-
-.input-inner {
-    max-width: 900px;
-    margin: auto;
-}
-
-.input-box {
-    display: flex;
-    align-items: flex-end;
-    gap: 5px;
-    padding: 8px;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 18px;
-    box-shadow: 0 7px 30px rgba(0,0,0,.08);
-}
-
-textarea {
-    flex: 1;
-    resize: none;
-    border: 0;
-    outline: 0;
-    background: transparent;
-    color: var(--text);
-    min-height: 45px;
-    max-height: 160px;
-    padding: 12px;
-}
-
-.input-button {
-    width: 42px;
-    height: 42px;
-    border: 0;
-    background: transparent;
-    color: var(--muted);
-    border-radius: 10px;
-}
-
-.input-button:hover {
-    background: var(--user);
-}
-
-.send {
-    background: var(--primary);
-    color: white;
-}
-
-.send:hover {
-    background: var(--primary-dark);
-}
-
-.disclaimer {
-    text-align: center;
-    color: var(--muted);
-    font-size: 10px;
-    margin-top: 8px;
-}
-
-
-/* =====================================================
-   FILE
-===================================================== */
-
-.file-name {
-    display: none;
-    background: var(--user);
-    padding: 8px 12px;
-    border-radius: 9px;
-    font-size: 12px;
-    margin-bottom: 8px;
-}
-
-.file-name.show {
-    display: block;
-}
-
-
-/* =====================================================
-   EMERGENCY
-===================================================== */
-
-.emergency {
-    margin: 20px auto;
-    padding: 13px;
-    border: 1px solid #fecaca;
-    background: #fef2f2;
-    color: #991b1b;
-    border-radius: 12px;
-    line-height: 1.5;
-    max-width: 900px;
-    font-size: 13px;
-}
-
-body.dark .emergency {
-    background: #351c1c;
-    color: #fecaca;
-    border-color: #6b3030;
-}
-
-
-/* =====================================================
-   MOBILE
-===================================================== */
-
-.mobile-menu {
-    display: none;
-    border: 0;
-    background: transparent;
-    color: var(--text);
-    font-size: 22px;
-}
-
-@media (max-width: 800px) {
-
-    .sidebar {
-        position: fixed;
-        z-index: 100;
-        top: 0;
-        bottom: 0;
-        left: -280px;
-        transition: .25s;
-    }
-
-    .sidebar.open {
-        left: 0;
-    }
-
-    .mobile-menu {
-        display: block;
-    }
-
-    .input-area {
-        left: 0;
-        padding: 20px 9px 10px;
-    }
-
-    .quick {
-        grid-template-columns: repeat(2, 1fr);
-    }
-
-    .welcome {
-        padding-top: 20px;
-    }
-
-    .welcome h1 {
-        font-size: 26px;
-    }
-
-}
-
-</style>
-
-</head>
-
-<body>
-
-<div class="app">
-
-<!-- ===================================================
-     SIDEBAR
-=================================================== -->
-
-<aside class="sidebar" id="sidebar">
-
-    <div class="logo">
-        <div class="logo-icon">✚</div>
-        MedAI
-    </div>
-
-    <button
-        class="new-chat"
-        onclick="newChat()">
-        ＋ New chat
-    </button>
-
-    <div class="history-title">
-        Recent chats
-    </div>
-
-    <div
-        class="history"
-        id="history">
-    </div>
-
-    <div class="side-actions">
-
-        <button
-            class="side-button"
-            onclick="toggleDark()">
-            🌙 Dark / Light
-        </button>
-
-        <button
-            class="side-button"
-            onclick="exportChat()">
-            📥 Export chat
-        </button>
-
-        <button
-            class="side-button"
-            onclick="clearChat()">
-            🗑 Clear chat
-        </button>
-
-    </div>
-
-</aside>
-
-
-<!-- ===================================================
-     MAIN
-=================================================== -->
-
-<main class="main">
-
-<header class="topbar">
-
-    <button
-        class="mobile-menu"
-        onclick="toggleSidebar()">
-        ☰
-    </button>
-
-    <div class="top-title">
-        MedAI
-    </div>
-
-    <div class="top-status">
-        <span class="dot"></span>
-        Medical AI
-    </div>
-
-</header>
-
-
-<section
-    class="chat"
-    id="chat">
-
-<div class="chat-inner">
-
-<!-- WELCOME -->
-
-<div id="welcome">
-
-    <div class="welcome">
-
-        <div class="welcome-logo">
-            ✚
-        </div>
-
-        <h1>
-            How can MedAI help?
-        </h1>
-
-        <p>
-            Ask about symptoms, medicines, laboratory
-            reports, health information, or upload
-            a medical image/PDF for explanation.
-        </p>
-
-    </div>
-
-
-    <div class="quick">
-
-        <button onclick="quickAsk(
-            'Please help me understand my symptoms.'
-        )">
-
-            <div class="quick-icon">🩺</div>
-
-            <div class="quick-text">
-                Symptoms
-            </div>
-
-        </button>
-
-
-        <button onclick="quickAsk(
-            'Please explain this medicine, its common uses, precautions, and when to contact a professional.'
-        )">
-
-            <div class="quick-icon">💊</div>
-
-            <div class="quick-text">
-                Medicine
-            </div>
-
-        </button>
-
-
-        <button onclick="quickAsk(
-            'Please help me understand my laboratory report and explain the results in simple language.'
-        )">
-
-            <div class="quick-icon">🧪</div>
-
-            <div class="quick-text">
-                Lab Report
-            </div>
-
-        </button>
-
-
-        <button onclick="quickAsk(
-            'What symptoms can be signs of a medical emergency and require immediate care?'
-        )">
-
-            <div class="quick-icon">🚨</div>
-
-            <div class="quick-text">
-                Emergency
-            </div>
-
-        </button>
-
-    </div>
-
-
-    <div class="emergency">
-
-        <strong>Medical notice:</strong>
-
-        MedAI provides general medical information.
-        It does not replace a qualified healthcare
-        professional. If you have a medical emergency,
-        seek immediate medical care.
-
-    </div>
-
-</div>
-
-
-<!-- MESSAGES -->
-
-<div id="messages"></div>
-
-</div>
-
-</section>
-
-
-<!-- ===================================================
-     INPUT
-=================================================== -->
-
-<div class="input-area">
-
-<div class="input-inner">
-
-<div
-    id="fileName"
-    class="file-name">
-</div>
-
-<div class="input-box">
-
-<textarea
-    id="input"
-    rows="1"
-    placeholder="Message MedAI..."
-    onkeydown="keyDown(event)">
-</textarea>
-
-
-<button
-    class="input-button"
-    onclick="document.getElementById('file').click()"
-    title="Upload image or PDF">
-    📎
-</button>
-
-<input
-    id="file"
-    type="file"
-    hidden
-    accept=".jpg,.jpeg,.png,.webp,.heic,.heif,.pdf"
-    onchange="fileSelected(this)"
->
-
-
-<button
-    class="input-button"
-    onclick="voiceInput()"
-    title="Voice input">
-    🎙️
-</button>
-
-
-<button
-    class="input-button"
-    onclick="speakLast()"
-    title="Read answer">
-    🔊
-</button>
-
-
-<button
-    class="input-button send"
-    onclick="send()"
-    title="Send">
-    ➤
-</button>
-
-</div>
-
-
-<div class="disclaimer">
-    MedAI can make mistakes. Important medical decisions
-    should be discussed with a qualified healthcare professional.
-</div>
-
-</div>
-
-</div>
-
-</main>
-
-</div>
-
-
-<script>
-
-/* ======================================================
-   STATE
-====================================================== */
-
-const STORAGE = "medai_messages_v3";
-const DARK = "medai_dark_v3";
-
-let messages = [];
-
-const input =
-    document.getElementById("input");
-
-const messagesBox =
-    document.getElementById("messages");
-
-const welcome =
-    document.getElementById("welcome");
-
-const chat =
-    document.getElementById("chat");
-
-const fileInput =
-    document.getElementById("file");
-
-const fileName =
-    document.getElementById("fileName");
-
-
-/* ======================================================
-   LOAD
-====================================================== */
-
-function load() {
-
-    try {
-
-        const saved =
-            localStorage.getItem(STORAGE);
-
-        if (saved) {
-            messages = JSON.parse(saved);
-        }
-
-    } catch {
-
-        messages = [];
-
-    }
-
-    if (
-        localStorage.getItem(DARK)
-        === "true"
-    ) {
-        document.body.classList.add("dark");
-    }
-
-    render();
-
-}
-
-
-/* ======================================================
-   SAVE
-====================================================== */
-
-function save() {
-
-    localStorage.setItem(
-        STORAGE,
-        JSON.stringify(messages.slice(-100))
-    );
-
-}
-
-
-/* ======================================================
-   RENDER
-====================================================== */
-
-function render() {
-
-    messagesBox.innerHTML = "";
-
-    welcome.style.display =
-        messages.length
-            ? "none"
-            : "block";
-
-
-    messages.forEach(
-        (message, index) => {
-
-            const row =
-                document.createElement("div");
-
-            row.className =
-                "message";
-
-
-            const avatar =
-                document.createElement("div");
-
-            avatar.className =
-                "avatar " +
-                (
-                    message.role === "user"
-                    ? "user"
-                    : "ai"
-                );
-
-            avatar.textContent =
-                message.role === "user"
-                ? "👤"
-                : "✚";
-
-
-            const body =
-                document.createElement("div");
-
-            body.className =
-                "message-body";
-
-
-            const name =
-                document.createElement("div");
-
-            name.className =
-                "message-name";
-
-            name.textContent =
-                message.role === "user"
-                ? "You"
-                : "MedAI";
-
-
-            const text =
-                document.createElement("div");
-
-            text.className =
-                "message-text";
-
-            text.textContent =
-                message.text;
-
-
-            body.appendChild(name);
-            body.appendChild(text);
-
-
-            if (
-                message.role === "assistant"
-            ) {
-
-                const actions =
-                    document.createElement("div");
-
-                actions.className =
-                    "message-actions";
-
-
-                const copy =
-                    document.createElement("button");
-
-                copy.textContent =
-                    "📋 Copy";
-
-                copy.onclick =
-                    () => copyText(
-                        message.text
-                    );
-
-
-                const speak =
-                    document.createElement("button");
-
-                speak.textContent =
-                    "🔊 Read";
-
-                speak.onclick =
-                    () => speakText(
-                        message.text
-                    );
-
-
-                actions.appendChild(copy);
-                actions.appendChild(speak);
-
-                body.appendChild(actions);
-
-            }
-
-
-            row.appendChild(avatar);
-            row.appendChild(body);
-
-            messagesBox.appendChild(row);
-
-        }
-    );
-
-
-    renderHistory();
-
-    scrollBottom();
-
-}
-
-
-/* ======================================================
-   HISTORY
-====================================================== */
-
-function renderHistory() {
-
-    const history =
-        document.getElementById("history");
-
-    history.innerHTML = "";
-
-    messages
-        .filter(
-            m => m.role === "user"
-        )
-        .slice(-15)
-        .reverse()
-        .forEach(
-            message => {
-
-                const item =
-                    document.createElement("div");
-
-                item.className =
-                    "history-item";
-
-                item.textContent =
-                    message.text
-                        .replace(/\s+/g, " ")
-                        .slice(0, 45);
-
-                history.appendChild(item);
-
-            }
-        );
-
-}
-
-
-/* ======================================================
-   SEND
-====================================================== */
-
-async function send() {
-
-    const text =
-        input.value.trim();
-
-    const file =
-        fileInput.files[0];
-
-
-    if (!text && !file) {
-        return;
-    }
-
-
-    const history =
-        messages.slice(-16);
-
-
-    if (text) {
-
-        messages.push({
-            role: "user",
-            text: text
-        });
-
-    }
-
-
-    if (file) {
-
-        messages.push({
-            role: "user",
-            text:
-                "📎 Uploaded: "
-                + file.name
-        });
-
-    }
-
-
-    input.value = "";
-
-    resetFile();
-
-    save();
-
-    render();
-
-    typing(true);
-
-
-    try {
-
-        let response;
-
-
-        /* FILE */
-
-        if (file) {
-
-            const form =
-                new FormData();
-
-            form.append(
-                "message",
-                text ||
-                "Please analyze this medical file."
-            );
-
-            form.append(
-                "file",
-                file
-            );
-
-
-            response =
-                await fetch(
-                    "/api/analyze",
-                    {
-                        method: "POST",
-                        body: form
-                    }
-                );
-
-        }
-
-        /* NORMAL CHAT */
-
-        else {
-
-            response =
-                await fetch(
-                    "/api/chat",
-                    {
-                        method: "POST",
-
-                        headers: {
-                            "Content-Type":
-                                "application/json"
-                        },
-
-                        body: JSON.stringify({
-                            message: text,
-                            history: history
-                        })
-                    }
-                );
-
-        }
-
-
-        const data =
-            await response.json();
-
-
-        if (!response.ok) {
-
-            throw new Error(
-                data.error
-                || "Server error"
-            );
-
-        }
-
-
-        messages.push({
-            role: "assistant",
-            text: data.answer
-        });
-
-
-        save();
-
-        render();
-
-    }
-
-    catch (error) {
-
-        messages.push({
-            role: "assistant",
-            text:
-                "⚠️ MedAI could not complete the request.\n\n"
-                + error.message
-                + "\n\nPlease try again."
-        });
-
-        save();
-
-        render();
-
-    }
-
-    finally {
-
-        typing(false);
-
-    }
-
-}
-
-
-/* ======================================================
-   QUICK
-====================================================== */
-
-function quickAsk(text) {
-
-    input.value = text;
-
-    send();
-
-}
-
-
-/* ======================================================
-   TYPING
-====================================================== */
-
-function typing(show) {
-
-    const old =
-        document.getElementById(
-            "typing"
-        );
-
-    if (old) {
-        old.remove();
-    }
-
-
-    if (!show) {
-        return;
-    }
-
-
-    const row =
-        document.createElement("div");
-
-    row.id =
-        "typing";
-
-    row.className =
-        "message";
-
-
-    row.innerHTML = `
-        <div class="avatar ai">✚</div>
-        <div class="message-body">
-            <div class="message-name">MedAI</div>
-            <div class="message-text">
-                Thinking...
-            </div>
-        </div>
-    `;
-
-
-    messagesBox.appendChild(row);
-
-    scrollBottom();
-
-}
-
-
-/* ======================================================
-   COPY
-====================================================== */
-
-async function copyText(text) {
-
-    try {
-
-        await navigator.clipboard.writeText(
-            text
-        );
-
-    } catch {
-
-        alert(
-            "Copy is not supported by this browser."
-        );
-
-    }
-
-}
-
-
-/* ======================================================
-   SPEECH
-====================================================== */
-
-function speakText(text) {
-
-    if (
-        !("speechSynthesis" in window)
-    ) {
-
-        alert(
-            "Text-to-speech is not supported."
-        );
-
-        return;
-
-    }
-
-
-    speechSynthesis.cancel();
-
-    const voice =
-        new SpeechSynthesisUtterance(text);
-
-    voice.rate = 0.95;
-
-    speechSynthesis.speak(
-        voice
-    );
-
-}
-
-
-function speakLast() {
-
-    const answers =
-        messages.filter(
-            m => m.role === "assistant"
-        );
-
-    if (!answers.length) {
-        return;
-    }
-
-    speakText(
-        answers[answers.length - 1].text
-    );
-
-}
-
-
-/* ======================================================
-   VOICE INPUT
-====================================================== */
-
-function voiceInput() {
-
-    const Recognition =
-        window.SpeechRecognition ||
-        window.webkitSpeechRecognition;
-
-
-    if (!Recognition) {
-
-        alert(
-            "Voice input is not supported in this browser."
-        );
-
-        return;
-
-    }
-
-
-    const recognition =
-        new Recognition();
-
-
-    recognition.lang =
-        navigator.language || "en-US";
-
-    recognition.interimResults =
-        false;
-
-
-    recognition.onresult =
-        event => {
-
-            input.value =
-                event.results[0][0]
-                    .transcript;
-
-            resizeInput();
-
-        };
-
-
-    recognition.onerror =
-        () => {
-
-            input.placeholder =
-                "Voice input failed.";
-
-            setTimeout(
-                () => {
-                    input.placeholder =
-                        "Message MedAI...";
-                },
-                1500
-            );
-
-        };
-
-
-    recognition.start();
-
-}
-
-
-/* ======================================================
-   FILE
-====================================================== */
-
-function fileSelected(element) {
-
-    const file =
-        element.files[0];
-
-    if (!file) {
-        return;
-    }
-
-
-    const max =
-        12 * 1024 * 1024;
-
-
-    if (file.size > max) {
-
-        alert(
-            "File is too large. Maximum size is 12 MB."
-        );
-
-        resetFile();
-
-        return;
-
-    }
-
-
-    fileName.textContent =
-        "📎 " + file.name;
-
-    fileName.classList.add(
-        "show"
-    );
-
-}
-
-
-function resetFile() {
-
-    fileInput.value = "";
-
-    fileName.textContent = "";
-
-    fileName.classList.remove(
-        "show"
-    );
-
-}
-
-
-/* ======================================================
-   NEW CHAT
-====================================================== */
-
-function newChat() {
-
-    messages = [];
-
-    save();
-
-    render();
-
-    input.focus();
-
-}
-
-
-/* ======================================================
-   CLEAR
-====================================================== */
-
-function clearChat() {
-
-    if (
-        confirm(
-            "Clear all MedAI chat history?"
-        )
-    ) {
-
-        newChat();
-
-    }
-
-}
-
-
-/* ======================================================
-   EXPORT
-====================================================== */
-
-function exportChat() {
-
-    if (!messages.length) {
-
-        alert(
-            "There is no chat to export."
-        );
-
-        return;
-
-    }
-
-
-    let content =
-        "MedAI Chat Export\n"
-        + "=================\n\n";
-
-
-    messages.forEach(
-        message => {
-
-            content +=
-                (
-                    message.role === "user"
-                    ? "You"
-                    : "MedAI"
-                )
-                + ":\n"
-                + message.text
-                + "\n\n";
-
-        }
-    );
-
-
-    const blob =
-        new Blob(
-            [content],
-            {
-                type:
-                    "text/plain;charset=utf-8"
-            }
-        );
-
-
-    const url =
-        URL.createObjectURL(blob);
-
-
-    const link =
-        document.createElement("a");
-
-    link.href = url;
-
-    link.download =
-        "medai-chat.txt";
-
-    link.click();
-
-    URL.revokeObjectURL(url);
-
-}
-
-
-/* ======================================================
-   DARK MODE
-====================================================== */
-
-function toggleDark() {
-
-    document.body.classList.toggle(
-        "dark"
-    );
-
-
-    localStorage.setItem(
-        DARK,
-        document.body.classList.contains(
-            "dark"
-        )
-    );
-
-}
-
-
-/* ======================================================
-   MOBILE
-====================================================== */
-
-function toggleSidebar() {
-
-    document
-        .getElementById("sidebar")
-        .classList.toggle(
-            "open"
-        );
-
-}
-
-
-/* ======================================================
-   KEYBOARD
-====================================================== */
-
-function keyDown(event) {
-
-    if (
-        event.key === "Enter"
-        && !event.shiftKey
-    ) {
-
-        event.preventDefault();
-
-        send();
-
-    }
-
-}
-
-
-/* ======================================================
-   RESIZE INPUT
-====================================================== */
-
-function resizeInput() {
-
-    input.style.height =
-        "auto";
-
-    input.style.height =
-        Math.min(
-            input.scrollHeight,
-            160
-        ) + "px";
-
-}
-
-
-input.addEventListener(
-    "input",
-    resizeInput
-);
-
-
-/* ======================================================
-   SCROLL
-====================================================== */
-
-function scrollBottom() {
-
-    setTimeout(
-        () => {
-
-            chat.scrollTop =
-                chat.scrollHeight;
-
-        },
-        40
-    );
-
-}
-
-
-/* ======================================================
-   START
-====================================================== */
-
-load();
-
-</script>
-
-</body>
-
-</html>
-"""
+    return jsonify({
+        "error":
+            "د سرور داخلي ستونزه."
+    }), 500
 
 
 # =========================================================
-# LOCAL DEVELOPMENT
+# START
 # =========================================================
 
 if __name__ == "__main__":
 
-    port = int(
-        os.environ.get(
-            "PORT",
-            "5000"
-        )
-    )
+    app.config["MAX_CONTENT_LENGTH"] = 64 * 1024
 
     app.run(
         host="0.0.0.0",
-        port=port,
+        port=int(
+            os.getenv(
+                "PORT",
+                "5000"
+            )
+        ),
         debug=False
     )
