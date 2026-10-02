@@ -4,7 +4,7 @@ from flask import Flask, request, jsonify, render_template_string
 app = Flask(__name__)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
 MAX_HISTORY = 20
 MAX_MESSAGE = 12000
 
