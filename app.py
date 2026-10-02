@@ -4,350 +4,5123 @@ import requests
 
 app = Flask(__name__)
 
+# ============================================================
+# CONFIG
+# ============================================================
+
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent"
+
+# خپل Gemini model دلته ساتلی شو
+GEMINI_URL = (
+    "https://generativelanguage.googleapis.com/v1beta/"
+    "models/gemini-3.5-flash-lite:generateContent"
+)
+
 WIKIMEDIA_URL = "https://commons.wikimedia.org/w/api.php"
 
+
+# ============================================================
+# GEMINI
+# ============================================================
 
 def ask_gemini(prompt):
     if not GEMINI_API_KEY:
         return "GEMINI_API_KEY نه دی تنظیم شوی."
+
     try:
-        r = requests.post(
-            GEMINI_URL, params={"key": GEMINI_API_KEY},
-            json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=60
+        response = requests.post(
+            GEMINI_URL,
+            params={"key": GEMINI_API_KEY},
+            json={
+                "contents": [
+                    {
+                        "parts": [
+                            {
+                                "text": prompt
+                            }
+                        ]
+                    }
+                ]
+            },
+            timeout=60
         )
-        if r.status_code != 200:
+
+        if response.status_code != 200:
             return "د AI سره د اړیکې پر مهال ستونزه رامنځته شوه."
-        data = r.json()
-        for part in data.get("candidates", [{}])[0].get("content", {}).get("parts", []):
+
+        data = response.json()
+
+        candidates = data.get("candidates", [])
+
+        if not candidates:
+            return "AI ځواب ورنه کړ."
+
+        content = candidates[0].get("content", {})
+        parts = content.get("parts", [])
+
+        for part in parts:
             if part.get("text"):
                 return part["text"]
+
         return "AI ځواب ورنه کړ."
+
     except requests.exceptions.Timeout:
         return "د AI ځواب ډېر وخت ونیو. بیا هڅه وکړئ."
+
     except Exception:
         return "د AI سره د اړیکې پر مهال ستونزه رامنځته شوه."
 
 
+# ============================================================
+# MEDAI PROMPT
+# ============================================================
+
 def build_prompt(instruction, user_text):
+
     return f"""
 You are MedAI, an educational medical information assistant.
-Developer: Toyebullah Dawoodzay. Created in 2026.
 
-RULES:
+Developer:
+Toyebullah Dawoodzay
+
+Created:
+2026
+
+IMPORTANT RULES:
+
 - Answer in the SAME LANGUAGE as the user's question.
-- Use simple, clear language.
-- Provide educational information only.
+- If the user writes Pashto, answer in Pashto.
+- Use simple and clear language.
+- Provide educational medical information only.
 - Do not diagnose from symptoms alone.
-- Do not claim to examine the patient.
-- Do not invent facts.
-- Do not provide personalized prescription or medication dosing.
+- Do not claim to physically examine the patient.
+- Do not invent medical facts.
+- Do not provide personalized prescription dosing.
 - Do not tell users to start, stop, or change prescription medicines.
 - If emergency warning signs are present, advise urgent professional medical care.
 - Do not replace a qualified healthcare professional.
-- If asked who created you, say: "زه MedAI یم، د Toyebullah Dawoodzay لخوا په ۲۰۲۶ کال کې جوړ شوی یم."
+- Clearly mention uncertainty when information is incomplete.
+- Do not create fake laboratory reference ranges.
+- Do not create fake medical scores.
+- Do not assume missing patient information.
+
+If asked who created you, say:
+
+"زه MedAI یم، د Toyebullah Dawoodzay لخوا په ۲۰۲۶ کال کې جوړ شوی یم."
 
 TASK:
+
 {instruction}
 
 USER INFORMATION:
+
 {user_text}
 """
 
 
+# ============================================================
+# WIKIMEDIA MEDICAL IMAGES
+# ============================================================
+
 def get_medical_images(query):
+
     try:
+
         params = {
-            "action": "query", "format": "json", "generator": "search",
-            "gsrsearch": query + " medical", "gsrnamespace": 6,
-            "gsrlimit": 8, "prop": "imageinfo",
-            "iiprop": "url", "iiurlwidth": 600
+            "action": "query",
+            "format": "json",
+            "generator": "search",
+            "gsrsearch": query + " medical",
+            "gsrnamespace": 6,
+            "gsrlimit": 8,
+            "prop": "imageinfo",
+            "iiprop": "url",
+            "iiurlwidth": 700
         }
-        r = requests.get(
-            WIKIMEDIA_URL, params=params,
-            headers={"User-Agent": "MedAI/1.0"}, timeout=20
+
+        response = requests.get(
+            WIKIMEDIA_URL,
+            params=params,
+            headers={
+                "User-Agent": "MedAI/1.0"
+            },
+            timeout=20
         )
-        if r.status_code != 200:
+
+        if response.status_code != 200:
             return []
-        pages = r.json().get("query", {}).get("pages", {})
-        out = []
+
+        data = response.json()
+
+        pages = data.get("query", {}).get("pages", {})
+
+        images = []
+
         for page in pages.values():
-            info = page.get("imageinfo", [])
-            if info:
-                url = info[0].get("thumburl") or info[0].get("url")
+
+            image_info = page.get("imageinfo", [])
+
+            if image_info:
+
+                info = image_info[0]
+
+                url = (
+                    info.get("thumburl")
+                    or info.get("url")
+                )
+
                 if url:
-                    out.append({"url": url, "title": page.get("title", "Medical Image")})
-        return out
+
+                    images.append(
+                        {
+                            "url": url,
+                            "title": page.get(
+                                "title",
+                                "Medical Image"
+                            )
+                        }
+                    )
+
+        return images
+
     except Exception:
         return []
 
 
-HTML = r"""<!DOCTYPE html>
+# ============================================================
+# HTML
+# ============================================================
+
+HTML = r"""
+<!DOCTYPE html>
+
 <html lang="ps" dir="rtl">
+
 <head>
+
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+
+<meta name="viewport"
+      content="width=device-width,
+               initial-scale=1.0,
+               maximum-scale=1.0,
+               user-scalable=no">
+
 <meta name="theme-color" content="#0b7fab">
-<title>MedAI — Medical AI</title>
+
+<title>MedAI</title>
+
+
 <style>
-:root{--blue:#087fba;--cyan:#11b5c9;--navy:#082f49;--bg:#eef7fb;--card:#fff;--text:#102a43;--muted:#64748b;--line:#dbe8ef;--danger:#dc2626;--green:#0f9d6e}
-*{box-sizing:border-box}html{scroll-behavior:smooth}
-body{margin:0;font-family:Arial,Tahoma,sans-serif;background:var(--bg);color:var(--text);transition:.25s}
-body.dark{--bg:#071827;--card:#10283a;--text:#f1f8fc;--muted:#9fb4c3;--line:#23465c}
-header{background:linear-gradient(135deg,#075985,#0b9fba);color:#fff;padding:18px 18px 26px;position:sticky;top:0;z-index:10;box-shadow:0 5px 20px #07598535}
-.head{max-width:1120px;margin:auto;display:flex;align-items:center;justify-content:space-between;gap:14px}
-.brand{display:flex;align-items:center;gap:12px}.logo{width:52px;height:52px;border-radius:16px;background:#fff;color:#087fba;display:grid;place-items:center;font-size:28px;box-shadow:0 6px 18px #003b5028}
-h1{font-size:25px;margin:0}.sub{margin:3px 0 0;opacity:.88;font-size:13px}
-.actions{display:flex;gap:7px;flex-wrap:wrap}.actions button{width:auto;margin:0;background:#ffffff18;border:1px solid #ffffff45;color:#fff}
-.container{max-width:1120px;margin:auto;padding:20px 14px 50px}
-.hero{background:linear-gradient(135deg,#e7f8fc,#fff);border:1px solid #ccebf2;border-radius:24px;padding:20px;margin-bottom:18px;box-shadow:0 10px 35px #07598512}
-.dark .hero{background:linear-gradient(135deg,#10384a,#10283a);border-color:#24576e}
-.hero h2{margin:0 0 7px;color:#075985}.dark .hero h2{color:#70e0ef}
-.hero p{color:var(--muted);margin:0 0 15px}
-.searchbar{display:flex;gap:8px}.searchbar textarea{min-height:74px;flex:1}
-.card{background:var(--card);border:1px solid var(--line);padding:18px;border-radius:20px;margin-bottom:16px;box-shadow:0 7px 25px #0b486612}
-.card h2{margin:0 0 13px;font-size:19px;color:#075985}.dark .card h2{color:#71d8e8}
-textarea,input,select{width:100%;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--text);font-size:15px;margin:5px 0 10px;outline:none}
-textarea:focus,input:focus,select:focus{border-color:var(--cyan);box-shadow:0 0 0 3px #11b5c91c}
-button{width:100%;border:0;border-radius:12px;padding:12px;margin:4px 0;background:var(--blue);color:#fff;font-size:15px;font-weight:bold;cursor:pointer;transition:.18s}
-button:hover{transform:translateY(-1px);filter:brightness(1.04)}
-.secondary{background:#64748b}.danger{background:var(--danger)}.success{background:var(--green)}.warning{background:#c27605}
-.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}.grid button{margin:0;background:#edf9fc;color:#075985;border:1px solid #ccebf2}.dark .grid button{background:#12384a;color:#bceef5;border-color:#24576e}
-.tools{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.tool{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:15px}.tool h3{margin:0 0 6px;font-size:16px}.tool p{margin:0 0 8px;color:var(--muted);font-size:13px}
-.result{margin-top:10px;padding:14px;background:#f4f9fc;border-radius:13px;line-height:1.9;white-space:pre-wrap;min-height:20px}.dark .result{background:#081c2b}
-.loading{display:none;text-align:center;color:var(--blue);font-weight:bold;padding:8px}.images{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.images img{width:100%;height:160px;object-fit:cover;border-radius:13px}
-.item{padding:12px;margin:7px 0;background:#f1f6f9;border-radius:12px}.dark .item{background:#081c2b}.small{color:var(--muted);font-size:12px}
-footer{text-align:center;padding:28px;color:var(--muted)}
-@media(max-width:850px){.tools{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:repeat(2,1fr)}.images{grid-template-columns:repeat(2,1fr)}.head{align-items:flex-start}}
-@media(max-width:560px){header{padding:13px}.head{display:block}.actions{margin-top:12px}.actions button{width:auto}.container{padding:12px 10px}.hero,.card{border-radius:17px;padding:14px}.tools{grid-template-columns:1fr}.searchbar{display:block}.images{grid-template-columns:1fr}.images img{height:210px}h1{font-size:22px}}
+
+/* =========================================================
+   VARIABLES
+========================================================= */
+
+:root {
+
+    --bg: #ffffff;
+    --sidebar: #f7f7f8;
+    --card: #ffffff;
+    --input: #f7f7f8;
+
+    --text: #1f2937;
+    --muted: #6b7280;
+
+    --border: #e5e7eb;
+
+    --primary: #087fba;
+    --primary-dark: #075985;
+
+    --danger: #dc2626;
+    --success: #059669;
+
+    --shadow: 0 8px 30px rgba(0,0,0,.08);
+}
+
+
+/* DARK */
+
+body.dark {
+
+    --bg: #212121;
+    --sidebar: #171717;
+    --card: #212121;
+    --input: #2f2f2f;
+
+    --text: #ececec;
+    --muted: #a3a3a3;
+
+    --border: #3f3f3f;
+
+    --primary: #19a7d8;
+    --primary-dark: #0b7fab;
+}
+
+
+/* =========================================================
+   GLOBAL
+========================================================= */
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+
+    margin: 0;
+    padding: 0;
+
+    width: 100%;
+    height: 100%;
+
+    font-family:
+        Arial,
+        Tahoma,
+        sans-serif;
+
+    background: var(--bg);
+    color: var(--text);
+}
+
+
+button,
+input,
+textarea,
+select {
+
+    font-family: inherit;
+}
+
+
+button {
+
+    cursor: pointer;
+}
+
+
+/* =========================================================
+   APP
+========================================================= */
+
+.app {
+
+    display: flex;
+
+    width: 100%;
+    height: 100vh;
+
+    overflow: hidden;
+}
+
+
+/* =========================================================
+   SIDEBAR
+========================================================= */
+
+.sidebar {
+
+    width: 290px;
+
+    background: var(--sidebar);
+
+    border-left: 1px solid var(--border);
+
+    display: flex;
+
+    flex-direction: column;
+
+    position: fixed;
+
+    right: 0;
+    top: 0;
+    bottom: 0;
+
+    z-index: 100;
+
+    transform: translateX(100%);
+
+    transition: .25s ease;
+}
+
+
+.sidebar.open {
+
+    transform: translateX(0);
+}
+
+
+/* sidebar header */
+
+.sidebar-header {
+
+    height: 64px;
+
+    padding: 12px;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    border-bottom: 1px solid var(--border);
+}
+
+
+.sidebar-brand {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 10px;
+
+    font-weight: bold;
+
+    font-size: 18px;
+}
+
+
+.brand-icon {
+
+    width: 38px;
+    height: 38px;
+
+    border-radius: 12px;
+
+    display: grid;
+
+    place-items: center;
+
+    background: var(--primary);
+
+    color: white;
+
+    font-size: 21px;
+}
+
+
+.close-sidebar {
+
+    border: 0;
+
+    background: transparent;
+
+    color: var(--text);
+
+    font-size: 22px;
+
+    width: 40px;
+    height: 40px;
+
+    border-radius: 10px;
+}
+
+
+.close-sidebar:hover {
+
+    background: var(--border);
+}
+
+
+/* sidebar body */
+
+.sidebar-body {
+
+    flex: 1;
+
+    overflow-y: auto;
+
+    padding: 10px;
+}
+
+
+/* new chat */
+
+.new-chat {
+
+    width: 100%;
+
+    border: 1px solid var(--border);
+
+    background: var(--card);
+
+    color: var(--text);
+
+    border-radius: 12px;
+
+    padding: 12px;
+
+    text-align: right;
+
+    font-size: 15px;
+
+    margin-bottom: 12px;
+}
+
+
+.new-chat:hover {
+
+    background: var(--input);
+}
+
+
+/* menu section */
+
+.menu-title {
+
+    color: var(--muted);
+
+    font-size: 12px;
+
+    font-weight: bold;
+
+    padding: 12px 10px 7px;
+}
+
+
+/* feature button */
+
+.menu-item {
+
+    width: 100%;
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 10px;
+
+    border: 0;
+
+    background: transparent;
+
+    color: var(--text);
+
+    padding: 10px;
+
+    border-radius: 10px;
+
+    text-align: right;
+
+    font-size: 14px;
+
+    margin-bottom: 2px;
+}
+
+
+.menu-item:hover {
+
+    background: var(--border);
+}
+
+
+.menu-icon {
+
+    width: 28px;
+
+    text-align: center;
+
+    font-size: 17px;
+}
+
+
+/* sidebar footer */
+
+.sidebar-footer {
+
+    border-top: 1px solid var(--border);
+
+    padding: 10px;
+}
+
+
+/* =========================================================
+   MAIN
+========================================================= */
+
+.main {
+
+    width: 100%;
+    height: 100vh;
+
+    display: flex;
+
+    flex-direction: column;
+
+    background: var(--bg);
+}
+
+
+/* =========================================================
+   TOP BAR
+========================================================= */
+
+.topbar {
+
+    height: 64px;
+
+    border-bottom: 1px solid var(--border);
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    padding: 0 15px;
+
+    background: var(--bg);
+
+    flex-shrink: 0;
+}
+
+
+.top-left {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 10px;
+}
+
+
+.menu-button {
+
+    width: 42px;
+    height: 42px;
+
+    border: 0;
+
+    border-radius: 10px;
+
+    background: transparent;
+
+    color: var(--text);
+
+    font-size: 23px;
+}
+
+
+.menu-button:hover {
+
+    background: var(--border);
+}
+
+
+.top-title {
+
+    font-size: 18px;
+
+    font-weight: bold;
+}
+
+
+.top-actions {
+
+    display: flex;
+
+    gap: 5px;
+}
+
+
+.icon-button {
+
+    width: 40px;
+    height: 40px;
+
+    border: 0;
+
+    background: transparent;
+
+    color: var(--text);
+
+    border-radius: 10px;
+
+    font-size: 18px;
+}
+
+
+.icon-button:hover {
+
+    background: var(--border);
+}
+
+
+/* =========================================================
+   CHAT AREA
+========================================================= */
+
+.chat-area {
+
+    flex: 1;
+
+    overflow-y: auto;
+
+    padding: 25px 15px 150px;
+}
+
+
+.chat-inner {
+
+    max-width: 850px;
+
+    margin: auto;
+}
+
+
+/* welcome */
+
+.welcome {
+
+    min-height: 55vh;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: center;
+
+    text-align: center;
+
+    flex-direction: column;
+}
+
+
+.welcome-icon {
+
+    width: 70px;
+    height: 70px;
+
+    border-radius: 22px;
+
+    background: var(--primary);
+
+    color: white;
+
+    display: grid;
+
+    place-items: center;
+
+    font-size: 36px;
+
+    margin-bottom: 18px;
+
+    box-shadow:
+        0 10px 35px rgba(8,127,186,.25);
+}
+
+
+.welcome h1 {
+
+    margin: 0 0 10px;
+
+    font-size: 30px;
+}
+
+
+.welcome p {
+
+    margin: 0;
+
+    color: var(--muted);
+
+    max-width: 500px;
+
+    line-height: 1.8;
+}
+
+
+/* messages */
+
+.message {
+
+    margin: 20px 0;
+
+    display: flex;
+
+    gap: 12px;
+
+    align-items: flex-start;
+}
+
+
+.message.user {
+
+    justify-content: flex-start;
+}
+
+
+.message.ai {
+
+    justify-content: flex-start;
+}
+
+
+.avatar {
+
+    min-width: 36px;
+    width: 36px;
+    height: 36px;
+
+    border-radius: 11px;
+
+    display: grid;
+
+    place-items: center;
+
+    font-size: 18px;
+
+    background: var(--primary);
+
+    color: white;
+}
+
+
+.user .avatar {
+
+    background: #64748b;
+}
+
+
+.message-content {
+
+    max-width: 85%;
+
+    line-height: 1.9;
+
+    white-space: pre-wrap;
+
+    font-size: 15px;
+}
+
+
+.user .message-content {
+
+    background: var(--input);
+
+    padding: 10px 14px;
+
+    border-radius: 16px;
+
+    border-top-right-radius: 5px;
+}
+
+
+.ai .message-content {
+
+    padding: 5px 0;
+}
+
+
+/* =========================================================
+   QUICK TOOLS
+========================================================= */
+
+.quick-tools {
+
+    display: flex;
+
+    gap: 8px;
+
+    overflow-x: auto;
+
+    padding: 10px 0;
+
+    scrollbar-width: none;
+}
+
+
+.quick-tools::-webkit-scrollbar {
+
+    display: none;
+}
+
+
+.quick-tool {
+
+    flex-shrink: 0;
+
+    border: 1px solid var(--border);
+
+    background: var(--card);
+
+    color: var(--text);
+
+    border-radius: 20px;
+
+    padding: 8px 13px;
+
+    font-size: 13px;
+}
+
+
+.quick-tool:hover {
+
+    border-color: var(--primary);
+
+    color: var(--primary);
+}
+
+
+/* =========================================================
+   CHAT INPUT
+========================================================= */
+
+.input-area {
+
+    position: fixed;
+
+    bottom: 0;
+
+    left: 0;
+    right: 0;
+
+    background: linear-gradient(
+        transparent,
+        var(--bg) 28%
+    );
+
+    padding: 20px 12px 12px;
+
+    z-index: 50;
+}
+
+
+.input-inner {
+
+    max-width: 850px;
+
+    margin: auto;
+}
+
+
+.chat-box {
+
+    display: flex;
+
+    align-items: flex-end;
+
+    gap: 7px;
+
+    background: var(--input);
+
+    border: 1px solid var(--border);
+
+    border-radius: 24px;
+
+    padding: 7px;
+
+    box-shadow: var(--shadow);
+}
+
+
+.chat-box textarea {
+
+    flex: 1;
+
+    border: 0;
+
+    outline: 0;
+
+    resize: none;
+
+    background: transparent;
+
+    color: var(--text);
+
+    min-height: 42px;
+
+    max-height: 150px;
+
+    padding: 10px;
+
+    font-size: 15px;
+}
+
+
+.chat-action {
+
+    width: 42px;
+    height: 42px;
+
+    flex-shrink: 0;
+
+    border: 0;
+
+    border-radius: 50%;
+
+    background: transparent;
+
+    color: var(--text);
+
+    font-size: 18px;
+}
+
+
+.chat-action:hover {
+
+    background: var(--border);
+}
+
+
+.send-button {
+
+    background: var(--primary);
+
+    color: white;
+}
+
+
+.send-button:hover {
+
+    filter: brightness(1.08);
+
+    background: var(--primary);
+}
+
+
+.disclaimer {
+
+    text-align: center;
+
+    color: var(--muted);
+
+    font-size: 10px;
+
+    padding-top: 7px;
+}
+
+
+/* =========================================================
+   TOOL PANEL
+========================================================= */
+
+.overlay {
+
+    display: none;
+
+    position: fixed;
+
+    inset: 0;
+
+    background: rgba(0,0,0,.4);
+
+    z-index: 90;
+}
+
+
+.overlay.show {
+
+    display: block;
+}
+
+
+.tool-panel {
+
+    position: fixed;
+
+    z-index: 120;
+
+    inset: 0;
+
+    background: var(--bg);
+
+    overflow-y: auto;
+
+    display: none;
+}
+
+
+.tool-panel.show {
+
+    display: block;
+}
+
+
+.panel-header {
+
+    height: 64px;
+
+    position: sticky;
+
+    top: 0;
+
+    background: var(--bg);
+
+    border-bottom: 1px solid var(--border);
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 12px;
+
+    padding: 0 15px;
+
+    z-index: 5;
+}
+
+
+.panel-header h2 {
+
+    margin: 0;
+
+    font-size: 18px;
+}
+
+
+.back-button {
+
+    width: 42px;
+    height: 42px;
+
+    border: 0;
+
+    background: transparent;
+
+    color: var(--text);
+
+    font-size: 23px;
+
+    border-radius: 10px;
+}
+
+
+.panel-body {
+
+    max-width: 800px;
+
+    margin: auto;
+
+    padding: 20px 14px 60px;
+}
+
+
+/* =========================================================
+   FORM
+========================================================= */
+
+.field {
+
+    margin-bottom: 12px;
+}
+
+
+.field label {
+
+    display: block;
+
+    font-size: 13px;
+
+    color: var(--muted);
+
+    margin-bottom: 5px;
+}
+
+
+input,
+textarea,
+select {
+
+    width: 100%;
+
+    padding: 12px;
+
+    border-radius: 12px;
+
+    border: 1px solid var(--border);
+
+    background: var(--input);
+
+    color: var(--text);
+
+    outline: none;
+
+    font-size: 15px;
+}
+
+
+textarea {
+
+    min-height: 120px;
+
+    resize: vertical;
+}
+
+
+input:focus,
+textarea:focus,
+select:focus {
+
+    border-color: var(--primary);
+
+    box-shadow:
+        0 0 0 3px rgba(8,127,186,.12);
+}
+
+
+.primary-button {
+
+    width: 100%;
+
+    padding: 13px;
+
+    border: 0;
+
+    border-radius: 12px;
+
+    background: var(--primary);
+
+    color: white;
+
+    font-size: 15px;
+
+    font-weight: bold;
+}
+
+
+.primary-button:hover {
+
+    filter: brightness(1.05);
+}
+
+
+.danger-button {
+
+    width: 100%;
+
+    padding: 12px;
+
+    border: 0;
+
+    border-radius: 12px;
+
+    background: var(--danger);
+
+    color: white;
+
+    font-weight: bold;
+}
+
+
+/* result */
+
+.result {
+
+    margin-top: 15px;
+
+    padding: 15px;
+
+    background: var(--input);
+
+    border-radius: 14px;
+
+    line-height: 1.9;
+
+    white-space: pre-wrap;
+
+    min-height: 20px;
+}
+
+
+/* =========================================================
+   IMAGES
+========================================================= */
+
+.image-grid {
+
+    display: grid;
+
+    grid-template-columns:
+        repeat(2, 1fr);
+
+    gap: 10px;
+
+    margin-top: 15px;
+}
+
+
+.image-card {
+
+    background: var(--card);
+
+    border: 1px solid var(--border);
+
+    border-radius: 14px;
+
+    overflow: hidden;
+}
+
+
+.image-card img {
+
+    width: 100%;
+
+    height: 180px;
+
+    object-fit: cover;
+
+    display: block;
+}
+
+
+.image-title {
+
+    padding: 8px;
+
+    font-size: 11px;
+
+    color: var(--muted);
+}
+
+
+/* =========================================================
+   LIST
+========================================================= */
+
+.list-item {
+
+    background: var(--input);
+
+    border: 1px solid var(--border);
+
+    border-radius: 13px;
+
+    padding: 12px;
+
+    margin-bottom: 8px;
+}
+
+
+.list-item strong {
+
+    display: block;
+
+    margin-bottom: 4px;
+}
+
+
+.list-item small {
+
+    color: var(--muted);
+}
+
+
+/* =========================================================
+   LOADING
+========================================================= */
+
+.loading {
+
+    display: none;
+
+    text-align: center;
+
+    color: var(--primary);
+
+    padding: 12px;
+}
+
+
+.loading.show {
+
+    display: block;
+}
+
+
+/* =========================================================
+   RESPONSIVE
+========================================================= */
+
+@media (min-width: 900px) {
+
+    .sidebar {
+
+        position: relative;
+
+        transform: translateX(0);
+
+        right: auto;
+
+        border-left: 0;
+
+        border-right: 1px solid var(--border);
+    }
+
+    .close-sidebar {
+
+        display: none;
+    }
+
+    .menu-button {
+
+        display: none;
+    }
+
+    .main {
+
+        margin-right: 0;
+    }
+
+}
+
+
+@media (max-width: 600px) {
+
+    .sidebar {
+
+        width: 88%;
+
+        max-width: 330px;
+    }
+
+    .welcome h1 {
+
+        font-size: 25px;
+    }
+
+    .welcome {
+
+        min-height: 48vh;
+    }
+
+    .message-content {
+
+        max-width: 88%;
+    }
+
+    .image-grid {
+
+        grid-template-columns: 1fr 1fr;
+    }
+
+}
+
+
+/* =========================================================
+   RTL
+========================================================= */
+
+html[dir="rtl"] .sidebar {
+
+    right: 0;
+    left: auto;
+}
+
+
+html[dir="rtl"] .user {
+
+    justify-content: flex-start;
+}
+
+
 </style>
+
 </head>
+
+
 <body>
-<header><div class="head">
-<div class="brand"><div class="logo">🩺</div><div><h1>MedAI</h1><div class="sub">ستاسو هوښیار طبي معلوماتي مرستیال</div></div></div>
-<div class="actions"><button onclick="toggleDark()">🌙</button><button onclick="startVoice()">🎤 Voice</button><button onclick="stopVoice()">⏹️</button></div>
-</div></header>
 
-<main class="container">
-<section class="hero">
-<h2>سلام! MedAI ته ښه راغلاست 👋</h2>
-<p>طبي پوښتنې، نښې، راپورونه او روغتیايي معلومات په ساده ژبه وڅېړئ.</p>
-<div class="searchbar"><textarea id="question" rows="2" placeholder="خپله طبي پوښتنه ولیکئ..."></textarea><button onclick="askAI()">🤖 پوښتنه</button></div>
-<div id="mainLoading" class="loading">AI کار کوي...</div><div id="answer" class="result"></div>
-<button class="secondary" onclick="speakAnswer()">🔊 ځواب واورئ</button>
-</section>
 
-<div class="card"><h2>🩺 چټک طبي موضوعات</h2><div class="grid">
-<button onclick="setTopic('Diabetes')">🩸 شکر</button><button onclick="setTopic('Hypertension')">❤️ فشار</button><button onclick="setTopic('Heart Disease')">❤️ زړه</button><button onclick="setTopic('Asthma')">🫁 ساه</button>
-<button onclick="setTopic('Cancer')">🧬 سرطان</button><button onclick="setTopic('Kidney Disease')">🫘 پښتورګي</button><button onclick="setTopic('Liver Disease')">🧫 ځیګر</button><button onclick="setTopic('Infection')">🦠 انتان</button>
-</div></div>
+<div class="app">
 
-<div class="tools">
-<div class="tool"><h3>🧠 نښې</h3><p>نښې په تعلیمي ډول تشریح کړئ.</p><textarea id="symptomsInput" rows="3" placeholder="تبه، ټوخی..."></textarea><button onclick="special('/symptoms','symptomsInput','symptomsResult','symptomsLoading')">تشریح</button><div id="symptomsLoading" class="loading">...</div><div id="symptomsResult" class="result"></div></div>
-<div class="tool"><h3>❤️ حیاتي نښې</h3><p>فشار، نبض او نور معلومات.</p><textarea id="vitalsInput" rows="3" placeholder="140/90, pulse 85..."></textarea><button onclick="special('/vitals','vitalsInput','vitalsResult','vitalsLoading')">تشریح</button><div id="vitalsLoading" class="loading">...</div><div id="vitalsResult" class="result"></div></div>
-<div class="tool"><h3>⚖️ پرتله</h3><input id="disease1" placeholder="لومړۍ ناروغي"><input id="disease2" placeholder="دوهمه ناروغي"><button onclick="compare()">پرتله</button><div id="compareLoading" class="loading">...</div><div id="compareResult" class="result"></div></div>
+
+<!-- =====================================================
+     SIDEBAR
+===================================================== -->
+
+<aside id="sidebar" class="sidebar">
+
+    <div class="sidebar-header">
+
+        <div class="sidebar-brand">
+
+            <div class="brand-icon">
+                🩺
+            </div>
+
+            <span>MedAI</span>
+
+        </div>
+
+        <button
+            class="close-sidebar"
+            onclick="closeSidebar()">
+
+            ✕
+
+        </button>
+
+    </div>
+
+
+    <div class="sidebar-body">
+
+
+        <button
+            class="new-chat"
+            onclick="newChat()">
+
+            ＋ نوی Chat
+
+        </button>
+
+
+        <div class="menu-title">
+            اصلي
+        </div>
+
+
+        <button
+            class="menu-item"
+            onclick="closeSidebar()">
+
+            <span class="menu-icon">💬</span>
+
+            <span>New Chat</span>
+
+        </button>
+
+
+        <!-- =================================================
+             MEDICAL FEATURES
+        ================================================== -->
+
+        <div class="menu-title">
+            طبي Features
+        </div>
+
+
+        <button class="menu-item"
+                onclick="openTool('symptoms')">
+            <span class="menu-icon">🧠</span>
+            <span>Symptom Education</span>
+        </button>
+
+
+        <button class="menu-item"
+                onclick="openTool('vitals')">
+            <span class="menu-icon">❤️</span>
+            <span>Vital Signs Guide</span>
+        </button>
+
+
+        <button class="menu-item"
+                onclick="openTool('compare')">
+            <span class="menu-icon">⚖️</span>
+            <span>Disease Comparison</span>
+        </button>
+
+
+        <button class="menu-item"
+                onclick="openTool('doctor')">
+            <span class="menu-icon">👨‍⚕️</span>
+            <span>Doctor Visit Assistant</span>
+        </button>
+
+
+        <button class="menu-item"
+                onclick="openTool('lab')">
+            <span class="menu-icon">🧪</span>
+            <span>Lab Report Explainer</span>
+        </button>
+
+
+        <button class="menu-item"
+                onclick="openTool('medicine')">
+            <span class="menu-icon">💊</span>
+            <span>Medicine Information</span>
+        </button>
+
+
+        <button class="menu-item"
+                onclick="openTool('dictionary')">
+            <span class="menu-icon">📖</span>
+            <span>Medical Dictionary</span>
+        </button>
+
+
+        <button class="menu-item"
+                onclick="openTool('emergency')">
+            <span class="menu-icon">🚨</span>
+            <span>Emergency Checker</span>
+        </button>
+
+
+        <button class="menu-item"
+                onclick="openTool('images')">
+            <span class="menu-icon">🖼️</span>
+            <span>Medical Images</span>
+        </button>
+
+
+        <button class="menu-item"
+                onclick="openTool('interaction')">
+            <span class="menu-icon">💊</span>
+            <span>Medicine Interaction</span>
+        </button>
+
+
+        <button class="menu-item"
+                onclick="openTool('report')">
+            <span class="menu-icon">📋</span>
+            <span>Medical Report Explainer</span>
+        </button>
+
+
+        <button class="menu-item"
+                onclick="openTool('firstaid')">
+            <span class="menu-icon">🩹</span>
+            <span>First Aid Guide</span>
+        </button>
+
+
+        <button class="menu-item"
+                onclick="openTool('glossary')">
+            <span class="menu-icon">📚</span>
+            <span>Medical Glossary</span>
+        </button>
+
+
+        <button class="menu-item"
+                onclick="openTool('risk')">
+            <span class="menu-icon">🧠</span>
+            <span>Medical Risk Assessment</span>
+        </button>
+
+
+        <button class="menu-item"
+                onclick="openTool('quiz')">
+            <span class="menu-icon">📝</span>
+            <span>Medical Quiz</span>
+        </button>
+
+
+        <button class="menu-item"
+                onclick="openTool('healthreport')">
+            <span class="menu-icon">📊</span>
+            <span>Health Report Generator</span>
+        </button>
+
+
+        <!-- =================================================
+             HEALTH
+        ================================================== -->
+
+        <div class="menu-title">
+            Health
+        </div>
+
+
+        <button class="menu-item"
+                onclick="openTool('tracker')">
+
+            <span class="menu-icon">📈</span>
+
+            <span>Health Tracker</span>
+
+        </button>
+
+
+        <button class="menu-item"
+                onclick="openTool('reminder')">
+
+            <span class="menu-icon">⏰</span>
+
+            <span>Medication Reminder</span>
+
+        </button>
+
+
+        <!-- =================================================
+             PERSONAL
+        ================================================== -->
+
+        <div class="menu-title">
+            Personal
+        </div>
+
+
+        <button class="menu-item"
+                onclick="openTool('history')">
+
+            <span class="menu-icon">🕘</span>
+
+            <span>History</span>
+
+        </button>
+
+
+        <button class="menu-item"
+                onclick="openTool('favorites')">
+
+            <span class="menu-icon">⭐</span>
+
+            <span>Favorites</span>
+
+        </button>
+
+
+    </div>
+
+
+    <div class="sidebar-footer">
+
+
+        <button
+            class="menu-item"
+            onclick="toggleDark()">
+
+            <span class="menu-icon">🌙</span>
+
+            <span>Dark / Light Mode</span>
+
+        </button>
+
+
+        <button
+            class="menu-item"
+            onclick="openTool('about')">
+
+            <span class="menu-icon">ℹ️</span>
+
+            <span>About MedAI</span>
+
+        </button>
+
+
+    </div>
+
+</aside>
+
+
+
+<!-- =====================================================
+     MAIN
+===================================================== -->
+
+<main class="main">
+
+
+    <!-- TOP BAR -->
+
+    <header class="topbar">
+
+
+        <div class="top-left">
+
+
+            <button
+                class="menu-button"
+                onclick="openSidebar()">
+
+                ☰
+
+            </button>
+
+
+            <div class="top-title">
+                MedAI
+            </div>
+
+
+        </div>
+
+
+        <div class="top-actions">
+
+
+            <button
+                class="icon-button"
+                onclick="startVoice()"
+                title="Voice">
+
+                🎤
+
+            </button>
+
+
+            <button
+                class="icon-button"
+                onclick="toggleDark()"
+                title="Dark Mode">
+
+                🌙
+
+            </button>
+
+
+        </div>
+
+
+    </header>
+
+
+
+    <!-- =================================================
+         CHAT AREA
+    ================================================== -->
+
+    <section
+        id="chatArea"
+        class="chat-area">
+
+
+        <div
+            id="chatInner"
+            class="chat-inner">
+
+
+            <!-- WELCOME -->
+
+            <div
+                id="welcome"
+                class="welcome">
+
+
+                <div class="welcome-icon">
+                    🩺
+                </div>
+
+
+                <h1>
+                    MedAI ته ښه راغلاست
+                </h1>
+
+
+                <p>
+                    زه ستا د طبي معلوماتو هوښیار مرستیال یم.
+                    خپله پوښتنه ولیکه او یا له Menu څخه کوم طبي Tool انتخاب کړه.
+                </p>
+
+
+            </div>
+
+
+        </div>
+
+    </section>
+
+
+
+    <!-- =================================================
+         INPUT
+    ================================================== -->
+
+    <div class="input-area">
+
+
+        <div class="input-inner">
+
+
+            <div class="quick-tools">
+
+
+                <button
+                    class="quick-tool"
+                    onclick="openTool('symptoms')">
+
+                    🧠 نښې
+
+                </button>
+
+
+                <button
+                    class="quick-tool"
+                    onclick="openTool('medicine')">
+
+                    💊 درمل
+
+                </button>
+
+
+                <button
+                    class="quick-tool"
+                    onclick="openTool('lab')">
+
+                    🧪 Lab
+
+                </button>
+
+
+                <button
+                    class="quick-tool"
+                    onclick="openTool('vitals')">
+
+                    ❤️ Vital
+
+                </button>
+
+
+                <button
+                    class="quick-tool"
+                    onclick="openTool('emergency')">
+
+                    🚨 Emergency
+
+                </button>
+
+
+                <button
+                    class="quick-tool"
+                    onclick="openTool('firstaid')">
+
+                    🩹 First Aid
+
+                </button>
+
+
+            </div>
+
+
+            <div class="chat-box">
+
+
+                <button
+                    class="chat-action"
+                    onclick="startVoice()"
+                    title="Voice">
+
+                    🎤
+
+                </button>
+
+
+                <textarea
+                    id="question"
+                    rows="1"
+                    placeholder="خپله طبي پوښتنه ولیکئ..."
+                    onkeydown="handleEnter(event)"></textarea>
+
+
+                <button
+                    class="chat-action send-button"
+                    onclick="askAI()">
+
+                    ↑
+
+                </button>
+
+
+            </div>
+
+
+            <div class="disclaimer">
+
+                MedAI تعلیمي طبي معلومات وړاندې کوي؛ د ډاکټر بدیل نه دی.
+
+            </div>
+
+
+        </div>
+
+    </div>
+
+
+</main>
+
+
 </div>
 
-<div class="card"><h2>🧰 طبي وسایل</h2><div class="tools">
-<div class="tool"><h3>👨‍⚕️ Doctor Assistant</h3><textarea id="doctorInput" rows="3" placeholder="خپلې نښې او معلومات..."></textarea><button onclick="special('/doctor','doctorInput','doctorResult','doctorLoading')">معلومات منظم کړه</button><div id="doctorLoading" class="loading">...</div><div id="doctorResult" class="result"></div></div>
-<div class="tool"><h3>🧪 Lab Report</h3><textarea id="labInput" rows="3" placeholder="د لابراتوار راپور..."></textarea><button onclick="special('/lab','labInput','labResult','labLoading')">تشریح</button><div id="labLoading" class="loading">...</div><div id="labResult" class="result"></div></div>
-<div class="tool"><h3>💊 Medicine</h3><input id="medicineInput" placeholder="د درملو نوم"><button onclick="special('/medicine','medicineInput','medicineResult','medicineLoading')">معلومات</button><div id="medicineLoading" class="loading">...</div><div id="medicineResult" class="result"></div></div>
-<div class="tool"><h3>📖 Dictionary</h3><input id="dictionaryInput" placeholder="Hypertension"><button onclick="special('/dictionary','dictionaryInput','dictionaryResult','dictionaryLoading')">تشریح</button><div id="dictionaryLoading" class="loading">...</div><div id="dictionaryResult" class="result"></div></div>
-<div class="tool"><h3>🚨 Emergency</h3><textarea id="emergencyInput" rows="3" placeholder="نښې ولیکئ..."></textarea><button class="danger" onclick="special('/emergency','emergencyInput','emergencyResult','emergencyLoading')">بیړنۍ نښې وګوره</button><div id="emergencyLoading" class="loading">...</div><div id="emergencyResult" class="result"></div></div>
-<div class="tool"><h3>💊 Interaction</h3><textarea id="interactionInput" rows="3" placeholder="د درملو نومونه..."></textarea><button onclick="special('/interaction','interactionInput','interactionResult','interactionLoading')">تداخل وګوره</button><div id="interactionLoading" class="loading">...</div><div id="interactionResult" class="result"></div></div>
-<div class="tool"><h3>📄 Report</h3><textarea id="reportInput" rows="3" placeholder="طبي راپور..."></textarea><button onclick="special('/report','reportInput','reportResult','reportLoading')">تشریح</button><div id="reportLoading" class="loading">...</div><div id="reportResult" class="result"></div></div>
-<div class="tool"><h3>🩹 First Aid</h3><input id="firstAidInput" placeholder="burn, cut, nosebleed"><button onclick="special('/firstaid','firstAidInput','firstAidResult','firstAidLoading')">لومړنۍ مرسته</button><div id="firstAidLoading" class="loading">...</div><div id="firstAidResult" class="result"></div></div>
-<div class="tool"><h3>🧬 Glossary</h3><textarea id="glossaryInput" rows="3" placeholder="طبي اصطلاحات..."></textarea><button onclick="special('/glossary','glossaryInput','glossaryResult','glossaryLoading')">ساده تشریح</button><div id="glossaryLoading" class="loading">...</div><div id="glossaryResult" class="result"></div></div>
-</div></div>
 
-<div class="card"><h2>🖼️ طبي انځورونه</h2><input id="imageInput" placeholder="human heart"><button onclick="loadImages()">🖼️ انځورونه ولټوه</button><div id="imageLoading" class="loading">لټول کېږي...</div><div id="images" class="images"></div></div>
 
-<div class="card"><h2>🧠 Risk Assessment</h2><textarea id="riskInput" rows="4" placeholder="نښې، عمر، موده او اړوند معلومات..."></textarea><button class="warning" onclick="special('/risk','riskInput','riskResult','riskLoading')">د خطر نښې وڅېړه</button><div id="riskLoading" class="loading">AI کار کوي...</div><div id="riskResult" class="result"></div></div>
+<!-- =====================================================
+     OVERLAY
+===================================================== -->
 
-<div class="card"><h2>⏰ Medication Reminder</h2><input id="reminderMedicine" placeholder="د درملو نوم"><input id="reminderTime" type="time"><input id="reminderNote" placeholder="یادونه"><button onclick="addReminder()">Reminder اضافه کړه</button><div id="reminders"></div></div>
+<div
+    id="overlay"
+    class="overlay"
+    onclick="closeSidebar()">
+</div>
 
-<div class="card"><h2>🩸 Health Tracker</h2><select id="trackerType"><option>Blood Pressure</option><option>Pulse</option><option>Temperature</option><option>Weight</option><option>Blood Sugar</option><option>Oxygen</option></select><input id="trackerValue" placeholder="Value"><input id="trackerNote" placeholder="یادونه"><button onclick="addTracker()">معلومات ثبت کړه</button><div id="trackerList"></div><button class="danger" onclick="clearTracker()">ټول پاک کړه</button></div>
 
-<div class="card"><h2>📊 Health Report</h2><textarea id="healthReportInput" rows="5" placeholder="خپل روغتیايي معلومات..."></textarea><button onclick="generateHealthReport()">راپور جوړ کړه</button><div id="healthReportLoading" class="loading">AI کار کوي...</div><div id="healthReportResult" class="result"></div></div>
 
-<div class="card"><h2>🧠 Medical Quiz</h2><button onclick="quiz()">Quiz جوړ کړه</button><div id="quizLoading" class="loading">AI کار کوي...</div><div id="quizResult" class="result"></div></div>
+<!-- =====================================================
+     TOOL PANEL
+===================================================== -->
 
-<div class="card"><h2>🕘 History</h2><div id="history"></div><button class="danger" onclick="clearHistory()">History پاک کړه</button></div>
-<div class="card"><h2>⭐ Favorites</h2><div id="favorites"></div><button class="danger" onclick="clearFavorites()">Favorites پاک کړه</button></div>
+<section
+    id="toolPanel"
+    class="tool-panel">
 
-<div class="card"><h2>👨‍💻 About MedAI</h2><p><b>Developer:</b> Toyebullah Dawoodzay</p><p><b>Created:</b> 2026</p><p class="small">MedAI د تعلیمي طبي معلوماتو لپاره جوړ شوی او د ډاکټر بدیل نه دی.</p></div>
-</main>
-<footer>🩺 MedAI — Educational Medical AI · Toyebullah Dawoodzay · 2026</footer>
+
+    <div class="panel-header">
+
+
+        <button
+            class="back-button"
+            onclick="closeTool()">
+
+            ←
+
+        </button>
+
+
+        <h2 id="panelTitle">
+            MedAI Tool
+        </h2>
+
+
+    </div>
+
+
+    <div
+        id="panelBody"
+        class="panel-body">
+    </div>
+
+
+</section>
+
+
 
 <script>
-let currentAnswer="",recognition=null;
-const $=id=>document.getElementById(id);
-function loading(id,show){if($(id))$(id).style.display=show?"block":"none"}
-function esc(t){const d=document.createElement("div");d.textContent=t;return d.innerHTML}
 
-async function askAI(){
- const q=$("question").value.trim(),a=$("answer"); if(!q){a.textContent="مهرباني وکړئ پوښتنه ولیکئ.";return}
- loading("mainLoading",true);a.textContent="";
- try{const r=await fetch("/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({question:q})});const d=await r.json();currentAnswer=d.answer||d.error||"";a.textContent=currentAnswer;saveHistory(q,currentAnswer)}
- catch(e){a.textContent="د سرور سره د اړیکې ستونزه."}finally{loading("mainLoading",false)}
+/* =========================================================
+   GLOBAL
+========================================================= */
+
+let currentAnswer = "";
+
+let recognition = null;
+
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+function $(id) {
+
+    return document.getElementById(id);
+
 }
-async function special(endpoint,input,result,load){
- const text=$(input).value.trim();if(!text){$(result).textContent="مهرباني وکړئ معلومات ولیکئ.";return}
- loading(load,true);$(result).textContent="";
- try{const r=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text})});const d=await r.json();$(result).textContent=d.answer||d.error||"ځواب ترلاسه نه شو."}
- catch(e){$(result).textContent="د سرور سره د اړیکې ستونزه."}finally{loading(load,false)}
+
+
+function escapeHTML(text) {
+
+    const div = document.createElement("div");
+
+    div.textContent = text;
+
+    return div.innerHTML;
+
 }
-async function compare(){
- const a=$("disease1").value.trim(),b=$("disease2").value.trim();if(!a||!b){$("compareResult").textContent="دواړه ناروغۍ ولیکئ.";return}
- loading("compareLoading",true);try{const r=await fetch("/compare",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({disease1:a,disease2:b})});const d=await r.json();$("compareResult").textContent=d.answer||d.error||"ځواب ترلاسه نه شو."}catch(e){$("compareResult").textContent="د سرور ستونزه."}finally{loading("compareLoading",false)}
+
+
+function showLoading(id) {
+
+    const el = $(id);
+
+    if (el) {
+
+        el.classList.add("show");
+
+    }
+
 }
-async function loadImages(){
- const q=$("imageInput").value.trim(),box=$("images");if(!q){box.innerHTML="<p>موضوع ولیکئ.</p>";return}
- loading("imageLoading",true);box.innerHTML="";
- try{const r=await fetch("/images?q="+encodeURIComponent(q)),d=await r.json();if(!d.images?.length){box.innerHTML="<p>انځورونه پیدا نه شول.</p>";return}
- d.images.forEach(x=>{const div=document.createElement("div"),img=document.createElement("img"),p=document.createElement("div");img.src=x.url;img.alt=x.title;img.loading="lazy";p.className="small";p.textContent=x.title;div.append(img,p);box.appendChild(div)})}
- catch(e){box.innerHTML="<p>د انځورونو ستونزه.</p>"}finally{loading("imageLoading",false)}
+
+
+function hideLoading(id) {
+
+    const el = $(id);
+
+    if (el) {
+
+        el.classList.remove("show");
+
+    }
+
 }
-async function quiz(){loading("quizLoading",true);try{const r=await fetch("/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({question:"Create a 5-question educational medical quiz with four choices and correct answers. Answer in the same language as the user."})});const d=await r.json();$("quizResult").textContent=d.answer||d.error||"Quiz جوړ نه شو."}catch(e){$("quizResult").textContent="د Quiz ستونزه."}finally{loading("quizLoading",false)}}
-function startVoice(){
- const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){alert("ستاسو browser Voice ملاتړ نه کوي.");return}
- recognition=new SR();recognition.lang="ps-AF";recognition.interimResults=false;recognition.continuous=false;
- recognition.onresult=e=>$("question").value=e.results[0][0].transcript;recognition.onerror=()=>alert("Voice کې ستونزه رامنځته شوه.");recognition.start()
+
+
+/* =========================================================
+   SIDEBAR
+========================================================= */
+
+function openSidebar() {
+
+    $("sidebar").classList.add("open");
+
+    $("overlay").classList.add("show");
+
 }
-function stopVoice(){if(recognition){recognition.stop();recognition=null}if("speechSynthesis"in window)speechSynthesis.cancel()}
-function speakAnswer(){const t=currentAnswer||$("answer").textContent;if(!t){alert("لومړی AI ځواب ترلاسه کړئ.");return}if(!("speechSynthesis"in window)){alert("Voice Output نه شته.");return}speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang="ps-AF";u.rate=.9;speechSynthesis.speak(u)}
-function toggleDark(){document.body.classList.toggle("dark");localStorage.setItem("medai_dark",document.body.classList.contains("dark"))}
-if(localStorage.getItem("medai_dark")==="true")document.body.classList.add("dark")
-function setTopic(t){$("question").value="د "+t+" په اړه طبي معلومات راکړه.";$("question").focus()}
-function saveHistory(q,a){let x=JSON.parse(localStorage.getItem("medai_history")||"[]");x.unshift({question:q,answer:a,time:new Date().toLocaleString()});localStorage.setItem("medai_history",JSON.stringify(x.slice(0,30)));loadHistory()}
-function loadHistory(){const c=$("history"),x=JSON.parse(localStorage.getItem("medai_history")||"[]");c.innerHTML=x.length?x.map((i,n)=>`<div class="item"><b>${esc(i.question)}</b><div class="small">${esc(i.time)}</div><p>${esc(i.answer)}</p><button onclick="favorite(${n})">⭐ Favorite</button></div>`).join(""):"<p class='small'>History خالي دی.</p>"}
-function clearHistory(){localStorage.removeItem("medai_history");loadHistory()}
-function favorite(n){let h=JSON.parse(localStorage.getItem("medai_history")||"[]"),f=JSON.parse(localStorage.getItem("medai_favorites")||"[]");if(h[n])f.unshift(h[n]);localStorage.setItem("medai_favorites",JSON.stringify(f.slice(0,30)));loadFavorites()}
-function loadFavorites(){const c=$("favorites"),x=JSON.parse(localStorage.getItem("medai_favorites")||"[]");c.innerHTML=x.length?x.map(i=>`<div class="item"><b>${esc(i.question)}</b><div class="small">${esc(i.time)}</div><p>${esc(i.answer)}</p></div>`).join(""):"<p class='small'>Favorites خالي دي.</p>"}
-function clearFavorites(){localStorage.removeItem("medai_favorites");loadFavorites()}
-function addReminder(){let m=$("reminderMedicine").value.trim(),t=$("reminderTime").value,n=$("reminderNote").value.trim();if(!m||!t){alert("د درملو نوم او وخت ولیکئ.");return}let x=JSON.parse(localStorage.getItem("medai_reminders")||"[]");x.push({medicine:m,time:t,note:n});localStorage.setItem("medai_reminders",JSON.stringify(x));$("reminderMedicine").value="";$("reminderTime").value="";$("reminderNote").value="";loadReminders()}
-function loadReminders(){let x=JSON.parse(localStorage.getItem("medai_reminders")||"[]");$("reminders").innerHTML=x.map((i,n)=>`<div class="item"><b>💊 ${esc(i.medicine)}</b><p>⏰ ${esc(i.time)}</p><p>${esc(i.note||"")}</p><button class="danger" onclick="deleteReminder(${n})">حذف</button></div>`).join("")}
-function deleteReminder(n){let x=JSON.parse(localStorage.getItem("medai_reminders")||"[]");x.splice(n,1);localStorage.setItem("medai_reminders",JSON.stringify(x));loadReminders()}
-function addTracker(){let type=$("trackerType").value,v=$("trackerValue").value.trim(),n=$("trackerNote").value.trim();if(!v){alert("Value ولیکئ.");return}let x=JSON.parse(localStorage.getItem("medai_tracker")||"[]");x.unshift({type,value:v,note:n,time:new Date().toLocaleString()});localStorage.setItem("medai_tracker",JSON.stringify(x.slice(0,100)));$("trackerValue").value="";$("trackerNote").value="";loadTracker()}
-function loadTracker(){let x=JSON.parse(localStorage.getItem("medai_tracker")||"[]");$("trackerList").innerHTML=x.length?x.map((i,n)=>`<div class="item"><b>${esc(i.type)}</b><p>Value: ${esc(i.value)}</p><p>${esc(i.note||"")}</p><div class="small">${esc(i.time)}</div><button class="danger" onclick="deleteTracker(${n})">حذف</button></div>`).join(""):"<p class='small'>تر اوسه معلومات نشته.</p>"}
-function deleteTracker(n){let x=JSON.parse(localStorage.getItem("medai_tracker")||"[]");x.splice(n,1);localStorage.setItem("medai_tracker",JSON.stringify(x));loadTracker()}
-function clearTracker(){localStorage.removeItem("medai_tracker");loadTracker()}
-async function generateHealthReport(){
- let manual=$("healthReportInput").value.trim(),tr=JSON.parse(localStorage.getItem("medai_tracker")||"[]");if(!manual&&!tr.length){$("healthReportResult").textContent="لومړی معلومات ولیکئ یا Tracker وکاروئ.";return}
- loading("healthReportLoading",true);try{const r=await fetch("/health-report",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:"User notes:\n"+manual+"\n\nHealth Tracker:\n"+JSON.stringify(tr)})});const d=await r.json();$("healthReportResult").textContent=d.answer||d.error||"راپور جوړ نه شو."}catch(e){$("healthReportResult").textContent="د راپور ستونزه."}finally{loading("healthReportLoading",false)}
+
+
+function closeSidebar() {
+
+    $("sidebar").classList.remove("open");
+
+    $("overlay").classList.remove("show");
+
 }
-loadHistory();loadFavorites();loadReminders();loadTracker();
+
+
+/* =========================================================
+   DARK MODE
+========================================================= */
+
+function toggleDark() {
+
+    document.body.classList.toggle("dark");
+
+    localStorage.setItem(
+        "medai_dark",
+        document.body.classList.contains("dark")
+    );
+
+}
+
+
+if (
+    localStorage.getItem("medai_dark") === "true"
+) {
+
+    document.body.classList.add("dark");
+
+}
+
+
+/* =========================================================
+   NEW CHAT
+========================================================= */
+
+function newChat() {
+
+    $("chatInner").innerHTML = `
+
+        <div id="welcome" class="welcome">
+
+            <div class="welcome-icon">
+                🩺
+            </div>
+
+            <h1>
+                MedAI ته ښه راغلاست
+            </h1>
+
+            <p>
+                خپله طبي پوښتنه ولیکئ.
+            </p>
+
+        </div>
+
+    `;
+
+    $("question").value = "";
+
+    closeSidebar();
+
+}
+
+
+/* =========================================================
+   ENTER
+========================================================= */
+
+function handleEnter(event) {
+
+    if (
+        event.key === "Enter" &&
+        !event.shiftKey
+    ) {
+
+        event.preventDefault();
+
+        askAI();
+
+    }
+
+}
+
+
+/* =========================================================
+   CHAT MESSAGE
+========================================================= */
+
+function addMessage(type, text) {
+
+    const welcome = $("welcome");
+
+    if (welcome) {
+
+        welcome.remove();
+
+    }
+
+
+    const message = document.createElement("div");
+
+    message.className =
+        "message " + type;
+
+
+    const avatar =
+        type === "user"
+            ? "👤"
+            : "🩺";
+
+
+    message.innerHTML = `
+
+        <div class="avatar">
+            ${avatar}
+        </div>
+
+        <div class="message-content">
+            ${escapeHTML(text)}
+        </div>
+
+    `;
+
+
+    $("chatInner").appendChild(message);
+
+
+    $("chatArea").scrollTop =
+        $("chatArea").scrollHeight;
+
+}
+
+
+/* =========================================================
+   MAIN CHAT
+========================================================= */
+
+async function askAI() {
+
+    const input = $("question");
+
+    const question =
+        input.value.trim();
+
+
+    if (!question) {
+
+        return;
+
+    }
+
+
+    addMessage(
+        "user",
+        question
+    );
+
+
+    input.value = "";
+
+
+    const loading =
+        document.createElement("div");
+
+
+    loading.className =
+        "message ai";
+
+
+    loading.innerHTML = `
+
+        <div class="avatar">
+            🩺
+        </div>
+
+        <div class="message-content">
+            AI کار کوي...
+        </div>
+
+    `;
+
+
+    $("chatInner")
+        .appendChild(loading);
+
+
+    $("chatArea").scrollTop =
+        $("chatArea").scrollHeight;
+
+
+    try {
+
+        const response =
+            await fetch(
+                "/chat",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify({
+                            question:
+                                question
+                        })
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        loading.remove();
+
+
+        const answer =
+            data.answer ||
+            data.error ||
+            "ځواب ترلاسه نه شو.";
+
+
+        currentAnswer =
+            answer;
+
+
+        addMessage(
+            "ai",
+            answer
+        );
+
+
+        saveHistory(
+            question,
+            answer
+        );
+
+
+    }
+
+    catch (error) {
+
+        loading.remove();
+
+        addMessage(
+            "ai",
+            "د سرور سره د اړیکې ستونزه."
+        );
+
+    }
+
+}
+
+
+/* =========================================================
+   SPECIAL API
+========================================================= */
+
+async function specialRequest(
+    endpoint,
+    text,
+    resultElement
+) {
+
+    if (!text.trim()) {
+
+        $(resultElement).textContent =
+            "مهرباني وکړئ معلومات ولیکئ.";
+
+        return;
+
+    }
+
+
+    $(resultElement).textContent =
+        "AI کار کوي...";
+
+
+    try {
+
+        const response =
+            await fetch(
+                endpoint,
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify({
+                            text:
+                                text
+                        })
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        $(resultElement).textContent =
+            data.answer ||
+            data.error ||
+            "ځواب ترلاسه نه شو.";
+
+    }
+
+    catch (error) {
+
+        $(resultElement).textContent =
+            "د سرور سره د اړیکې ستونزه.";
+
+    }
+
+}
+
+
+/* =========================================================
+   TOOL PANEL
+========================================================= */
+
+function openTool(tool) {
+
+    closeSidebar();
+
+    const panel =
+        $("toolPanel");
+
+    const title =
+        $("panelTitle");
+
+    const body =
+        $("panelBody");
+
+
+    panel.classList.add("show");
+
+
+    /* -----------------------------------------------------
+       SYMPTOMS
+    ----------------------------------------------------- */
+
+    if (tool === "symptoms") {
+
+        title.textContent =
+            "🧠 Symptom Education";
+
+
+        body.innerHTML = `
+
+            <div class="field">
+
+                <label>
+                    خپلې نښې ولیکئ
+                </label>
+
+                <textarea
+                    id="toolInput"
+                    placeholder="لکه: تبه، ټوخی، ستړیا..."></textarea>
+
+            </div>
+
+
+            <button
+                class="primary-button"
+                onclick="runTool('/symptoms')">
+
+                🧠 نښې تشریح کړه
+
+            </button>
+
+
+            <div
+                id="toolResult"
+                class="result"></div>
+
+        `;
+
+    }
+
+
+    /* -----------------------------------------------------
+       VITALS
+    ----------------------------------------------------- */
+
+    else if (tool === "vitals") {
+
+        title.textContent =
+            "❤️ Vital Signs";
+
+
+        body.innerHTML = `
+
+            <div class="field">
+
+                <label>
+                    Vital Signs معلومات
+                </label>
+
+                <textarea
+                    id="toolInput"
+                    placeholder="Blood Pressure: 140/90
+Pulse: 85
+Temperature: 37.5
+Oxygen: 96"></textarea>
+
+            </div>
+
+
+            <button
+                class="primary-button"
+                onclick="runTool('/vitals')">
+
+                ❤️ تشریح کړه
+
+            </button>
+
+
+            <div
+                id="toolResult"
+                class="result"></div>
+
+        `;
+
+    }
+
+
+    /* -----------------------------------------------------
+       DOCTOR
+    ----------------------------------------------------- */
+
+    else if (tool === "doctor") {
+
+        title.textContent =
+            "👨‍⚕️ Doctor Visit Assistant";
+
+
+        body.innerHTML = `
+
+            <div class="field">
+
+                <label>
+                    معلومات
+                </label>
+
+                <textarea
+                    id="toolInput"
+                    placeholder="خپلې نښې، د پیل وخت، بدلونونه، درمل او پوښتنې ولیکئ..."></textarea>
+
+            </div>
+
+
+            <button
+                class="primary-button"
+                onclick="runTool('/doctor')">
+
+                👨‍⚕️ معلومات منظم کړه
+
+            </button>
+
+
+            <div
+                id="toolResult"
+                class="result"></div>
+
+        `;
+
+    }
+
+
+    /* -----------------------------------------------------
+       LAB
+    ----------------------------------------------------- */
+
+    else if (tool === "lab") {
+
+        title.textContent =
+            "🧪 Lab Report";
+
+
+        body.innerHTML = `
+
+            <div class="field">
+
+                <label>
+                    Lab Report
+                </label>
+
+                <textarea
+                    id="toolInput"
+                    placeholder="د لابراتوار راپور دلته ولیکئ..."></textarea>
+
+            </div>
+
+
+            <button
+                class="primary-button"
+                onclick="runTool('/lab')">
+
+                🧪 راپور تشریح کړه
+
+            </button>
+
+
+            <div
+                id="toolResult"
+                class="result"></div>
+
+        `;
+
+    }
+
+
+    /* -----------------------------------------------------
+       MEDICINE
+    ----------------------------------------------------- */
+
+    else if (tool === "medicine") {
+
+        title.textContent =
+            "💊 Medicine Information";
+
+
+        body.innerHTML = `
+
+            <div class="field">
+
+                <label>
+                    د درملو نوم
+                </label>
+
+                <input
+                    id="toolInput"
+                    placeholder="مثلاً Paracetamol">
+
+            </div>
+
+
+            <button
+                class="primary-button"
+                onclick="runTool('/medicine')">
+
+                💊 معلومات
+
+            </button>
+
+
+            <div
+                id="toolResult"
+                class="result"></div>
+
+        `;
+
+    }
+
+
+    /* -----------------------------------------------------
+       DICTIONARY
+    ----------------------------------------------------- */
+
+    else if (tool === "dictionary") {
+
+        title.textContent =
+            "📖 Medical Dictionary";
+
+
+        body.innerHTML = `
+
+            <div class="field">
+
+                <label>
+                    طبي اصطلاح
+                </label>
+
+                <input
+                    id="toolInput"
+                    placeholder="Hypertension">
+
+            </div>
+
+
+            <button
+                class="primary-button"
+                onclick="runTool('/dictionary')">
+
+                📖 تشریح
+
+            </button>
+
+
+            <div
+                id="toolResult"
+                class="result"></div>
+
+        `;
+
+    }
+
+
+    /* -----------------------------------------------------
+       EMERGENCY
+    ----------------------------------------------------- */
+
+    else if (tool === "emergency") {
+
+        title.textContent =
+            "🚨 Emergency Checker";
+
+
+        body.innerHTML = `
+
+            <div class="field">
+
+                <label>
+                    نښې
+                </label>
+
+                <textarea
+                    id="toolInput"
+                    placeholder="اوسنۍ نښې ولیکئ..."></textarea>
+
+            </div>
+
+
+            <button
+                class="danger-button"
+                onclick="runTool('/emergency')">
+
+                🚨 بیړنۍ نښې وګوره
+
+            </button>
+
+
+            <div
+                id="toolResult"
+                class="result"></div>
+
+        `;
+
+    }
+
+
+    /* -----------------------------------------------------
+       INTERACTION
+    ----------------------------------------------------- */
+
+    else if (tool === "interaction") {
+
+        title.textContent =
+            "💊 Medicine Interaction";
+
+
+        body.innerHTML = `
+
+            <div class="field">
+
+                <label>
+                    د درملو نومونه
+                </label>
+
+                <textarea
+                    id="toolInput"
+                    placeholder="Medicine A
+Medicine B
+Medicine C"></textarea>
+
+            </div>
+
+
+            <button
+                class="primary-button"
+                onclick="runTool('/interaction')">
+
+                💊 تداخل وګوره
+
+            </button>
+
+
+            <div
+                id="toolResult"
+                class="result"></div>
+
+        `;
+
+    }
+
+
+    /* -----------------------------------------------------
+       REPORT
+    ----------------------------------------------------- */
+
+    else if (tool === "report") {
+
+        title.textContent =
+            "📋 Medical Report";
+
+
+        body.innerHTML = `
+
+            <div class="field">
+
+                <label>
+                    طبي راپور
+                </label>
+
+                <textarea
+                    id="toolInput"
+                    placeholder="طبي راپور دلته ولیکئ..."></textarea>
+
+            </div>
+
+
+            <button
+                class="primary-button"
+                onclick="runTool('/report')">
+
+                📋 تشریح
+
+            </button>
+
+
+            <div
+                id="toolResult"
+                class="result"></div>
+
+        `;
+
+    }
+
+
+    /* -----------------------------------------------------
+       FIRST AID
+    ----------------------------------------------------- */
+
+    else if (tool === "firstaid") {
+
+        title.textContent =
+            "🩹 First Aid";
+
+
+        body.innerHTML = `
+
+            <div class="field">
+
+                <label>
+                    حالت
+                </label>
+
+                <input
+                    id="toolInput"
+                    placeholder="Burn, Cut, Nosebleed...">
+
+            </div>
+
+
+            <button
+                class="primary-button"
+                onclick="runTool('/firstaid')">
+
+                🩹 First Aid
+
+            </button>
+
+
+            <div
+                id="toolResult"
+                class="result"></div>
+
+        `;
+
+    }
+
+
+    /* -----------------------------------------------------
+       GLOSSARY
+    ----------------------------------------------------- */
+
+    else if (tool === "glossary") {
+
+        title.textContent =
+            "📚 Medical Glossary";
+
+
+        body.innerHTML = `
+
+            <div class="field">
+
+                <label>
+                    طبي اصطلاحات
+                </label>
+
+                <textarea
+                    id="toolInput"
+                    placeholder="اصطلاحات ولیکئ..."></textarea>
+
+            </div>
+
+
+            <button
+                class="primary-button"
+                onclick="runTool('/glossary')">
+
+                📚 ساده تشریح
+
+            </button>
+
+
+            <div
+                id="toolResult"
+                class="result"></div>
+
+        `;
+
+    }
+
+
+    /* -----------------------------------------------------
+       RISK
+    ----------------------------------------------------- */
+
+    else if (tool === "risk") {
+
+        title.textContent =
+            "🧠 Risk Assessment";
+
+
+        body.innerHTML = `
+
+            <div class="field">
+
+                <label>
+                    روغتیايي معلومات
+                </label>
+
+                <textarea
+                    id="toolInput"
+                    placeholder="عمر، نښې، موده او نور اړوند معلومات..."></textarea>
+
+            </div>
+
+
+            <button
+                class="primary-button"
+                onclick="runTool('/risk')">
+
+                🧠 د خطر نښې وڅېړه
+
+            </button>
+
+
+            <div
+                id="toolResult"
+                class="result"></div>
+
+        `;
+
+    }
+
+
+    /* -----------------------------------------------------
+       QUIZ
+    ----------------------------------------------------- */
+
+    else if (tool === "quiz") {
+
+        title.textContent =
+            "📝 Medical Quiz";
+
+
+        body.innerHTML = `
+
+            <p>
+                د طبي زده کړې لپاره ۵ پوښتنې جوړېږي.
+            </p>
+
+
+            <button
+                class="primary-button"
+                onclick="generateQuiz()">
+
+                📝 Quiz جوړ کړه
+
+            </button>
+
+
+            <div
+                id="toolResult"
+                class="result"></div>
+
+        `;
+
+    }
+
+
+    /* -----------------------------------------------------
+       HEALTH REPORT
+    ----------------------------------------------------- */
+
+    else if (tool === "healthreport") {
+
+        title.textContent =
+            "📊 Health Report";
+
+
+        body.innerHTML = `
+
+            <div class="field">
+
+                <label>
+                    روغتیايي معلومات
+                </label>
+
+                <textarea
+                    id="toolInput"
+                    placeholder="خپل روغتیايي معلومات ولیکئ..."></textarea>
+
+            </div>
+
+
+            <button
+                class="primary-button"
+                onclick="generateHealthReport()">
+
+                📊 راپور جوړ کړه
+
+            </button>
+
+
+            <div
+                id="toolResult"
+                class="result"></div>
+
+        `;
+
+    }
+
+
+    /* -----------------------------------------------------
+       TRACKER
+    ----------------------------------------------------- */
+
+    else if (tool === "tracker") {
+
+        title.textContent =
+            "📈 Health Tracker";
+
+
+        body.innerHTML = `
+
+            <div class="field">
+
+                <label>
+                    ډول
+                </label>
+
+                <select id="trackerType">
+
+                    <option>
+                        Blood Pressure
+                    </option>
+
+                    <option>
+                        Pulse
+                    </option>
+
+                    <option>
+                        Temperature
+                    </option>
+
+                    <option>
+                        Weight
+                    </option>
+
+                    <option>
+                        Blood Sugar
+                    </option>
+
+                    <option>
+                        Oxygen
+                    </option>
+
+                </select>
+
+            </div>
+
+
+            <div class="field">
+
+                <label>
+                    Value
+                </label>
+
+                <input
+                    id="trackerValue"
+                    placeholder="مثلاً 120/80">
+
+            </div>
+
+
+            <div class="field">
+
+                <label>
+                    یادونه
+                </label>
+
+                <input
+                    id="trackerNote"
+                    placeholder="اختیاري">
+
+            </div>
+
+
+            <button
+                class="primary-button"
+                onclick="addTracker()">
+
+                ＋ ثبت کړه
+
+            </button>
+
+
+            <div
+                id="trackerList"
+                style="margin-top:15px;">
+            </div>
+
+
+            <button
+                class="danger-button"
+                onclick="clearTracker()"
+                style="margin-top:10px;">
+
+                ټول پاک کړه
+
+            </button>
+
+        `;
+
+        loadTracker();
+
+    }
+
+
+    /* -----------------------------------------------------
+       REMINDER
+    ----------------------------------------------------- */
+
+    else if (tool === "reminder") {
+
+        title.textContent =
+            "⏰ Medication Reminder";
+
+
+        body.innerHTML = `
+
+            <div class="field">
+
+                <label>
+                    د درملو نوم
+                </label>
+
+                <input
+                    id="reminderMedicine"
+                    placeholder="د درملو نوم">
+
+            </div>
+
+
+            <div class="field">
+
+                <label>
+                    وخت
+                </label>
+
+                <input
+                    id="reminderTime"
+                    type="time">
+
+            </div>
+
+
+            <div class="field">
+
+                <label>
+                    یادونه
+                </label>
+
+                <input
+                    id="reminderNote"
+                    placeholder="اختیاري">
+
+            </div>
+
+
+            <button
+                class="primary-button"
+                onclick="addReminder()">
+
+                ⏰ Reminder اضافه کړه
+
+            </button>
+
+
+            <div
+                id="reminders"
+                style="margin-top:15px;">
+            </div>
+
+        `;
+
+        loadReminders();
+
+    }
+
+
+    /* -----------------------------------------------------
+       IMAGES
+    ----------------------------------------------------- */
+
+    else if (tool === "images") {
+
+        title.textContent =
+            "🖼️ Medical Images";
+
+
+        body.innerHTML = `
+
+            <div class="field">
+
+                <label>
+                    د انځور موضوع
+                </label>
+
+                <input
+                    id="imageQuery"
+                    placeholder="Human Heart">
+
+            </div>
+
+
+            <button
+                class="primary-button"
+                onclick="loadImages()">
+
+                🖼️ انځورونه ولټوه
+
+            </button>
+
+
+            <div
+                id="imageResults"
+                class="image-grid">
+            </div>
+
+        `;
+
+    }
+
+
+    /* -----------------------------------------------------
+       COMPARE
+    ----------------------------------------------------- */
+
+    else if (tool === "compare") {
+
+        title.textContent =
+            "⚖️ Disease Comparison";
+
+
+        body.innerHTML = `
+
+            <div class="field">
+
+                <label>
+                    لومړۍ ناروغي
+                </label>
+
+                <input
+                    id="disease1"
+                    placeholder="Diabetes">
+
+            </div>
+
+
+            <div class="field">
+
+                <label>
+                    دوهمه ناروغي
+                </label>
+
+                <input
+                    id="disease2"
+                    placeholder="Hypertension">
+
+            </div>
+
+
+            <button
+                class="primary-button"
+                onclick="compareDiseases()">
+
+                ⚖️ پرتله کړه
+
+            </button>
+
+
+            <div
+                id="toolResult"
+                class="result"></div>
+
+        `;
+
+    }
+
+
+    /* -----------------------------------------------------
+       HISTORY
+    ----------------------------------------------------- */
+
+    else if (tool === "history") {
+
+        title.textContent =
+            "🕘 History";
+
+
+        body.innerHTML = `
+
+            <div id="historyList"></div>
+
+
+            <button
+                class="danger-button"
+                onclick="clearHistory()">
+
+                History پاک کړه
+
+            </button>
+
+        `;
+
+        loadHistory();
+
+    }
+
+
+    /* -----------------------------------------------------
+       FAVORITES
+    ----------------------------------------------------- */
+
+    else if (tool === "favorites") {
+
+        title.textContent =
+            "⭐ Favorites";
+
+
+        body.innerHTML = `
+
+            <div id="favoritesList"></div>
+
+
+            <button
+                class="danger-button"
+                onclick="clearFavorites()">
+
+                Favorites پاک کړه
+
+            </button>
+
+        `;
+
+        loadFavorites();
+
+    }
+
+
+    /* -----------------------------------------------------
+       ABOUT
+    ----------------------------------------------------- */
+
+    else if (tool === "about") {
+
+        title.textContent =
+            "ℹ️ About MedAI";
+
+
+        body.innerHTML = `
+
+            <div class="result">
+
+                <h2>
+                    🩺 MedAI
+                </h2>
+
+                <p>
+                    ستاسو هوښیار طبي معلوماتي مرستیال.
+                </p>
+
+                <p>
+                    <strong>Developer:</strong>
+                    Toyebullah Dawoodzay
+                </p>
+
+                <p>
+                    <strong>Created:</strong>
+                    2026
+                </p>
+
+                <p>
+                    MedAI د تعلیمي طبي معلوماتو لپاره جوړ شوی.
+                    دا د مسلکي روغتیايي متخصص بدیل نه دی.
+                </p>
+
+            </div>
+
+        `;
+
+    }
+
+}
+
+
+/* =========================================================
+   CLOSE TOOL
+========================================================= */
+
+function closeTool() {
+
+    $("toolPanel")
+        .classList.remove("show");
+
+}
+
+
+/* =========================================================
+   RUN TOOL
+========================================================= */
+
+async function runTool(endpoint) {
+
+    const input =
+        $("toolInput");
+
+    const result =
+        $("toolResult");
+
+
+    if (!input || !result) {
+
+        return;
+
+    }
+
+
+    const text =
+        input.value.trim();
+
+
+    if (!text) {
+
+        result.textContent =
+            "مهرباني وکړئ معلومات ولیکئ.";
+
+        return;
+
+    }
+
+
+    result.textContent =
+        "AI کار کوي...";
+
+
+    try {
+
+        const response =
+            await fetch(
+                endpoint,
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify({
+                            text: text
+                        })
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        result.textContent =
+            data.answer ||
+            data.error ||
+            "ځواب ترلاسه نه شو.";
+
+    }
+
+    catch (error) {
+
+        result.textContent =
+            "د سرور سره د اړیکې ستونزه.";
+
+    }
+
+}
+
+
+/* =========================================================
+   COMPARE
+========================================================= */
+
+async function compareDiseases() {
+
+    const a =
+        $("disease1").value.trim();
+
+    const b =
+        $("disease2").value.trim();
+
+
+    if (!a || !b) {
+
+        $("toolResult").textContent =
+            "دواړه ناروغۍ ولیکئ.";
+
+        return;
+
+    }
+
+
+    $("toolResult").textContent =
+        "AI کار کوي...";
+
+
+    try {
+
+        const response =
+            await fetch(
+                "/compare",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify({
+                            disease1: a,
+                            disease2: b
+                        })
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        $("toolResult").textContent =
+            data.answer ||
+            data.error ||
+            "ځواب ترلاسه نه شو.";
+
+    }
+
+    catch (error) {
+
+        $("toolResult").textContent =
+            "د سرور ستونزه.";
+
+    }
+
+}
+
+
+/* =========================================================
+   QUIZ
+========================================================= */
+
+async function generateQuiz() {
+
+    const result =
+        $("toolResult");
+
+
+    result.textContent =
+        "AI کار کوي...";
+
+
+    try {
+
+        const response =
+            await fetch(
+                "/chat",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify({
+                            question:
+                                "Create a 5-question educational medical quiz with four choices and correct answers. Answer in the same language as the user."
+                        })
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        result.textContent =
+            data.answer ||
+            data.error ||
+            "Quiz جوړ نه شو.";
+
+    }
+
+    catch (error) {
+
+        result.textContent =
+            "د Quiz ستونزه.";
+
+    }
+
+}
+
+
+/* =========================================================
+   MEDICAL IMAGES
+========================================================= */
+
+async function loadImages() {
+
+    const query =
+        $("imageQuery").value.trim();
+
+    const box =
+        $("imageResults");
+
+
+    if (!query) {
+
+        box.innerHTML =
+            "<p>موضوع ولیکئ.</p>";
+
+        return;
+
+    }
+
+
+    box.innerHTML =
+        "<p>انځورونه لټول کېږي...</p>";
+
+
+    try {
+
+        const response =
+            await fetch(
+                "/images?q=" +
+                encodeURIComponent(query)
+            );
+
+
+        const data =
+            await response.json();
+
+
+        box.innerHTML = "";
+
+
+        if (
+            !data.images ||
+            !data.images.length
+        ) {
+
+            box.innerHTML =
+                "<p>انځورونه پیدا نه شول.</p>";
+
+            return;
+
+        }
+
+
+        data.images.forEach(
+            image => {
+
+                const card =
+                    document.createElement(
+                        "div"
+                    );
+
+                card.className =
+                    "image-card";
+
+
+                card.innerHTML = `
+
+                    <img
+                        src="${escapeHTML(image.url)}"
+                        alt="${escapeHTML(image.title)}"
+                        loading="lazy">
+
+                    <div class="image-title">
+                        ${escapeHTML(image.title)}
+                    </div>
+
+                `;
+
+
+                box.appendChild(card);
+
+            }
+        );
+
+    }
+
+    catch (error) {
+
+        box.innerHTML =
+            "<p>د انځورونو ستونزه.</p>";
+
+    }
+
+}
+
+
+/* =========================================================
+   VOICE INPUT
+========================================================= */
+
+function startVoice() {
+
+    const SpeechRecognition =
+        window.SpeechRecognition ||
+        window.webkitSpeechRecognition;
+
+
+    if (!SpeechRecognition) {
+
+        alert(
+            "ستاسو browser د Voice Input ملاتړ نه کوي."
+        );
+
+        return;
+
+    }
+
+
+    recognition =
+        new SpeechRecognition();
+
+
+    recognition.lang =
+        "ps-AF";
+
+
+    recognition.interimResults =
+        false;
+
+
+    recognition.continuous =
+        false;
+
+
+    recognition.onresult =
+        function(event) {
+
+            const text =
+                event
+                    .results[0][0]
+                    .transcript;
+
+
+            $("question").value =
+                text;
+
+        };
+
+
+    recognition.onerror =
+        function() {
+
+            alert(
+                "Voice کې ستونزه رامنځته شوه."
+            );
+
+        };
+
+
+    recognition.start();
+
+}
+
+
+/* =========================================================
+   VOICE OUTPUT
+========================================================= */
+
+function speakAnswer() {
+
+    if (!currentAnswer) {
+
+        return;
+
+    }
+
+
+    if (
+        !("speechSynthesis" in window)
+    ) {
+
+        return;
+
+    }
+
+
+    speechSynthesis.cancel();
+
+
+    const utterance =
+        new SpeechSynthesisUtterance(
+            currentAnswer
+        );
+
+
+    utterance.lang =
+        "ps-AF";
+
+
+    utterance.rate =
+        .9;
+
+
+    speechSynthesis.speak(
+        utterance
+    );
+
+}
+
+
+/* =========================================================
+   HISTORY
+========================================================= */
+
+function saveHistory(
+    question,
+    answer
+) {
+
+    let history =
+        JSON.parse(
+            localStorage.getItem(
+                "medai_history"
+            ) || "[]"
+        );
+
+
+    history.unshift({
+
+        question:
+            question,
+
+        answer:
+            answer,
+
+        time:
+            new Date().toLocaleString()
+
+    });
+
+
+    history =
+        history.slice(0, 50);
+
+
+    localStorage.setItem(
+        "medai_history",
+        JSON.stringify(history)
+    );
+
+}
+
+
+function loadHistory() {
+
+    const box =
+        $("historyList");
+
+
+    if (!box) {
+
+        return;
+
+    }
+
+
+    const history =
+        JSON.parse(
+            localStorage.getItem(
+                "medai_history"
+            ) || "[]"
+        );
+
+
+    if (!history.length) {
+
+        box.innerHTML =
+            "<p>History خالي دی.</p>";
+
+        return;
+
+    }
+
+
+    box.innerHTML =
+        history
+            .map(
+                (item, index) => `
+
+                    <div class="list-item">
+
+                        <strong>
+                            ${escapeHTML(item.question)}
+                        </strong>
+
+                        <small>
+                            ${escapeHTML(item.time)}
+                        </small>
+
+                        <p>
+                            ${escapeHTML(item.answer)}
+                        </p>
+
+                        <button
+                            class="primary-button"
+                            onclick="favoriteFromHistory(${index})">
+
+                            ⭐ Favorite
+
+                        </button>
+
+                    </div>
+
+                `
+            )
+            .join("");
+
+}
+
+
+function clearHistory() {
+
+    localStorage.removeItem(
+        "medai_history"
+    );
+
+
+    loadHistory();
+
+}
+
+
+function favoriteFromHistory(
+    index
+) {
+
+    const history =
+        JSON.parse(
+            localStorage.getItem(
+                "medai_history"
+            ) || "[]"
+        );
+
+
+    if (!history[index]) {
+
+        return;
+
+    }
+
+
+    let favorites =
+        JSON.parse(
+            localStorage.getItem(
+                "medai_favorites"
+            ) || "[]"
+        );
+
+
+    favorites.unshift(
+        history[index]
+    );
+
+
+    favorites =
+        favorites.slice(0, 50);
+
+
+    localStorage.setItem(
+        "medai_favorites",
+        JSON.stringify(favorites)
+    );
+
+
+    alert(
+        "Favorite ته اضافه شو ⭐"
+    );
+
+}
+
+
+/* =========================================================
+   FAVORITES
+========================================================= */
+
+function loadFavorites() {
+
+    const box =
+        $("favoritesList");
+
+
+    if (!box) {
+
+        return;
+
+    }
+
+
+    const favorites =
+        JSON.parse(
+            localStorage.getItem(
+                "medai_favorites"
+            ) || "[]"
+        );
+
+
+    if (!favorites.length) {
+
+        box.innerHTML =
+            "<p>Favorites خالي دي.</p>";
+
+        return;
+
+    }
+
+
+    box.innerHTML =
+        favorites
+            .map(
+                item => `
+
+                    <div class="list-item">
+
+                        <strong>
+                            ${escapeHTML(item.question)}
+                        </strong>
+
+                        <small>
+                            ${escapeHTML(item.time)}
+                        </small>
+
+                        <p>
+                            ${escapeHTML(item.answer)}
+                        </p>
+
+                    </div>
+
+                `
+            )
+            .join("");
+
+}
+
+
+function clearFavorites() {
+
+    localStorage.removeItem(
+        "medai_favorites"
+    );
+
+
+    loadFavorites();
+
+}
+
+
+/* =========================================================
+   REMINDERS
+========================================================= */
+
+function addReminder() {
+
+    const medicine =
+        $("reminderMedicine")
+            .value
+            .trim();
+
+
+    const time =
+        $("reminderTime")
+            .value;
+
+
+    const note =
+        $("reminderNote")
+            .value
+            .trim();
+
+
+    if (!medicine || !time) {
+
+        alert(
+            "د درملو نوم او وخت ولیکئ."
+        );
+
+        return;
+
+    }
+
+
+    let reminders =
+        JSON.parse(
+            localStorage.getItem(
+                "medai_reminders"
+            ) || "[]"
+        );
+
+
+    reminders.push({
+
+        medicine:
+            medicine,
+
+        time:
+            time,
+
+        note:
+            note
+
+    });
+
+
+    localStorage.setItem(
+        "medai_reminders",
+        JSON.stringify(reminders)
+    );
+
+
+    $("reminderMedicine").value =
+        "";
+
+    $("reminderTime").value =
+        "";
+
+    $("reminderNote").value =
+        "";
+
+
+    loadReminders();
+
+}
+
+
+function loadReminders() {
+
+    const box =
+        $("reminders");
+
+
+    if (!box) {
+
+        return;
+
+    }
+
+
+    const reminders =
+        JSON.parse(
+            localStorage.getItem(
+                "medai_reminders"
+            ) || "[]"
+        );
+
+
+    box.innerHTML =
+        reminders
+            .map(
+                (item, index) => `
+
+                    <div class="list-item">
+
+                        <strong>
+                            💊 ${escapeHTML(item.medicine)}
+                        </strong>
+
+                        <p>
+                            ⏰ ${escapeHTML(item.time)}
+                        </p>
+
+                        <small>
+                            ${escapeHTML(item.note || "")}
+                        </small>
+
+                        <button
+                            class="danger-button"
+                            onclick="deleteReminder(${index})">
+
+                            حذف
+
+                        </button>
+
+                    </div>
+
+                `
+            )
+            .join("");
+
+}
+
+
+function deleteReminder(index) {
+
+    let reminders =
+        JSON.parse(
+            localStorage.getItem(
+                "medai_reminders"
+            ) || "[]"
+        );
+
+
+    reminders.splice(
+        index,
+        1
+    );
+
+
+    localStorage.setItem(
+        "medai_reminders",
+        JSON.stringify(reminders)
+    );
+
+
+    loadReminders();
+
+}
+
+
+/* =========================================================
+   HEALTH TRACKER
+========================================================= */
+
+function addTracker() {
+
+    const type =
+        $("trackerType").value;
+
+
+    const value =
+        $("trackerValue")
+            .value
+            .trim();
+
+
+    const note =
+        $("trackerNote")
+            .value
+            .trim();
+
+
+    if (!value) {
+
+        alert(
+            "Value ولیکئ."
+        );
+
+        return;
+
+    }
+
+
+    let tracker =
+        JSON.parse(
+            localStorage.getItem(
+                "medai_tracker"
+            ) || "[]"
+        );
+
+
+    tracker.unshift({
+
+        type:
+            type,
+
+        value:
+            value,
+
+        note:
+            note,
+
+        time:
+            new Date().toLocaleString()
+
+    });
+
+
+    tracker =
+        tracker.slice(0, 100);
+
+
+    localStorage.setItem(
+        "medai_tracker",
+        JSON.stringify(tracker)
+    );
+
+
+    $("trackerValue").value =
+        "";
+
+    $("trackerNote").value =
+        "";
+
+
+    loadTracker();
+
+}
+
+
+function loadTracker() {
+
+    const box =
+        $("trackerList");
+
+
+    if (!box) {
+
+        return;
+
+    }
+
+
+    const tracker =
+        JSON.parse(
+            localStorage.getItem(
+                "medai_tracker"
+            ) || "[]"
+        );
+
+
+    if (!tracker.length) {
+
+        box.innerHTML =
+            "<p>تر اوسه معلومات نشته.</p>";
+
+        return;
+
+    }
+
+
+    box.innerHTML =
+        tracker
+            .map(
+                (item, index) => `
+
+                    <div class="list-item">
+
+                        <strong>
+                            ${escapeHTML(item.type)}
+                        </strong>
+
+                        <p>
+                            Value:
+                            ${escapeHTML(item.value)}
+                        </p>
+
+                        <small>
+                            ${escapeHTML(item.time)}
+                        </small>
+
+                        <p>
+                            ${escapeHTML(item.note || "")}
+                        </p>
+
+                        <button
+                            class="danger-button"
+                            onclick="deleteTracker(${index})">
+
+                            حذف
+
+                        </button>
+
+                    </div>
+
+                `
+            )
+            .join("");
+
+}
+
+
+function deleteTracker(index) {
+
+    let tracker =
+        JSON.parse(
+            localStorage.getItem(
+                "medai_tracker"
+            ) || "[]"
+        );
+
+
+    tracker.splice(
+        index,
+        1
+    );
+
+
+    localStorage.setItem(
+        "medai_tracker",
+        JSON.stringify(tracker)
+    );
+
+
+    loadTracker();
+
+}
+
+
+function clearTracker() {
+
+    localStorage.removeItem(
+        "medai_tracker"
+    );
+
+
+    loadTracker();
+
+}
+
+
+/* =========================================================
+   HEALTH REPORT
+========================================================= */
+
+async function generateHealthReport() {
+
+    const manual =
+        $("toolInput")
+            ? $("toolInput")
+                .value
+                .trim()
+            : "";
+
+
+    const tracker =
+        JSON.parse(
+            localStorage.getItem(
+                "medai_tracker"
+            ) || "[]"
+        );
+
+
+    if (
+        !manual &&
+        !tracker.length
+    ) {
+
+        $("toolResult").textContent =
+            "لومړی معلومات ولیکئ یا Health Tracker وکاروئ.";
+
+        return;
+
+    }
+
+
+    $("toolResult").textContent =
+        "AI کار کوي...";
+
+
+    const text =
+        "User Notes:\n" +
+        manual +
+        "\n\nHealth Tracker:\n" +
+        JSON.stringify(tracker);
+
+
+    try {
+
+        const response =
+            await fetch(
+                "/health-report",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify({
+                            text:
+                                text
+                        })
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        $("toolResult").textContent =
+            data.answer ||
+            data.error ||
+            "راپور جوړ نه شو.";
+
+    }
+
+    catch (error) {
+
+        $("toolResult").textContent =
+            "د راپور ستونزه.";
+
+    }
+
+}
+
+
+/* =========================================================
+   STARTUP
+========================================================= */
+
+console.log(
+    "MedAI loaded successfully."
+);
+
 </script>
-</body></html>"""
 
+</body>
+
+</html>
+"""
+
+
+# ============================================================
+# ROUTES
+# ============================================================
 
 @app.route("/")
 def home():
     return HTML
 
 
+# ============================================================
+# CHAT
+# ============================================================
+
 @app.route("/chat", methods=["POST"])
 def chat():
-    q = str((request.get_json(silent=True) or {}).get("question", "")).strip()
-    if not q:
-        return jsonify({"error": "پوښتنه خالي ده."}), 400
-    return jsonify({"answer": ask_gemini(build_prompt("""
+
+    data = request.get_json(silent=True) or {}
+
+    question = str(
+        data.get("question", "")
+    ).strip()
+
+
+    if not question:
+
+        return jsonify({
+            "error": "پوښتنه خالي ده."
+        }), 400
+
+
+    instruction = """
 Give a structured medical educational answer.
-Use sections when appropriate: Definition, Causes, Types, Risk Factors,
-Signs and Symptoms, Diagnosis, Treatment, Prevention, Complications,
-Important Points.
-""", q))})
+
+Use sections when appropriate:
+
+Definition
+Causes
+Types
+Risk Factors
+Signs and Symptoms
+Diagnosis
+Treatment
+Prevention
+Complications
+Important Points
+
+Do not diagnose the user.
+"""
 
 
-def simple_route(name, instruction, empty):
-    data = request.get_json(silent=True) or {}
-    text = str(data.get("text", "")).strip()
+    answer = ask_gemini(
+        build_prompt(
+            instruction,
+            question
+        )
+    )
+
+
+    return jsonify({
+        "answer": answer
+    })
+
+
+# ============================================================
+# SIMPLE ROUTE HELPER
+# ============================================================
+
+def simple_route(
+    instruction,
+    empty_message
+):
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+
+    text = str(
+        data.get("text", "")
+    ).strip()
+
+
     if not text:
-        return jsonify({"error": empty}), 400
-    return jsonify({"answer": ask_gemini(build_prompt(instruction, text))})
+
+        return jsonify({
+            "error": empty_message
+        }), 400
 
 
-@app.route("/symptoms", methods=["POST"])
+    answer = ask_gemini(
+        build_prompt(
+            instruction,
+            text
+        )
+    )
+
+
+    return jsonify({
+        "answer": answer
+    })
+
+
+# ============================================================
+# SYMPTOMS
+# ============================================================
+
+@app.route(
+    "/symptoms",
+    methods=["POST"]
+)
 def symptoms():
-    return simple_route("symptoms", "Explain symptoms educationally, possible systems/conditions, warning signs and when professional evaluation may be appropriate. Do not diagnose.", "نښې ولیکئ.")
+
+    return simple_route(
+        """
+Explain symptoms educationally.
+
+Include:
+- what the symptoms may mean generally
+- body systems that can be involved
+- common possibilities
+- warning signs
+- when professional evaluation may be appropriate
+
+Do not diagnose.
+""",
+        "نښې ولیکئ."
+    )
 
 
-@app.route("/vitals", methods=["POST"])
+# ============================================================
+# VITALS
+# ============================================================
+
+@app.route(
+    "/vitals",
+    methods=["POST"]
+)
 def vitals():
-    return simple_route("vitals", "Explain what the provided vital signs mean, general reference concepts, factors affecting readings and when professional evaluation may be appropriate. Do not diagnose.", "Vital signs معلومات ولیکئ.")
+
+    return simple_route(
+        """
+Explain the provided vital signs educationally.
+
+Discuss:
+- what each measurement represents
+- general concepts
+- factors that can affect readings
+- why repeated measurements may matter
+- when professional evaluation may be appropriate
+
+Do not diagnose.
+""",
+        "Vital signs معلومات ولیکئ."
+    )
 
 
-@app.route("/doctor", methods=["POST"])
+# ============================================================
+# DOCTOR
+# ============================================================
+
+@app.route(
+    "/doctor",
+    methods=["POST"]
+)
 def doctor():
-    return simple_route("doctor", "Organize the notes into main concern, symptoms, onset, changes, medicines mentioned, tests/measurements and questions for a doctor. Do not add information.", "معلومات ولیکئ.")
+
+    return simple_route(
+        """
+Organize the user's notes for a doctor visit.
+
+Use:
+- Main concern
+- Symptoms
+- When symptoms started
+- Changes
+- Relevant measurements
+- Medicines mentioned
+- Tests mentioned
+- Questions for doctor
+
+Do not add information that the user did not provide.
+""",
+        "معلومات ولیکئ."
+    )
 
 
-@app.route("/lab", methods=["POST"])
+# ============================================================
+# LAB
+# ============================================================
+
+@app.route(
+    "/lab",
+    methods=["POST"]
+)
 def lab():
-    return simple_route("lab", "Explain what the test measures, why it is used, what high/low values can sometimes be associated with, factors affecting results and why reference ranges differ. Do not diagnose.", "Lab معلومات ولیکئ.")
+
+    return simple_route(
+        """
+Explain the laboratory information educationally.
+
+Discuss:
+- what the test measures
+- why it is commonly used
+- what high or low results can sometimes be associated with
+- factors that can affect results
+- why reference ranges differ between laboratories
+
+Do not diagnose.
+Do not invent missing values.
+""",
+        "Lab معلومات ولیکئ."
+    )
 
 
-@app.route("/medicine", methods=["POST"])
+# ============================================================
+# MEDICINE
+# ============================================================
+
+@app.route(
+    "/medicine",
+    methods=["POST"]
+)
 def medicine():
-    return simple_route("medicine", "Give general medicine information: what it is, common uses, general mechanism, common side effects, precautions and interaction categories. No personalized dosing.", "د درملو نوم ولیکئ.")
+
+    return simple_route(
+        """
+Give general educational medicine information.
+
+Include:
+- what the medicine is
+- common uses
+- general mechanism
+- common side effects
+- precautions
+- important interaction categories
+
+Do not provide personalized dosing.
+Do not tell the user to start, stop, or change a prescription medicine.
+""",
+        "د درملو نوم ولیکئ."
+    )
 
 
-@app.route("/dictionary", methods=["POST"])
+# ============================================================
+# DICTIONARY
+# ============================================================
+
+@app.route(
+    "/dictionary",
+    methods=["POST"]
+)
 def dictionary():
-    return simple_route("dictionary", "Explain the medical term simply with definition, why it matters and a short example.", "اصطلاح ولیکئ.")
+
+    return simple_route(
+        """
+Explain the medical term in very simple language.
+
+Include:
+- Definition
+- Why it matters
+- Medical context
+- Short example
+
+Answer in the user's language.
+""",
+        "اصطلاح ولیکئ."
+    )
 
 
-@app.route("/emergency", methods=["POST"])
+# ============================================================
+# EMERGENCY
+# ============================================================
+
+@app.route(
+    "/emergency",
+    methods=["POST"]
+)
 def emergency():
-    return simple_route("emergency", "Look only for general emergency warning signs. Separate warning signs, other information and appropriate action. If serious warning signs exist, advise urgent professional medical care. Do not diagnose.", "نښې ولیکئ.")
+
+    return simple_route(
+        """
+Review the provided information only for general emergency warning signs.
+
+Separate:
+- Emergency warning signs
+- Other information
+- Appropriate action
+
+If serious warning signs are present, advise urgent professional medical care.
+
+Do not diagnose.
+""",
+        "نښې ولیکئ."
+    )
 
 
-@app.route("/interaction", methods=["POST"])
+# ============================================================
+# INTERACTION
+# ============================================================
+
+@app.route(
+    "/interaction",
+    methods=["POST"]
+)
 def interaction():
-    return simple_route("interaction", "Review listed medicines for known or potentially important interactions. Explain medicines involved, possible interaction, why it matters and why pharmacist/doctor review may be needed. Do not tell user to stop/change medicines.", "د درملو نومونه ولیکئ.")
+
+    return simple_route(
+        """
+Review listed medicines for known or potentially important interactions.
+
+Explain:
+- medicines involved
+- possible interaction
+- why it may matter
+- what kind of professional review may be appropriate
+
+Do not tell the user to stop or change medicines.
+Do not provide personalized medication instructions.
+""",
+        "د درملو نومونه ولیکئ."
+    )
 
 
-@app.route("/report", methods=["POST"])
+# ============================================================
+# REPORT
+# ============================================================
+
+@app.route(
+    "/report",
+    methods=["POST"]
+)
 def report():
-    return simple_route("report", "Explain the medical report simply: subject, important findings, terms, tests, what findings can generally be associated with, questions for a doctor and limitations. Do not diagnose or invent missing information.", "طبي راپور ولیکئ.")
+
+    return simple_route(
+        """
+Explain the medical report simply.
+
+Include:
+- subject
+- important findings
+- medical terms
+- what findings can generally be associated with
+- useful questions for a healthcare professional
+- limitations
+
+Do not diagnose.
+Do not invent missing information.
+""",
+        "طبي راپور ولیکئ."
+    )
 
 
-@app.route("/firstaid", methods=["POST"])
+# ============================================================
+# FIRST AID
+# ============================================================
+
+@app.route(
+    "/firstaid",
+    methods=["POST"]
+)
 def firstaid():
-    return simple_route("firstaid", "Give a general first-aid guide: immediate priorities, basic steps, what not to do, emergency warning signs and when professional evaluation is needed.", "حالت ولیکئ.")
+
+    return simple_route(
+        """
+Give a general first-aid educational guide.
+
+Include:
+- immediate priorities
+- basic first-aid steps
+- what not to do
+- emergency warning signs
+- when professional medical care is needed
+
+Do not provide dangerous instructions.
+""",
+        "حالت ولیکئ."
+    )
 
 
-@app.route("/glossary", methods=["POST"])
+# ============================================================
+# GLOSSARY
+# ============================================================
+
+@app.route(
+    "/glossary",
+    methods=["POST"]
+)
 def glossary():
-    return simple_route("glossary", "Explain each medical term in very simple language with meaning, medical use and short example.", "اصطلاحات ولیکئ.")
+
+    return simple_route(
+        """
+Explain each medical term in very simple language.
+
+For each term include:
+- meaning
+- medical use
+- short example
+
+Answer in the user's language.
+""",
+        "اصطلاحات ولیکئ."
+    )
 
 
-@app.route("/risk", methods=["POST"])
+# ============================================================
+# RISK
+# ============================================================
+
+@app.route(
+    "/risk",
+    methods=["POST"]
+)
 def risk():
-    return simple_route("risk", "Review information for general medical risk indicators. Do not calculate a fake score. Identify reported factors, warning signs, missing information and when urgent/routine professional evaluation may be appropriate. Do not diagnose or predict outcome.", "معلومات ولیکئ.")
+
+    return simple_route(
+        """
+Review the provided information for general medical risk indicators.
+
+Identify:
+- reported risk factors
+- warning signs
+- missing information
+- when urgent professional evaluation may be appropriate
+- when routine professional evaluation may be appropriate
+
+Do not calculate a fake medical score.
+Do not diagnose.
+Do not predict outcomes.
+""",
+        "معلومات ولیکئ."
+    )
 
 
-@app.route("/health-report", methods=["POST"])
+# ============================================================
+# HEALTH REPORT
+# ============================================================
+
+@app.route(
+    "/health-report",
+    methods=["POST"]
+)
 def health_report():
-    return simple_route("health-report", "Create an educational health summary: summary, recorded measurements, symptoms/concerns, directly observable trends, questions for a healthcare professional and limitations. Do not diagnose or invent information.", "د روغتیا معلومات ولیکئ.")
+
+    return simple_route(
+        """
+Create an educational health summary.
+
+Include:
+- Summary
+- Recorded measurements
+- Symptoms or concerns
+- Directly observable trends
+- Questions for healthcare professional
+- Limitations
+
+Do not diagnose.
+Do not invent information.
+""",
+        "د روغتیا معلومات ولیکئ."
+    )
 
 
-@app.route("/compare", methods=["POST"])
+# ============================================================
+# DISEASE COMPARISON
+# ============================================================
+
+@app.route(
+    "/compare",
+    methods=["POST"]
+)
 def compare_route():
-    data = request.get_json(silent=True) or {}
-    a, b = str(data.get("disease1", "")).strip(), str(data.get("disease2", "")).strip()
-    if not a or not b:
-        return jsonify({"error": "دواړه ناروغۍ ولیکئ."}), 400
-    text = f"Disease 1: {a}\nDisease 2: {b}"
-    return jsonify({"answer": ask_gemini(build_prompt("Compare definition, causes, risk factors, symptoms, diagnosis, treatment approaches, differences, similarities and warning signs. Do not diagnose.", text))})
+
+    data = request.get_json(
+        silent=True
+    ) or {}
 
 
-@app.route("/images")
+    disease1 = str(
+        data.get(
+            "disease1",
+            ""
+        )
+    ).strip()
+
+
+    disease2 = str(
+        data.get(
+            "disease2",
+            ""
+        )
+    ).strip()
+
+
+    if not disease1 or not disease2:
+
+        return jsonify({
+            "error":
+                "دواړه ناروغۍ ولیکئ."
+        }), 400
+
+
+    text = (
+        "Disease 1: "
+        + disease1
+        + "\nDisease 2: "
+        + disease2
+    )
+
+
+    answer = ask_gemini(
+        build_prompt(
+            """
+Compare the two conditions educationally.
+
+Include:
+- Definition
+- Causes
+- Risk Factors
+- Symptoms
+- Diagnosis approaches
+- Treatment approaches
+- Similarities
+- Differences
+- Warning signs
+
+Do not diagnose the user.
+""",
+            text
+        )
+    )
+
+
+    return jsonify({
+        "answer": answer
+    })
+
+
+# ============================================================
+# IMAGES
+# ============================================================
+
+@app.route(
+    "/images",
+    methods=["GET"]
+)
 def images():
-    q = request.args.get("q", "").strip()
-    return jsonify({"images": get_medical_images(q) if q else []})
 
+    query =
+        request.args.get(
+            "q",
+            ""
+        ).strip()
+
+
+    if not query:
+
+        return jsonify({
+            "images": []
+        })
+
+
+    return jsonify({
+        "images":
+            get_medical_images(
+                query
+            )
+    })
+
+
+# ============================================================
+# HEALTH CHECK
+# ============================================================
+
+@app.route(
+    "/health",
+    methods=["GET"]
+)
+def health():
+
+    return jsonify({
+        "status": "ok",
+        "app": "MedAI",
+        "developer":
+            "Toyebullah Dawoodzay",
+        "created": 2026
+    })
+
+
+# ============================================================
+# RUN
+# ============================================================
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
+
+    port = int(
+        os.environ.get(
+            "PORT",
+            5000
+        )
+    )
+
+
+    app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=False
+    )
