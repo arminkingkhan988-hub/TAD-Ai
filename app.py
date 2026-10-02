@@ -1,78 +1,2192 @@
-import os, json, urllib.request, urllib.error
+import os
+import json
+import urllib.request
+import urllib.error
+
 from flask import Flask, request, jsonify, render_template_string
 
 app = Flask(__name__)
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
-MAX_HISTORY = 20
-MAX_MESSAGE = 12000
 
-SYSTEM_PROMPT = "You are MedAI, a cautious medical information assistant.\nGive clear, evidence-aware educational information. Do not claim certainty or diagnose from limited information.\nFor emergencies, tell the user to contact local emergency services or go to the nearest emergency department.\nAsk useful follow-up questions when needed. Explain medicines, symptoms, labs, first aid, prevention and general health.\nMention important contraindications/interactions when relevant. Never tell users to stop or change prescribed treatment without a clinician.\nRespond in the user's language. This app is educational and does not replace a qualified clinician."
+# ============================================================
+# CONFIGURATION
+# ============================================================
 
-def gemini(message, history):
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.environ.get(
+    "GEMINI_MODEL",
+    "gemini-2.5-flash"
+).strip()
+
+MAX_MESSAGE_LENGTH = 12000
+MAX_HISTORY_ITEMS = 20
+
+
+# ============================================================
+# MEDICAL SYSTEM PROMPT
+# ============================================================
+
+SYSTEM_PROMPT = """
+You are MedAI, a medical information assistant.
+
+Your job is to provide clear, useful, cautious medical information.
+
+IMPORTANT SAFETY RULES:
+
+1. You are not a doctor and you are not a replacement for a doctor,
+   pharmacist, emergency service, or hospital.
+
+2. Never claim that you can make a certain diagnosis from symptoms alone.
+
+3. Explain possible causes as possibilities, not certainties.
+
+4. If symptoms could indicate a medical emergency, clearly tell the user
+   to contact local emergency medical services or go to the nearest
+   emergency department.
+
+5. Do not provide dangerous instructions.
+
+6. For medicines:
+   - Explain common uses.
+   - Explain common side effects.
+   - Explain important precautions.
+   - Mention important interactions when relevant.
+   - Do not invent a prescription.
+   - Encourage confirmation of dosing with a doctor or pharmacist.
+
+7. For laboratory reports:
+   - Explain what the test generally measures.
+   - Explain whether a value is commonly considered low/high only when
+     enough information is available.
+   - Mention that reference ranges vary by laboratory.
+   - Do not diagnose solely from a laboratory value.
+
+8. For pregnancy, children, elderly people, severe symptoms, or major
+   chronic diseases, recommend professional medical evaluation when
+   appropriate.
+
+9. Ask relevant follow-up questions when necessary.
+
+10. Answer in the language used by the user.
+    If the user writes Pashto, answer in Pashto.
+    If the user writes Dari, answer in Dari.
+    If the user writes English, answer in English.
+
+11. Keep answers understandable and organized.
+
+12. For emergencies, prioritize urgent medical care over lengthy
+    explanations.
+
+13. Do not pretend to have examined the patient.
+
+14. If information is uncertain or incomplete, say so clearly.
+"""
+
+
+# ============================================================
+# GEMINI API
+# ============================================================
+
+def ask_gemini(message, history):
     if not GEMINI_API_KEY:
-        raise RuntimeError("GEMINI_API_KEY is not configured on the server.")
+        raise RuntimeError(
+            "GEMINI_API_KEY is not configured on the server."
+        )
+
     contents = []
-    for item in (history or [])[-MAX_HISTORY:]:
-        if not isinstance(item, dict):
-            continue
-        role = "model" if item.get("role") == "model" else "user"
-        text = str(item.get("text", "")).strip()
-        if text:
-            contents.append({"role": role, "parts": [{"text": text[:MAX_MESSAGE]}]})
-    if not contents or contents[-1]["parts"][0]["text"] != message:
-        contents.append({"role": "user", "parts": [{"text": message}]})
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
-    payload = {"systemInstruction":{"parts":[{"text":SYSTEM_PROMPT}]},"contents":contents,
-               "generationConfig":{"temperature":0.35,"maxOutputTokens":1800}}
-    req = urllib.request.Request(url, data=json.dumps(payload).encode(),
-        headers={"Content-Type":"application/json","x-goog-api-key":GEMINI_API_KEY}, method="POST")
+
+    if isinstance(history, list):
+        for item in history[-MAX_HISTORY_ITEMS:]:
+            if not isinstance(item, dict):
+                continue
+
+            role = item.get("role")
+            text = item.get("text")
+
+            if role not in ("user", "model"):
+                continue
+
+            if not isinstance(text, str):
+                continue
+
+            text = text.strip()
+
+            if not text:
+                continue
+
+            contents.append({
+                "role": role,
+                "parts": [
+                    {
+                        "text": text[:MAX_MESSAGE_LENGTH]
+                    }
+                ]
+            })
+
+    # Prevent duplicate current message.
+    already_added = False
+
+    if contents:
+        last = contents[-1]
+
+        if last.get("role") == "user":
+            parts = last.get("parts") or []
+
+            if (
+                parts
+                and isinstance(parts[0], dict)
+                and parts[0].get("text") == message
+            ):
+                already_added = True
+
+    if not already_added:
+        contents.append({
+            "role": "user",
+            "parts": [
+                {
+                    "text": message[:MAX_MESSAGE_LENGTH]
+                }
+            ]
+        })
+
+    url = (
+        "https://generativelanguage.googleapis.com/"
+        f"v1beta/models/{GEMINI_MODEL}:generateContent"
+    )
+
+    payload = {
+        "systemInstruction": {
+            "parts": [
+                {
+                    "text": SYSTEM_PROMPT
+                }
+            ]
+        },
+        "contents": contents,
+        "generationConfig": {
+            "temperature": 0.3,
+            "maxOutputTokens": 2048
+        }
+    }
+
+    body = json.dumps(payload).encode("utf-8")
+
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "x-goog-api-key": GEMINI_API_KEY
+        },
+        method="POST"
+    )
+
     try:
-        with urllib.request.urlopen(req, timeout=45) as r:
-            data=json.loads(r.read().decode())
-    except urllib.error.HTTPError as e:
-        try: detail=e.read().decode()
-        except Exception: detail=""
-        raise RuntimeError(f"Gemini API error ({e.code}). {detail[:500]}")
-    except Exception as e:
-        raise RuntimeError(f"AI connection error: {e}")
-    candidates=data.get("candidates") or []
-    if not candidates: raise RuntimeError("The AI returned no answer.")
-    parts=(candidates[0].get("content") or {}).get("parts") or []
-    answer="".join(p.get("text","") for p in parts if isinstance(p,dict)).strip()
-    return answer or "No answer was returned."
+        with urllib.request.urlopen(
+            req,
+            timeout=55
+        ) as response:
 
-@app.after_request
-def headers(response):
-    response.headers["X-Content-Type-Options"]="nosniff"
-    response.headers["X-Frame-Options"]="SAMEORIGIN"
-    response.headers["Referrer-Policy"]="strict-origin-when-cross-origin"
-    response.headers["Permissions-Policy"]="camera=(), geolocation=(), payment=()"
-    return response
+            raw = response.read().decode("utf-8")
+            data = json.loads(raw)
 
-PAGE = r'<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">\n<title>MedAI - Medical AI Assistant</title>\n<style>\n*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:#fff;color:#172033}\nbutton,input,textarea{font:inherit}button{cursor:pointer}.app{display:flex;height:100vh;overflow:hidden}\n.side{width:270px;background:#f7f8fa;border-right:1px solid #e5e7eb;padding:14px;display:flex;flex-direction:column;gap:12px}\n.brand{font-size:21px;font-weight:800;padding:10px 8px}.new{width:100%;padding:12px;border:1px solid #d8dde5;border-radius:10px;background:#fff;font-weight:700}\n.tools{display:grid;grid-template-columns:1fr 1fr;gap:7px;overflow:auto}.tool{border:1px solid #e1e5ea;background:#fff;border-radius:9px;padding:9px 6px;font-size:12px;text-align:left}\n.recent{margin-top:5px;font-size:12px;color:#697386}.recent div{padding:8px;border-radius:8px;cursor:pointer}.recent div:hover{background:#e9edf2}\n.main{flex:1;display:flex;flex-direction:column;min-width:0}.top{height:58px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;padding:0 18px;gap:10px}.menu{display:none;border:0;background:none;font-size:22px}.title{font-weight:750}.grow{flex:1}.icon{border:0;background:transparent;font-size:18px;padding:7px;border-radius:8px}.chat{flex:1;overflow:auto;padding:28px 18px}.wrap{max-width:850px;margin:auto}.welcome{text-align:center;padding:10vh 10px 30px}.logo{font-size:45px}.welcome h1{margin:10px 0 6px}.welcome p{color:#687385}.cards{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:25px}.card{border:1px solid #e1e5ea;background:#fff;border-radius:12px;padding:14px;text-align:left}.card b{display:block;margin-bottom:4px}.card span{font-size:13px;color:#6b7280}.msg{display:flex;gap:12px;margin:20px 0}.avatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#eef2f7;flex:none}.bubble{white-space:pre-wrap;line-height:1.6;max-width:780px}.user .bubble{background:#f1f3f5;padding:11px 14px;border-radius:14px}.actions{margin-top:5px}.actions button{border:0;background:none;color:#697386;font-size:12px;margin-right:7px}.composer{padding:12px 18px 18px}.box{max-width:850px;margin:auto;border:1px solid #cfd5dd;border-radius:15px;padding:10px;background:#fff;box-shadow:0 2px 12px #0000000b}.box textarea{width:100%;border:0;outline:0;resize:none;min-height:48px;max-height:160px}.bar{display:flex;align-items:center;gap:8px}.send{margin-left:auto;border:0;background:#111827;color:white;border-radius:9px;padding:9px 15px}.hint{text-align:center;font-size:11px;color:#8a93a1;margin-top:7px}.dark{background:#111827;color:#e5e7eb}.dark .side,.dark .top{background:#151b26;border-color:#2b3442}.dark .new,.dark .tool,.dark .card,.dark .box{background:#151b26;color:#e5e7eb;border-color:#303947}.dark .user .bubble{background:#273141}.dark .bubble{color:#e5e7eb}.dark .hint,.dark .welcome p,.dark .card span{color:#9aa5b5}\n@media(max-width:760px){.side{position:fixed;z-index:5;left:-290px;top:0;bottom:0;transition:.2s}.side.open{left:0}.menu{display:block}.cards{grid-template-columns:1fr}.chat{padding:18px 10px}.composer{padding:8px 10px 12px}}\n</style></head>\n<body><div class="app" id="app"><aside class="side" id="side"><div class="brand">🩺 MedAI</div><button class="new" onclick="newChat()">＋ New chat</button><div class="tools" id="tools"></div><div class="recent">RECENT CHATS</div><div id="recent"></div></aside>\n<main class="main"><header class="top"><button class="menu" onclick="toggleSide()">☰</button><div class="title">MedAI</div><div class="grow"></div><button class="icon" onclick="toggleTheme()">🌙</button><button class="icon" onclick="newChat()">＋</button></header>\n<section class="chat" id="chat"><div class="wrap" id="messages"></div></section>\n<div class="composer"><div class="box"><textarea id="input" placeholder="Describe your symptoms or ask a medical question..." rows="2"></textarea><div class="bar"><button class="icon" onclick="voice()">🎙️</button><button class="icon" onclick="readLast()">🔊</button><span class="hint">Medical information only - not a diagnosis</span><button class="send" onclick="send()">Send</button></div></div></div></main></div>\n<script>\nconst tools=[["🩺","Symptoms Checker","Check symptoms and possible causes."],["❤️","Vital Signs","Understand blood pressure, pulse, temperature and SpO₂."],["⚖️","Disease Compare","Compare conditions and typical differences."],["👨\u200d⚕️","Doctor Assistant","Prepare questions for a clinician."],["🧪","Lab Report","Explain lab values and reference ranges."],["💊","Medicine Info","Uses, precautions and common side effects."],["📖","Medical Dictionary","Explain medical terms simply."],["🚨","Emergency Checker","Check warning signs requiring urgent care."],["💊","Drug Interaction","Discuss possible medication interactions."],["🩹","First Aid","Get general first-aid guidance."],["📊","Risk Assessment","Discuss general health risk factors."],["📋","Health Report","Create a structured health summary."],["🧠","Medical Quiz","Practice medical knowledge."],["📚","Medical Glossary","Learn medical vocabulary."],["🖼️","Medical Images","Ask about medical images; vision upload is not enabled here."],["🎤","Voice Input","Use browser speech recognition when supported."],["🔊","Voice Output","Read the latest answer aloud."],["⏰","Medicine Reminders","Save reminder notes in this browser."],["❤️\u200d🩹","Health Tracker","Save simple health notes locally."],["⭐","Favorites","Save useful answers locally."]];\nlet history=[],lastAnswer="";\nconst $=id=>document.getElementById(id);\nfunction renderTools(){$("tools").innerHTML=tools.map((t,i)=>`<button class="tool" onclick="useTool(${i})">${t[0]} ${t[1]}</button>`).join("")}\nfunction renderWelcome(){$("messages").innerHTML=`<div class="welcome"><div class="logo">🩺</div><h1>How can I help?</h1><p>Your AI medical information assistant</p><div class="cards">${tools.slice(0,8).map((t,i)=>`<button class="card" onclick="useTool(${i})"><b>${t[0]} ${t[1]}</b><span>${t[2]}</span></button>`).join("")}</div></div>`}\nfunction renderRecent(){let a=JSON.parse(localStorage.getItem("medai_chats")||"[]");$("recent").innerHTML=a.slice(-8).reverse().map(x=>`<div onclick=\'loadChat(${JSON.stringify(x).replace(/</g,"\\u003c")})\'>${escapeHtml(x.title||"Medical chat")}</div>`).join("")}\nfunction escapeHtml(s){return String(s).replace(/[&<>"\']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",\'"\':"&quot;","\'":"&#39;"}[c]))}\nfunction add(role,text){if(document.querySelector(".welcome"))$("messages").innerHTML="";let d=document.createElement("div");d.className="msg "+role;d.innerHTML=`<div class="avatar">${role==="user"?"👤":"🩺"}</div><div><div class="bubble">${escapeHtml(text)}</div>${role==="model"?\'<div class="actions"><button onclick="copyText(this)">Copy</button><button onclick="speak(this)">Read</button><button onclick="favorite(this)">☆ Favorite</button></div>\':""}</div>`;$("messages").appendChild(d);$("chat").scrollTop=$("chat").scrollHeight}\nfunction useTool(i){$("input").value=tools[i][2]+" Please give me a clear, safe medical explanation.";send()}\nasync function send(){let text=$("input").value.trim();if(!text)return;if(text.length>12000){alert("Message is too long.");return}add("user",text);$("input").value="";let old=history.slice(-20),d=document.createElement("div");d.className="msg model";d.innerHTML=\'<div class="avatar">🩺</div><div class="bubble">Thinking...</div>\';$("messages").appendChild(d);$("chat").scrollTop=$("chat").scrollHeight;try{let r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text,history:old})}),data=await r.json();d.remove();if(!r.ok)throw new Error(data.error||"Request failed");add("model",data.answer);lastAnswer=data.answer;history.push({role:"user",text:text},{role:"model",text:data.answer});saveChat()}catch(e){d.remove();add("model","Sorry: "+e.message)}}\nfunction saveChat(){if(!history.length)return;let a=JSON.parse(localStorage.getItem("medai_chats")||"[]"),f=history.find(x=>x.role==="user");a.push({title:(f?.text||"Medical chat").slice(0,45),history});localStorage.setItem("medai_chats",JSON.stringify(a.slice(-30)));renderRecent()}\nfunction loadChat(x){history=x.history||[];$("messages").innerHTML="";history.forEach(m=>add(m.role,m.text))}\nfunction newChat(){history=[];lastAnswer="";renderWelcome();$("input").focus()}\nfunction toggleSide(){$("side").classList.toggle("open")}\nfunction toggleTheme(){document.body.classList.toggle("dark");localStorage.setItem("medai_dark",document.body.classList.contains("dark"))}\nfunction copyText(b){let t=b.parentElement.previousElementSibling.innerText;navigator.clipboard?.writeText(t);b.innerText="Copied";setTimeout(()=>b.innerText="Copy",900)}\nfunction speak(b){speechSynthesis.cancel();speechSynthesis.speak(new SpeechSynthesisUtterance(b.parentElement.previousElementSibling.innerText))}\nfunction readLast(){if(lastAnswer)speechSynthesis.speak(new SpeechSynthesisUtterance(lastAnswer))}\nfunction favorite(b){let t=b.parentElement.previousElementSibling.innerText,a=JSON.parse(localStorage.getItem("medai_favorites")||"[]");if(!a.includes(t))a.push(t);localStorage.setItem("medai_favorites",JSON.stringify(a));b.innerText="★ Saved"}\nfunction voice(){let SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){alert("Voice input is not supported by this browser.");return}let r=new SR();r.lang=navigator.language||"en-US";r.onresult=e=>$("input").value=e.results[0][0].transcript;r.start()}\n$("input").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}});\nif(localStorage.getItem("medai_dark")==="true")document.body.classList.add("dark");renderTools();renderWelcome();renderRecent();\n</script></body></html>'
+    except urllib.error.HTTPError as exc:
+
+        error_body = exc.read().decode(
+            "utf-8",
+            errors="replace"
+        )
+
+        try:
+            error_data = json.loads(error_body)
+
+            error_message = (
+                error_data
+                .get("error", {})
+                .get("message")
+                or error_body
+            )
+
+        except Exception:
+            error_message = error_body
+
+        raise RuntimeError(
+            f"Gemini API error ({exc.code}): "
+            f"{error_message[:500]}"
+        )
+
+    except urllib.error.URLError as exc:
+
+        raise RuntimeError(
+            "Network error while contacting Gemini: "
+            f"{exc.reason}"
+        )
+
+    except json.JSONDecodeError:
+        raise RuntimeError(
+            "Gemini returned invalid JSON."
+        )
+
+    candidates = data.get("candidates") or []
+
+    if not candidates:
+        raise RuntimeError(
+            "Gemini returned no answer."
+        )
+
+    content = candidates[0].get("content") or {}
+
+    parts = content.get("parts") or []
+
+    answer = ""
+
+    for part in parts:
+
+        if isinstance(part, dict):
+
+            text = part.get("text", "")
+
+            if isinstance(text, str):
+                answer += text
+
+    answer = answer.strip()
+
+    if not answer:
+        raise RuntimeError(
+            "Gemini returned an empty answer."
+        )
+
+    return answer
+
+
+# ============================================================
+# HTML
+# ============================================================
+
+HTML = r"""
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+>
+
+<title>MedAI - Medical AI Assistant</title>
+
+<style>
+
+* {
+    box-sizing: border-box;
+}
+
+:root {
+    --bg: #f4f7fb;
+    --card: #ffffff;
+    --text: #172033;
+    --muted: #64748b;
+    --border: #dbe3ee;
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --user: #e7efff;
+    --ai: #f1f5f9;
+    --danger: #dc2626;
+    --success: #16a34a;
+}
+
+body.dark {
+    --bg: #0f172a;
+    --card: #111827;
+    --text: #f8fafc;
+    --muted: #94a3b8;
+    --border: #263244;
+    --primary: #3b82f6;
+    --primary-hover: #60a5fa;
+    --user: #172554;
+    --ai: #1e293b;
+}
+
+body {
+    margin: 0;
+    font-family:
+        Arial,
+        "Noto Sans",
+        sans-serif;
+
+    background: var(--bg);
+    color: var(--text);
+
+    transition:
+        background 0.2s,
+        color 0.2s;
+}
+
+button,
+textarea,
+select {
+    font: inherit;
+}
+
+.app {
+    width: 100%;
+    max-width: 1100px;
+    margin: auto;
+    padding: 20px;
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    gap: 15px;
+
+    background: var(--card);
+
+    padding: 20px;
+
+    border-radius: 20px;
+
+    border: 1px solid var(--border);
+
+    box-shadow:
+        0 8px 30px rgba(0,0,0,.06);
+
+    margin-bottom: 15px;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.logo {
+    width: 50px;
+    height: 50px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    border-radius: 15px;
+
+    background: var(--primary);
+
+    color: white;
+
+    font-size: 25px;
+}
+
+.header h1 {
+    margin: 0;
+    font-size: 27px;
+}
+
+.header p {
+    margin: 3px 0 0;
+    color: var(--muted);
+}
+
+.header-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.btn {
+    border: 0;
+
+    border-radius: 10px;
+
+    padding: 10px 13px;
+
+    cursor: pointer;
+
+    background: var(--primary);
+
+    color: white;
+}
+
+.btn:hover {
+    background: var(--primary-hover);
+}
+
+.btn.secondary {
+    background: var(--ai);
+    color: var(--text);
+}
+
+.btn.danger {
+    background: var(--danger);
+    color: white;
+}
+
+.btn:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+}
+
+.notice {
+    background: #fff7ed;
+
+    border: 1px solid #fed7aa;
+
+    color: #9a3412;
+
+    padding: 12px 15px;
+
+    border-radius: 12px;
+
+    margin-bottom: 15px;
+
+    line-height: 1.5;
+}
+
+body.dark .notice {
+    background: #431407;
+    color: #fed7aa;
+    border-color: #7c2d12;
+}
+
+.main {
+    display: grid;
+
+    grid-template-columns: 250px 1fr;
+
+    gap: 15px;
+}
+
+.sidebar,
+.chat {
+    background: var(--card);
+
+    border: 1px solid var(--border);
+
+    border-radius: 20px;
+
+    box-shadow:
+        0 8px 30px rgba(0,0,0,.06);
+}
+
+.sidebar {
+    padding: 15px;
+
+    height: fit-content;
+}
+
+.sidebar h3 {
+    margin-top: 5px;
+}
+
+.quick {
+    width: 100%;
+
+    text-align: left;
+
+    border: 0;
+
+    background: var(--ai);
+
+    color: var(--text);
+
+    padding: 11px;
+
+    margin: 5px 0;
+
+    border-radius: 10px;
+
+    cursor: pointer;
+}
+
+.quick:hover {
+    opacity: .8;
+}
+
+.chat {
+    padding: 15px;
+
+    min-width: 0;
+}
+
+.messages {
+    height: 58vh;
+
+    min-height: 400px;
+
+    overflow-y: auto;
+
+    padding: 5px;
+}
+
+.message {
+    padding: 13px 15px;
+
+    border-radius: 15px;
+
+    margin: 12px 0;
+
+    line-height: 1.6;
+
+    white-space: pre-wrap;
+
+    word-break: break-word;
+}
+
+.message.user {
+    background: var(--user);
+
+    margin-left: 12%;
+}
+
+.message.ai {
+    background: var(--ai);
+
+    margin-right: 8%;
+}
+
+.message.system {
+    background: #ecfdf5;
+
+    color: #166534;
+
+    border: 1px solid #bbf7d0;
+}
+
+body.dark .message.system {
+    background: #052e16;
+
+    color: #bbf7d0;
+
+    border-color: #166534;
+}
+
+.message-head {
+    font-size: 12px;
+
+    color: var(--muted);
+
+    margin-bottom: 5px;
+}
+
+.composer {
+    margin-top: 10px;
+}
+
+textarea {
+    width: 100%;
+
+    resize: vertical;
+
+    min-height: 70px;
+
+    max-height: 200px;
+
+    border: 1px solid var(--border);
+
+    border-radius: 14px;
+
+    background: var(--card);
+
+    color: var(--text);
+
+    padding: 14px;
+
+    outline: none;
+}
+
+textarea:focus {
+    border-color: var(--primary);
+}
+
+.composer-actions {
+    display: flex;
+
+    justify-content: space-between;
+
+    align-items: center;
+
+    gap: 10px;
+
+    margin-top: 10px;
+}
+
+.left-actions,
+.right-actions {
+    display: flex;
+
+    gap: 8px;
+
+    flex-wrap: wrap;
+}
+
+.status {
+    min-height: 20px;
+
+    margin-top: 8px;
+
+    color: var(--muted);
+
+    font-size: 14px;
+}
+
+.typing {
+    display: inline-flex;
+
+    gap: 4px;
+}
+
+.dot {
+    width: 6px;
+    height: 6px;
+
+    border-radius: 50%;
+
+    background: var(--muted);
+
+    animation: blink 1s infinite;
+}
+
+.dot:nth-child(2) {
+    animation-delay: .15s;
+}
+
+.dot:nth-child(3) {
+    animation-delay: .3s;
+}
+
+@keyframes blink {
+    0%, 100% {
+        opacity: .2;
+    }
+
+    50% {
+        opacity: 1;
+    }
+}
+
+.modal {
+    display: none;
+
+    position: fixed;
+
+    inset: 0;
+
+    background: rgba(0,0,0,.55);
+
+    align-items: center;
+
+    justify-content: center;
+
+    padding: 15px;
+
+    z-index: 100;
+}
+
+.modal.show {
+    display: flex;
+}
+
+.modal-box {
+    width: 100%;
+
+    max-width: 600px;
+
+    max-height: 90vh;
+
+    overflow-y: auto;
+
+    background: var(--card);
+
+    color: var(--text);
+
+    border-radius: 18px;
+
+    padding: 20px;
+}
+
+.modal-header {
+    display: flex;
+
+    justify-content: space-between;
+
+    align-items: center;
+}
+
+.modal-header h2 {
+    margin: 0;
+}
+
+.close {
+    border: 0;
+
+    background: transparent;
+
+    color: var(--text);
+
+    font-size: 25px;
+
+    cursor: pointer;
+}
+
+.form-group {
+    margin: 12px 0;
+}
+
+.form-group label {
+    display: block;
+
+    margin-bottom: 5px;
+
+    font-size: 14px;
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+
+    padding: 11px;
+
+    border-radius: 10px;
+
+    border: 1px solid var(--border);
+
+    background: var(--card);
+
+    color: var(--text);
+}
+
+.emergency {
+    background: #fef2f2;
+
+    border: 1px solid #fecaca;
+
+    color: #991b1b;
+
+    padding: 13px;
+
+    border-radius: 12px;
+
+    margin-bottom: 10px;
+}
+
+body.dark .emergency {
+    background: #450a0a;
+
+    border-color: #7f1d1d;
+
+    color: #fecaca;
+}
+
+.footer {
+    text-align: center;
+
+    color: var(--muted);
+
+    font-size: 13px;
+
+    padding: 20px;
+}
+
+@media (max-width: 800px) {
+
+    .main {
+        grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+        order: 2;
+    }
+
+    .chat {
+        order: 1;
+    }
+
+    .messages {
+        height: 55vh;
+    }
+
+}
+
+@media (max-width: 600px) {
+
+    .app {
+        padding: 8px;
+    }
+
+    .header {
+        align-items: flex-start;
+
+        flex-direction: column;
+    }
+
+    .header-actions {
+        width: 100%;
+    }
+
+    .header-actions .btn {
+        flex: 1;
+    }
+
+    .message.user {
+        margin-left: 3%;
+    }
+
+    .message.ai {
+        margin-right: 3%;
+    }
+
+    .composer-actions {
+        flex-direction: column;
+
+        align-items: stretch;
+    }
+
+    .left-actions,
+    .right-actions {
+        width: 100%;
+    }
+
+    .left-actions .btn,
+    .right-actions .btn {
+        flex: 1;
+    }
+
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="app">
+
+    <header class="header">
+
+        <div class="brand">
+
+            <div class="logo">
+                🩺
+            </div>
+
+            <div>
+                <h1>MedAI</h1>
+
+                <p>
+                    AI Medical Information Assistant
+                </p>
+            </div>
+
+        </div>
+
+        <div class="header-actions">
+
+            <button
+                class="btn secondary"
+                onclick="toggleLanguage()"
+            >
+                🌐 <span id="languageText">EN</span>
+            </button>
+
+            <button
+                class="btn secondary"
+                onclick="toggleDark()"
+            >
+                🌙
+            </button>
+
+            <button
+                class="btn secondary"
+                onclick="openProfile()"
+            >
+                👤 Profile
+            </button>
+
+        </div>
+
+    </header>
+
+
+    <div class="notice">
+
+        ⚠️ <strong>Medical safety:</strong>
+        MedAI provides general medical information and is not a
+        replacement for a doctor. If you have a medical emergency,
+        contact local emergency medical services or go to the nearest
+        emergency department.
+
+    </div>
+
+
+    <main class="main">
+
+        <aside class="sidebar">
+
+            <button
+                class="btn"
+                style="width:100%; margin-bottom:10px"
+                onclick="newChat()"
+            >
+                ➕ New Chat
+            </button>
+
+            <h3>Quick Tools</h3>
+
+            <button
+                class="quick"
+                onclick="quickAsk(
+                    'Explain my symptoms and possible causes.'
+                )"
+            >
+                🩺 Symptoms
+            </button>
+
+            <button
+                class="quick"
+                onclick="quickAsk(
+                    'Explain this medicine, its common uses, side effects, precautions, and important interactions.'
+                )"
+            >
+                💊 Medicine
+            </button>
+
+            <button
+                class="quick"
+                onclick="quickAsk(
+                    'Help me understand my laboratory report. Explain what the tests generally measure and what abnormal results can mean.'
+                )"
+            >
+                🧪 Lab Report
+            </button>
+
+            <button
+                class="quick"
+                onclick="quickAsk(
+                    'What symptoms require emergency medical attention?'
+                )"
+            >
+                🚨 Emergency
+            </button>
+
+            <button
+                class="quick"
+                onclick="quickAsk(
+                    'Give me general healthy lifestyle advice.'
+                )"
+            >
+                ❤️ Healthy Living
+            </button>
+
+            <button
+                class="quick"
+                onclick="quickAsk(
+                    'What questions should I ask my doctor about my symptoms?'
+                )"
+            >
+                👨‍⚕️ Doctor Questions
+            </button>
+
+            <hr>
+
+            <button
+                class="quick"
+                onclick="exportChat()"
+            >
+                📥 Export Chat
+            </button>
+
+            <button
+                class="quick"
+                onclick="clearChat()"
+            >
+                🗑️ Clear Chat
+            </button>
+
+        </aside>
+
+
+        <section class="chat">
+
+            <div
+                id="messages"
+                class="messages"
+            >
+
+                <div class="message ai">
+
+                    <div class="message-head">
+                        MedAI
+                    </div>
+
+                    Hello! 👋
+
+                    I am MedAI, an AI medical information assistant.
+
+                    You can ask me about symptoms, medicines,
+                    laboratory tests, health questions, or emergency
+                    warning signs.
+
+                    Please remember that I cannot replace a doctor.
+
+                </div>
+
+            </div>
+
+
+            <div class="composer">
+
+                <textarea
+                    id="input"
+                    placeholder="Write your medical question..."
+                    onkeydown="handleKey(event)"
+                ></textarea>
+
+
+                <div class="composer-actions">
+
+                    <div class="left-actions">
+
+                        <button
+                            class="btn secondary"
+                            onclick="startVoice()"
+                        >
+                            🎤 Voice
+                        </button>
+
+                        <button
+                            class="btn secondary"
+                            onclick="toggleSpeech()"
+                            id="speechButton"
+                        >
+                            🔊 Voice ON
+                        </button>
+
+                    </div>
+
+
+                    <div class="right-actions">
+
+                        <button
+                            class="btn"
+                            id="send"
+                            onclick="sendMessage()"
+                        >
+                            Send ➤
+                        </button>
+
+                    </div>
+
+                </div>
+
+
+                <div
+                    id="status"
+                    class="status"
+                ></div>
+
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <div class="footer">
+
+        MedAI provides general information only.
+        Always consult an appropriately qualified healthcare professional
+        for diagnosis and treatment.
+
+    </div>
+
+</div>
+
+
+<!-- PROFILE MODAL -->
+
+<div
+    id="profileModal"
+    class="modal"
+    onclick="closeModalOutside(event)"
+>
+
+    <div class="modal-box">
+
+        <div class="modal-header">
+
+            <h2>Patient Profile</h2>
+
+            <button
+                class="close"
+                onclick="closeProfile()"
+            >
+                ×
+            </button>
+
+        </div>
+
+
+        <div class="form-group">
+
+            <label>Name</label>
+
+            <input
+                id="profileName"
+                placeholder="Your name"
+            >
+
+        </div>
+
+
+        <div class="form-group">
+
+            <label>Age</label>
+
+            <input
+                id="profileAge"
+                type="number"
+                min="0"
+                max="120"
+                placeholder="Age"
+            >
+
+        </div>
+
+
+        <div class="form-group">
+
+            <label>Sex</label>
+
+            <select id="profileSex">
+
+                <option value="">
+                    Prefer not to say
+                </option>
+
+                <option value="male">
+                    Male
+                </option>
+
+                <option value="female">
+                    Female
+                </option>
+
+                <option value="other">
+                    Other
+                </option>
+
+            </select>
+
+        </div>
+
+
+        <div class="form-group">
+
+            <label>Important medical information</label>
+
+            <textarea
+                id="profileMedical"
+                placeholder="Optional: allergies, medications, conditions..."
+            ></textarea>
+
+        </div>
+
+
+        <button
+            class="btn"
+            onclick="saveProfile()"
+            style="width:100%"
+        >
+            Save Profile
+        </button>
+
+    </div>
+
+</div>
+
+
+<script>
+
+let history = [];
+
+let speakingEnabled = true;
+
+let currentLanguage = "en";
+
+
+// ============================================================
+// LOCAL STORAGE
+// ============================================================
+
+function loadData() {
+
+    try {
+
+        const savedHistory =
+            localStorage.getItem("medai_history");
+
+        const savedProfile =
+            localStorage.getItem("medai_profile");
+
+        const savedDark =
+            localStorage.getItem("medai_dark");
+
+        if (savedHistory) {
+
+            history =
+                JSON.parse(savedHistory);
+
+        }
+
+        if (savedDark === "1") {
+
+            document.body.classList.add("dark");
+
+        }
+
+        if (savedProfile) {
+
+            const profile =
+                JSON.parse(savedProfile);
+
+            document.getElementById("profileName").value =
+                profile.name || "";
+
+            document.getElementById("profileAge").value =
+                profile.age || "";
+
+            document.getElementById("profileSex").value =
+                profile.sex || "";
+
+            document.getElementById("profileMedical").value =
+                profile.medical || "";
+
+        }
+
+    } catch (error) {
+
+        console.error(error);
+
+    }
+
+}
+
+
+function saveHistory() {
+
+    try {
+
+        localStorage.setItem(
+            "medai_history",
+            JSON.stringify(history.slice(-40))
+        );
+
+    } catch (error) {
+
+        console.error(error);
+
+    }
+
+}
+
+
+// ============================================================
+// MESSAGE UI
+// ============================================================
+
+function addMessage(role, text) {
+
+    const messages =
+        document.getElementById("messages");
+
+    const div =
+        document.createElement("div");
+
+    div.className =
+        "message " +
+        (role === "user"
+            ? "user"
+            : "ai");
+
+    const head =
+        document.createElement("div");
+
+    head.className =
+        "message-head";
+
+    head.textContent =
+        role === "user"
+            ? "You"
+            : "MedAI";
+
+    const content =
+        document.createElement("div");
+
+    content.textContent = text;
+
+    div.appendChild(head);
+
+    div.appendChild(content);
+
+    messages.appendChild(div);
+
+    messages.scrollTop =
+        messages.scrollHeight;
+
+}
+
+
+function renderHistory() {
+
+    const messages =
+        document.getElementById("messages");
+
+    messages.innerHTML = "";
+
+    if (!history.length) {
+
+        addMessage(
+            "model",
+            "Hello! 👋 I am MedAI. How can I help you today?"
+        );
+
+        return;
+
+    }
+
+    history.forEach(item => {
+
+        if (
+            item &&
+            (
+                item.role === "user" ||
+                item.role === "model"
+            )
+        ) {
+
+            addMessage(
+                item.role,
+                item.text
+            );
+
+        }
+
+    });
+
+}
+
+
+// ============================================================
+// CHAT
+// ============================================================
+
+function handleKey(event) {
+
+    if (
+        event.key === "Enter" &&
+        !event.shiftKey
+    ) {
+
+        event.preventDefault();
+
+        sendMessage();
+
+    }
+
+}
+
+
+function quickAsk(text) {
+
+    document.getElementById("input").value =
+        text;
+
+    sendMessage();
+
+}
+
+
+async function sendMessage() {
+
+    const input =
+        document.getElementById("input");
+
+    const send =
+        document.getElementById("send");
+
+    const status =
+        document.getElementById("status");
+
+    const message =
+        input.value.trim();
+
+    if (!message) {
+
+        return;
+
+    }
+
+
+    addMessage(
+        "user",
+        message
+    );
+
+
+    input.value = "";
+
+    send.disabled = true;
+
+
+    status.innerHTML = `
+        <span class="typing">
+            <span class="dot"></span>
+            <span class="dot"></span>
+            <span class="dot"></span>
+        </span>
+        MedAI is thinking...
+    `;
+
+
+    const oldHistory =
+        history.slice(-20);
+
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/chat",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        message: message,
+                        history: oldHistory
+                    })
+                }
+            );
+
+
+        let data;
+
+        try {
+
+            data =
+                await response.json();
+
+        } catch (error) {
+
+            throw new Error(
+                "Server returned invalid response."
+            );
+
+        }
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                data.error ||
+                "Server error."
+            );
+
+        }
+
+
+        const answer =
+            data.answer ||
+            "No answer received.";
+
+
+        addMessage(
+            "model",
+            answer
+        );
+
+
+        history.push({
+            role: "user",
+            text: message
+        });
+
+
+        history.push({
+            role: "model",
+            text: answer
+        });
+
+
+        history =
+            history.slice(-40);
+
+
+        saveHistory();
+
+
+        if (speakingEnabled) {
+
+            speak(answer);
+
+        }
+
+
+        status.textContent = "";
+
+    } catch (error) {
+
+        addMessage(
+            "model",
+            "Error: " + error.message
+        );
+
+        status.textContent = "";
+
+    }
+
+
+    send.disabled = false;
+
+    input.focus();
+
+}
+
+
+// ============================================================
+// NEW / CLEAR CHAT
+// ============================================================
+
+function newChat() {
+
+    if (
+        history.length &&
+        !confirm("Start a new chat?")
+    ) {
+
+        return;
+
+    }
+
+    history = [];
+
+    saveHistory();
+
+    renderHistory();
+
+}
+
+
+function clearChat() {
+
+    if (
+        !confirm(
+            "Are you sure you want to delete the chat history?"
+        )
+    ) {
+
+        return;
+
+    }
+
+    history = [];
+
+    saveHistory();
+
+    renderHistory();
+
+}
+
+
+// ============================================================
+// VOICE INPUT
+// ============================================================
+
+function startVoice() {
+
+    const SpeechRecognition =
+        window.SpeechRecognition ||
+        window.webkitSpeechRecognition;
+
+
+    if (!SpeechRecognition) {
+
+        alert(
+            "Voice input is not supported by this browser."
+        );
+
+        return;
+
+    }
+
+
+    const recognition =
+        new SpeechRecognition();
+
+
+    if (currentLanguage === "ps") {
+
+        recognition.lang = "ps-AF";
+
+    } else if (currentLanguage === "fa") {
+
+        recognition.lang = "fa-AF";
+
+    } else {
+
+        recognition.lang = "en-US";
+
+    }
+
+
+    recognition.interimResults =
+        false;
+
+    recognition.maxAlternatives =
+        1;
+
+
+    recognition.onstart = function() {
+
+        document.getElementById(
+            "status"
+        ).textContent =
+            "🎤 Listening...";
+
+    };
+
+
+    recognition.onresult =
+        function(event) {
+
+            const text =
+                event.results[0][0]
+                .transcript;
+
+            document.getElementById(
+                "input"
+            ).value = text;
+
+            document.getElementById(
+                "status"
+            ).textContent =
+                "Voice captured.";
+
+        };
+
+
+    recognition.onerror =
+        function(event) {
+
+            document.getElementById(
+                "status"
+            ).textContent =
+                "Voice error: " +
+                event.error;
+
+        };
+
+
+    recognition.onend =
+        function() {
+
+            setTimeout(
+                function() {
+
+                    document.getElementById(
+                        "status"
+                    ).textContent = "";
+
+                },
+                1500
+            );
+
+        };
+
+
+    recognition.start();
+
+}
+
+
+// ============================================================
+// VOICE OUTPUT
+// ============================================================
+
+function speak(text) {
+
+    if (
+        !("speechSynthesis" in window)
+    ) {
+
+        return;
+
+    }
+
+
+    window.speechSynthesis.cancel();
+
+
+    const utterance =
+        new SpeechSynthesisUtterance(text);
+
+
+    if (currentLanguage === "ps") {
+
+        utterance.lang = "ps-AF";
+
+    } else if (currentLanguage === "fa") {
+
+        utterance.lang = "fa-AF";
+
+    } else {
+
+        utterance.lang = "en-US";
+
+    }
+
+
+    utterance.rate = 0.95;
+
+    utterance.pitch = 1;
+
+
+    window.speechSynthesis.speak(
+        utterance
+    );
+
+}
+
+
+function toggleSpeech() {
+
+    speakingEnabled =
+        !speakingEnabled;
+
+
+    const button =
+        document.getElementById(
+            "speechButton"
+        );
+
+
+    button.textContent =
+        speakingEnabled
+            ? "🔊 Voice ON"
+            : "🔇 Voice OFF";
+
+
+    if (!speakingEnabled) {
+
+        if (
+            "speechSynthesis"
+            in window
+        ) {
+
+            window.speechSynthesis.cancel();
+
+        }
+
+    }
+
+}
+
+
+// ============================================================
+// DARK MODE
+// ============================================================
+
+function toggleDark() {
+
+    document.body.classList.toggle(
+        "dark"
+    );
+
+
+    localStorage.setItem(
+        "medai_dark",
+        document.body.classList.contains("dark")
+            ? "1"
+            : "0"
+    );
+
+}
+
+
+// ============================================================
+// LANGUAGE
+// ============================================================
+
+function toggleLanguage() {
+
+    if (currentLanguage === "en") {
+
+        currentLanguage = "ps";
+
+        document.getElementById(
+            "languageText"
+        ).textContent = "PS";
+
+        document.getElementById(
+            "input"
+        ).placeholder =
+            "خپله طبي پوښتنه ولیکئ...";
+
+    } else if (currentLanguage === "ps") {
+
+        currentLanguage = "fa";
+
+        document.getElementById(
+            "languageText"
+        ).textContent = "FA";
+
+        document.getElementById(
+            "input"
+        ).placeholder =
+            "سوال طبی خود را بنویسید...";
+
+    } else {
+
+        currentLanguage = "en";
+
+        document.getElementById(
+            "languageText"
+        ).textContent = "EN";
+
+        document.getElementById(
+            "input"
+        ).placeholder =
+            "Write your medical question...";
+
+    }
+
+}
+
+
+// ============================================================
+// PROFILE
+// ============================================================
+
+function openProfile() {
+
+    document.getElementById(
+        "profileModal"
+    ).classList.add("show");
+
+}
+
+
+function closeProfile() {
+
+    document.getElementById(
+        "profileModal"
+    ).classList.remove("show");
+
+}
+
+
+function closeModalOutside(event) {
+
+    if (
+        event.target.id ===
+        "profileModal"
+    ) {
+
+        closeProfile();
+
+    }
+
+}
+
+
+function saveProfile() {
+
+    const profile = {
+
+        name:
+            document.getElementById(
+                "profileName"
+            ).value.trim(),
+
+        age:
+            document.getElementById(
+                "profileAge"
+            ).value,
+
+        sex:
+            document.getElementById(
+                "profileSex"
+            ).value,
+
+        medical:
+            document.getElementById(
+                "profileMedical"
+            ).value.trim()
+
+    };
+
+
+    localStorage.setItem(
+        "medai_profile",
+        JSON.stringify(profile)
+    );
+
+
+    closeProfile();
+
+
+    document.getElementById(
+        "status"
+    ).textContent =
+        "Profile saved.";
+
+
+    setTimeout(
+        function() {
+
+            document.getElementById(
+                "status"
+            ).textContent = "";
+
+        },
+        1500
+    );
+
+}
+
+
+// ============================================================
+// EXPORT CHAT
+// ============================================================
+
+function exportChat() {
+
+    if (!history.length) {
+
+        alert(
+            "There is no chat to export."
+        );
+
+        return;
+
+    }
+
+
+    let output =
+        "MedAI Chat\n" +
+        "====================\n\n";
+
+
+    history.forEach(item => {
+
+        output +=
+            (
+                item.role === "user"
+                    ? "You"
+                    : "MedAI"
+            ) +
+            ":\n" +
+            item.text +
+            "\n\n";
+
+    });
+
+
+    const blob =
+        new Blob(
+            [output],
+            {
+                type: "text/plain;charset=utf-8"
+            }
+        );
+
+
+    const url =
+        URL.createObjectURL(blob);
+
+
+    const a =
+        document.createElement("a");
+
+
+    a.href = url;
+
+    a.download =
+        "medai-chat.txt";
+
+
+    document.body.appendChild(a);
+
+    a.click();
+
+    a.remove();
+
+    URL.revokeObjectURL(url);
+
+}
+
+
+// ============================================================
+// START
+// ============================================================
+
+loadData();
+
+renderHistory();
+
+</script>
+
+</body>
+
+</html>
+"""
+
+
+# ============================================================
+# ROUTES
+# ============================================================
 
 @app.get("/")
-def index():
-    return render_template_string(PAGE)
+def home():
+
+    return render_template_string(
+        HTML
+    )
+
 
 @app.get("/health")
 def health():
-    return jsonify({"ok":True,"service":"MedAI","gemini_configured":bool(GEMINI_API_KEY)})
+
+    return jsonify({
+        "status": "ok",
+        "service": "MedAI",
+        "gemini_configured": bool(
+            GEMINI_API_KEY
+        )
+    })
+
 
 @app.post("/api/chat")
-def api_chat():
-    data=request.get_json(silent=True) or {}
-    message=str(data.get("message","")).strip()
-    history=data.get("history",[])
-    if not message:return jsonify({"error":"Message is required."}),400
-    if len(message)>MAX_MESSAGE:return jsonify({"error":"Message is too long."}),413
-    if not isinstance(history,list):history=[]
-    try:return jsonify({"answer":gemini(message,history)})
-    except Exception as e:return jsonify({"error":str(e)}),502
+def chat():
 
-@app.errorhandler(404)
-def not_found(e): return jsonify({"error":"Not found"}),404
+    try:
 
-if __name__=="__main__":
-    app.run(host="0.0.0.0",port=int(os.getenv("PORT","5000")))
+        data =
+            request.get_json(
+                silent=True
+            ) or {}
+
+        message =
+            data.get(
+                "message",
+                ""
+            )
+
+        history =
+            data.get(
+                "history",
+                []
+            )
+
+
+        if not isinstance(
+            message,
+            str
+        ):
+
+            return jsonify({
+                "error":
+                    "Message must be text."
+            }), 400
+
+
+        message =
+            message.strip()
+
+
+        if not message:
+
+            return jsonify({
+                "error":
+                    "Please enter a message."
+            }), 400
+
+
+        if len(message) >
+            MAX_MESSAGE_LENGTH:
+
+            return jsonify({
+                "error":
+                    "Message is too long."
+            }), 400
+
+
+        if not isinstance(
+            history,
+            list
+        ):
+
+            history = []
+
+
+        # Limit incoming history.
+        history =
+            history[
+                -MAX_HISTORY_ITEMS:
+            ]
+
+
+        answer =
+            ask_gemini(
+                message,
+                history
+            )
+
+
+        return jsonify({
+            "answer": answer
+        })
+
+
+    except RuntimeError as exc:
+
+        return jsonify({
+            "error": str(exc)
+        }), 500
+
+
+    except Exception as exc:
+
+        return jsonify({
+            "error":
+                "Unexpected server error: " +
+                str(exc)
+        }), 500
+
+
+# ============================================================
+# LOCAL SERVER
+# ============================================================
+
+if __name__ == "__main__":
+
+    port = int(
+        os.environ.get(
+            "PORT",
+            "5000"
+        )
+    )
+
+    app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=False
+    )
