@@ -7,10 +7,6 @@ from flask import Flask, request, jsonify, render_template_string
 app = Flask(__name__)
 
 
-# =========================================================
-# Gemini Configuration
-# =========================================================
-
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 GEMINI_MODEL = os.environ.get(
@@ -19,312 +15,218 @@ GEMINI_MODEL = os.environ.get(
 ).strip()
 
 
-# =========================================================
-# MedAI System Instructions
-# =========================================================
-
 SYSTEM_PROMPT = """
 You are MedAI, a helpful AI assistant.
 
-You can help with:
+You can answer questions about medicine, education, science,
+mathematics, programming, history, business, writing, and general knowledge.
 
-- Medicine and health
-- Education
-- Science
-- Mathematics
-- Programming and coding
-- History
-- Business
-- Writing
-- General knowledge
-- Everyday questions
+Always answer in the same language as the user.
 
-Language rules:
+Support:
+- Pashto
+- Dari
+- English
 
-1. Answer in the same language as the user.
-2. Support Pashto, Dari, and English.
-3. If the user writes Pashto, answer in Pashto.
-4. If the user writes Dari, answer in Dari.
-5. If the user writes English, answer in English.
+For medical questions:
+- Provide general educational information.
+- Do not claim to be a doctor.
+- Do not claim to diagnose the user.
+- For emergencies, advise the user to seek immediate professional medical help.
 
-Medical safety:
-
-1. You are an AI assistant, not a doctor.
-2. Provide general educational information.
-3. Do not claim to diagnose a patient.
-4. Do not pretend to replace a doctor.
-5. For emergencies, advise the user to seek immediate professional medical help.
-6. Be clear, respectful, and helpful.
-
-General behavior:
-
-- Give useful answers.
-- Explain difficult topics simply.
-- For coding questions, provide practical examples.
-- For mathematics, show the important steps.
-- Do not unnecessarily repeat the user's question.
+Be helpful, clear, respectful, and concise.
 """
 
 
-# =========================================================
-# HTML Interface
-# =========================================================
-
 HTML = """
 <!DOCTYPE html>
-
 <html lang="en">
 
 <head>
 
-    <meta charset="UTF-8">
+<meta charset="UTF-8">
 
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0">
 
-    <title>MedAI</title>
+<title>MedAI</title>
 
+<style>
 
-    <style>
+* {
+    box-sizing: border-box;
+}
 
-        * {
-            box-sizing: border-box;
-        }
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #f5f7fb;
+    color: #111827;
+}
 
+header {
+    background: #2563eb;
+    color: white;
+    padding: 18px;
+    text-align: center;
+    font-size: 24px;
+    font-weight: bold;
+}
 
-        body {
-            margin: 0;
-            font-family: Arial, sans-serif;
-            background: #f5f7fb;
-            color: #111827;
-        }
+.chat {
+    max-width: 900px;
+    margin: auto;
+    padding: 20px;
+    min-height: calc(100vh - 160px);
+}
 
+.message {
+    padding: 14px 16px;
+    margin: 12px 0;
+    border-radius: 14px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
 
-        .app {
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
+.user {
+    background: #dbeafe;
+    margin-left: 15%;
+}
 
+.ai {
+    background: white;
+    border: 1px solid #e5e7eb;
+    margin-right: 15%;
+}
 
-        header {
-            background: #2563eb;
-            color: white;
-            padding: 16px;
-            text-align: center;
-            font-size: 22px;
-            font-weight: bold;
-        }
+.input-area {
+    position: sticky;
+    bottom: 0;
+    background: #f5f7fb;
+    border-top: 1px solid #ddd;
+    padding: 15px;
+}
 
+.input-box {
+    max-width: 900px;
+    margin: auto;
+    display: flex;
+    gap: 10px;
+}
 
-        .chat {
-            width: 100%;
-            max-width: 900px;
-            margin: 0 auto;
-            padding: 20px;
-            flex: 1;
-        }
+textarea {
+    flex: 1;
+    min-height: 55px;
+    padding: 14px;
+    border: 1px solid #ccc;
+    border-radius: 12px;
+    font-size: 16px;
+    resize: vertical;
+}
 
+button {
+    border: none;
+    border-radius: 12px;
+    padding: 0 22px;
+    background: #2563eb;
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+}
 
-        .message {
-            margin: 12px 0;
-            padding: 14px 16px;
-            border-radius: 14px;
-            line-height: 1.6;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
+button:disabled {
+    background: #9ca3af;
+}
 
+.status {
+    max-width: 900px;
+    margin: 8px auto 0;
+    color: #666;
+}
 
-        .user {
-            background: #dbeafe;
-            margin-left: 15%;
-        }
+@media (max-width: 600px) {
 
+    .chat {
+        padding: 12px;
+    }
 
-        .ai {
-            background: white;
-            border: 1px solid #e5e7eb;
-            margin-right: 15%;
-        }
+    .user,
+    .ai {
+        margin-left: 0;
+        margin-right: 0;
+    }
 
+    .input-box {
+        flex-direction: column;
+    }
 
-        .input-area {
-            position: sticky;
-            bottom: 0;
-            background: #f5f7fb;
-            padding: 15px;
-            border-top: 1px solid #ddd;
-        }
+    button {
+        min-height: 48px;
+    }
+}
 
-
-        .input-box {
-            max-width: 900px;
-            margin: auto;
-            display: flex;
-            gap: 10px;
-        }
-
-
-        textarea {
-            flex: 1;
-            min-height: 55px;
-            max-height: 180px;
-            resize: vertical;
-            padding: 14px;
-            border: 1px solid #ccc;
-            border-radius: 12px;
-            font-size: 16px;
-            outline: none;
-            font-family: Arial, sans-serif;
-        }
-
-
-        textarea:focus {
-            border-color: #2563eb;
-        }
-
-
-        button {
-            border: none;
-            border-radius: 12px;
-            padding: 0 22px;
-            background: #2563eb;
-            color: white;
-            font-size: 16px;
-            cursor: pointer;
-        }
-
-
-        button:hover {
-            background: #1d4ed8;
-        }
-
-
-        button:disabled {
-            background: #9ca3af;
-            cursor: not-allowed;
-        }
-
-
-        .status {
-            max-width: 900px;
-            margin: 8px auto 0;
-            color: #666;
-            font-size: 14px;
-        }
-
-
-        .welcome {
-            text-align: center;
-            margin-top: 40px;
-            color: #555;
-        }
-
-
-        @media (max-width: 600px) {
-
-            .chat {
-                padding: 12px;
-            }
-
-
-            .user,
-            .ai {
-                margin-left: 0;
-                margin-right: 0;
-            }
-
-
-            .input-box {
-                flex-direction: column;
-            }
-
-
-            textarea {
-                width: 100%;
-            }
-
-
-            button {
-                min-height: 48px;
-            }
-
-        }
-
-    </style>
+</style>
 
 </head>
 
-
 <body>
 
+<header>
+    🤖 MedAI
+</header>
 
-<div class="app">
+<div class="chat" id="chat">
 
-
-    <header>
-        🤖 MedAI
-    </header>
-
-
-    <main
-        class="chat"
-        id="chat"
-    >
-
-        <div
-            class="welcome"
-            id="welcome"
-        >
-            <h2>Welcome to MedAI</h2>
-
-            <p>
-                Ask me anything in Pashto, Dari, or English.
-            </p>
-        </div>
-
-    </main>
-
-
-    <div class="input-area">
-
-
-        <div class="input-box">
-
-            <textarea
-                id="message"
-                placeholder="Write your question..."
-                onkeydown="handleKey(event)"
-            ></textarea>
-
-
-            <button
-                id="sendButton"
-                onclick="sendMessage()"
-            >
-                Send
-            </button>
-
-        </div>
-
-
-        <div
-            class="status"
-            id="status"
-        ></div>
-
-
+    <div class="message ai">
+        سلام! زه MedAI یم. 👋
+        خپله پوښتنه ولیکئ.
     </div>
-
 
 </div>
 
 
+<div class="input-area">
+
+    <div class="input-box">
+
+        <textarea
+            id="message"
+            placeholder="Write your question..."
+        ></textarea>
+
+        <button
+            id="sendButton"
+            onclick="sendMessage()"
+        >
+            Send
+        </button>
+
+    </div>
+
+    <div
+        class="status"
+        id="status"
+    ></div>
+
+</div>
+
 
 <script>
+
+const input = document.getElementById("message");
+
+input.addEventListener("keydown", function(event) {
+
+    if (event.key === "Enter" && !event.shiftKey) {
+
+        event.preventDefault();
+
+        sendMessage();
+
+    }
+
+});
 
 
 async function sendMessage() {
@@ -341,7 +243,6 @@ async function sendMessage() {
     const button =
         document.getElementById("sendButton");
 
-
     const message =
         input.value.trim();
 
@@ -351,23 +252,9 @@ async function sendMessage() {
     }
 
 
-    const welcome =
-        document.getElementById("welcome");
-
-
-    if (welcome) {
-        welcome.remove();
-    }
-
-
-    addMessage(
-        message,
-        "user"
-    );
-
+    addMessage(message, "user");
 
     input.value = "";
-
 
     button.disabled = true;
 
@@ -377,15 +264,13 @@ async function sendMessage() {
 
     try {
 
-
         const response = await fetch(
             "/api/chat",
             {
                 method: "POST",
 
                 headers: {
-                    "Content-Type":
-                        "application/json"
+                    "Content-Type": "application/json"
                 },
 
                 body: JSON.stringify({
@@ -406,17 +291,16 @@ async function sendMessage() {
                 "ai"
             );
 
-        }
+        } else {
 
-        else if (data.error) {
-
-            let errorText =
-                "Error: " + data.error;
+            let error =
+                data.error ||
+                "Unknown error";
 
 
             if (data.status_code) {
 
-                errorText +=
+                error +=
                     "\\nStatus: " +
                     data.status_code;
 
@@ -425,36 +309,25 @@ async function sendMessage() {
 
             if (data.details) {
 
-                errorText +=
-                    "\\n\\nDetails: " +
+                error +=
+                    "\\n\\nDetails:\\n" +
                     data.details;
 
             }
 
 
             addMessage(
-                errorText,
+                error,
                 "ai"
             );
-
-        }
-
-        else {
-
-            addMessage(
-                "No response received.",
-                "ai"
-            );
-
         }
 
 
-    }
-
-    catch (error) {
+    } catch (error) {
 
         addMessage(
-            "Connection error. Please try again.",
+            "Connection error: " +
+            error.message,
             "ai"
         );
 
@@ -470,82 +343,40 @@ async function sendMessage() {
 }
 
 
-
-function addMessage(
-    text,
-    type
-) {
+function addMessage(text, type) {
 
     const chat =
         document.getElementById("chat");
 
-
     const div =
         document.createElement("div");
-
 
     div.className =
         "message " + type;
 
-
     div.textContent = text;
-
 
     chat.appendChild(div);
 
-
     window.scrollTo({
-        top:
-            document.body.scrollHeight,
-        behavior:
-            "smooth"
+        top: document.body.scrollHeight,
+        behavior: "smooth"
     });
 
 }
 
-
-
-function handleKey(event) {
-
-    if (
-        event.key === "Enter"
-        &&
-        !event.shiftKey
-    ) {
-
-        event.preventDefault();
-
-        sendMessage();
-
-    }
-
-}
-
-
 </script>
 
-
 </body>
-
 </html>
 """
 
 
-# =========================================================
-# Home
-# =========================================================
-
 @app.route("/")
 def home():
 
-    return render_template_string(
-        HTML
-    )
+    return render_template_string(HTML)
 
-
-# =========================================================
-# Health Check
-# =========================================================
 
 @app.route("/health")
 def health():
@@ -556,55 +387,30 @@ def health():
     })
 
 
-# =========================================================
-# Gemini Chat API
-# =========================================================
-
-@app.route(
-    "/api/chat",
-    methods=["POST"]
-)
+@app.route("/api/chat", methods=["POST"])
 def chat():
-
-
-    # Check API key
 
     if not GEMINI_API_KEY:
 
         return jsonify({
-            "error":
-                "GEMINI_API_KEY is not configured."
+            "error": "GEMINI_API_KEY is not configured."
         }), 500
 
 
-    # Read JSON
-
-    data =
-        request.get_json(
-            silent=True
-        ) or {}
+    data = request.get_json(silent=True) or {}
 
 
-    message =
-        str(
-            data.get(
-                "message",
-                ""
-            )
-        ).strip()
+    message = str(
+        data.get("message", "")
+    ).strip()
 
-
-    # Check message
 
     if not message:
 
         return jsonify({
-            "error":
-                "Message is required."
+            "error": "Message is required."
         }), 400
 
-
-    # Gemini URL
 
     url = (
         "https://generativelanguage.googleapis.com/"
@@ -613,35 +419,26 @@ def chat():
     )
 
 
-    # Gemini request
-
     payload = {
 
         "contents": [
 
             {
-
                 "role": "user",
 
                 "parts": [
 
                     {
-
                         "text":
                             SYSTEM_PROMPT
-                            +
-                            "\n\nUser question:\n"
-                            +
-                            message
-
+                            + "\n\nUser question:\n"
+                            + message
                     }
 
                 ]
-
             }
 
         ],
-
 
         "generationConfig": {
 
@@ -655,7 +452,6 @@ def chat():
 
 
     try:
-
 
         response = requests.post(
 
@@ -678,8 +474,6 @@ def chat():
         )
 
 
-        # Gemini returned an error
-
         if response.status_code != 200:
 
             return jsonify({
@@ -696,17 +490,13 @@ def chat():
             }), response.status_code
 
 
-        # Convert response to JSON
-
-        result =
-            response.json()
+        result = response.json()
 
 
-        candidates =
-            result.get(
-                "candidates",
-                []
-            )
+        candidates = result.get(
+            "candidates",
+            []
+        )
 
 
         if not candidates:
@@ -722,18 +512,13 @@ def chat():
             }), 500
 
 
-        content =
-            candidates[0].get(
-                "content",
-                {}
-            )
-
-
-        parts =
-            content.get(
-                "parts",
-                []
-            )
+        parts = candidates[0].get(
+            "content",
+            {}
+        ).get(
+            "parts",
+            []
+        )
 
 
         reply = ""
@@ -760,10 +545,7 @@ def chat():
 
 
         return jsonify({
-
-            "reply":
-                reply
-
+            "reply": reply
         })
 
 
@@ -802,10 +584,6 @@ def chat():
 
         }), 500
 
-
-# =========================================================
-# Local Development
-# =========================================================
 
 if __name__ == "__main__":
 
