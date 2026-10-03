@@ -6,17 +6,17 @@ from flask import Flask, request, jsonify, render_template_string
 
 
 # =========================================================
-# MEDAI - FLASK APP
+# APP
 # =========================================================
 
 app = Flask(__name__)
 
-# -------------------------
-# Configuration
-# -------------------------
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.getenv(
+    "GEMINI_MODEL",
+    "gemini-2.5-flash"
+).strip()
 
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -42,229 +42,40 @@ You can answer questions about:
 - Science
 - Mathematics
 - Programming
+- Coding
 - Technology
 - Writing
 - Translation
 - History
 - Business
-- Everyday questions
 - Medicine and health
+- Image understanding
 
-LANGUAGE RULE:
-Answer in the same language the user uses.
-If the user writes Pashto, answer in Pashto.
-If the user writes Dari, answer in Dari.
-If the user writes English, answer in English.
-If the user mixes languages, naturally match the user's language.
+Language rules:
+- Reply in the same language as the user.
+- If the user writes Pashto, answer in Pashto.
+- If the user writes Dari/Persian, answer in Dari/Persian.
+- If the user writes English, answer in English.
+- You can understand mixed languages.
 
-STYLE:
-- Be clear and useful.
-- Be friendly.
-- Give direct answers.
-- Use headings and bullet points when helpful.
-- For coding questions, provide practical code.
-- Do not unnecessarily repeat the question.
-- If the question is unclear, ask a short clarification.
+Answer clearly and naturally.
+Do not unnecessarily repeat the user's question.
 
-MEDICAL SAFETY:
-For medical questions, provide general educational information.
-Do not pretend to be a doctor.
-Do not make a certain diagnosis from limited information.
-For emergencies, tell the user to contact local emergency medical services or seek urgent medical care.
-Mention important warning signs when appropriate.
-Do not recommend dangerous medication use.
-For medication dosage, consider age, weight, medical conditions, allergies,
-other medicines, and local medical guidance.
+For medical questions:
+- Give general educational information.
+- Do not pretend to be a doctor.
+- Do not provide dangerous or unnecessarily specific instructions.
+- For emergencies, advise the user to contact local emergency medical services or a qualified healthcare professional.
 
-IMAGE:
-If an image is provided, analyze what can reasonably be observed.
-For medical images, do not claim certainty or provide a definitive diagnosis.
-Explain limitations and recommend professional medical evaluation when appropriate.
-
-PRIVACY:
-Do not ask for unnecessary personal information.
+For images:
+- Analyze the image when an image is provided.
+- Describe visible information carefully.
+- If something cannot be determined from the image, say so.
 """
 
 
 # =========================================================
-# HELPERS
-# =========================================================
-
-def clean_history(history):
-    """Keep only safe, useful conversation history."""
-    if not isinstance(history, list):
-        return []
-
-    cleaned = []
-
-    for item in history[-MAX_HISTORY:]:
-        if not isinstance(item, dict):
-            continue
-
-        role = item.get("role", "user")
-        text = item.get("text", "")
-
-        if not isinstance(text, str):
-            continue
-
-        text = text.strip()
-
-        if not text:
-            continue
-
-        if len(text) > MAX_MESSAGE_LENGTH:
-            text = text[:MAX_MESSAGE_LENGTH]
-
-        if role not in ("user", "assistant"):
-            role = "user"
-
-        cleaned.append({
-            "role": role,
-            "text": text
-        })
-
-    return cleaned
-
-
-def build_prompt(message, history):
-    parts = [SYSTEM_PROMPT]
-
-    if history:
-        parts.append("\nCONVERSATION HISTORY:")
-
-        for item in history:
-            role_name = "User" if item["role"] == "user" else "Assistant"
-            parts.append(
-                f"{role_name}: {item['text']}"
-            )
-
-    parts.append("\nCURRENT USER MESSAGE:")
-    parts.append(message)
-
-    return "\n\n".join(parts)
-
-
-def call_gemini(message, history, image_data=None, mime_type=None):
-    if not GEMINI_API_KEY:
-        raise RuntimeError(
-            "GEMINI_API_KEY is missing. Add it in Vercel Environment Variables."
-        )
-
-    prompt = build_prompt(message, history)
-
-    parts = [
-        {
-            "text": prompt
-        }
-    ]
-
-    # Optional image
-    if image_data:
-        if not isinstance(image_data, str):
-            raise ValueError("Invalid image data.")
-
-        if len(image_data) > MAX_IMAGE_SIZE * 2:
-            raise ValueError("Image is too large.")
-
-        try:
-            # Accept either raw base64 or data:image/...;base64,...
-            if "," in image_data and image_data.startswith("data:"):
-                image_data = image_data.split(",", 1)[1]
-
-            # Validate base64
-            base64.b64decode(image_data, validate=True)
-
-        except Exception:
-            raise ValueError("Invalid image format.")
-
-        parts.append(
-            {
-                "inline_data": {
-                    "mime_type": mime_type or "image/jpeg",
-                    "data": image_data
-                }
-            }
-        )
-
-    payload = {
-        "contents": [
-            {
-                "role": "user",
-                "parts": parts
-            }
-        ],
-        "generationConfig": {
-            "temperature": 0.7,
-            "maxOutputTokens": 4096
-        }
-    }
-
-    headers = {
-        "Content-Type": "application/json"
-    }
-
-    response = requests.post(
-        GEMINI_URL,
-        headers=headers,
-        params={
-            "key": GEMINI_API_KEY
-        },
-        json=payload,
-        timeout=55
-    )
-
-    if response.status_code != 200:
-        try:
-            error_data = response.json()
-        except Exception:
-            error_data = response.text
-
-        raise RuntimeError(
-            f"Gemini API error. HTTP {response.status_code}: {error_data}"
-        )
-
-    data = response.json()
-
-    candidates = data.get("candidates", [])
-
-    if not candidates:
-        raise RuntimeError("Gemini returned no response.")
-
-    candidate = candidates[0]
-
-    content = candidate.get("content", {})
-    response_parts = content.get("parts", [])
-
-    texts = []
-
-    for part in response_parts:
-        text = part.get("text")
-
-        if isinstance(text, str):
-            texts.append(text)
-
-    answer = "\n".join(texts).strip()
-
-    if not answer:
-        raise RuntimeError("Gemini returned an empty answer.")
-
-    return answer
-
-
-# =========================================================
-# SECURITY HEADERS
-# =========================================================
-
-@app.after_request
-def add_security_headers(response):
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "SAMEORIGIN"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    return response
-
-
-# =========================================================
-# HOME PAGE
+# HTML / FRONTEND
 # =========================================================
 
 HTML = r"""
@@ -286,6 +97,7 @@ html,
 body {
     margin: 0;
     padding: 0;
+    width: 100%;
     height: 100%;
     font-family:
         Inter,
@@ -293,106 +105,97 @@ body {
         -apple-system,
         BlinkMacSystemFont,
         "Segoe UI",
-        Arial,
         sans-serif;
 }
 
 body {
     background: #ffffff;
-    color: #171717;
+    color: #111827;
     overflow: hidden;
 }
 
-button,
-textarea,
-input {
-    font: inherit;
-}
-
-button {
-    cursor: pointer;
+body.dark {
+    background: #212121;
+    color: #f5f5f5;
 }
 
 
-/* =====================================================
+/* =========================================================
    APP
-   ===================================================== */
+   ========================================================= */
 
 .app {
     display: flex;
-    height: 100vh;
     width: 100%;
+    height: 100vh;
 }
 
 
-/* =====================================================
+/* =========================================================
    SIDEBAR
-   ===================================================== */
+   ========================================================= */
 
 .sidebar {
     width: 270px;
+    height: 100vh;
     background: #f7f7f8;
-    border-right: 1px solid #e5e5e5;
+    border-right: 1px solid #e5e7eb;
     display: flex;
     flex-direction: column;
     padding: 14px;
-    transition: transform 0.25s ease;
 }
 
-.brand {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 7px 18px;
+.dark .sidebar {
+    background: #171717;
+    border-color: #303030;
 }
 
-.brand-icon {
-    width: 36px;
-    height: 36px;
-    border-radius: 12px;
-    background: #111827;
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 800;
-}
-
-.brand-name {
-    font-size: 18px;
+.logo {
+    font-size: 21px;
     font-weight: 700;
+    padding: 12px 10px 18px;
 }
 
 .new-chat {
-    border: 1px solid #dedede;
+    width: 100%;
+    border: 1px solid #d1d5db;
     background: white;
-    border-radius: 12px;
-    padding: 11px 13px;
+    border-radius: 10px;
+    padding: 12px;
+    cursor: pointer;
+    font-size: 15px;
     text-align: left;
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    margin-bottom: 15px;
+}
+
+.dark .new-chat {
+    background: #212121;
+    color: white;
+    border-color: #444;
 }
 
 .new-chat:hover {
     background: #eeeeee;
 }
 
-.sidebar-title {
-    font-size: 12px;
-    color: #777;
-    padding: 8px;
+.dark .new-chat:hover {
+    background: #2b2b2b;
 }
 
-.history {
+.sidebar-title {
+    margin: 24px 10px 8px;
+    font-size: 12px;
+    color: #777;
+    text-transform: uppercase;
+}
+
+.chat-history {
     flex: 1;
     overflow-y: auto;
 }
 
 .history-item {
     padding: 10px;
-    border-radius: 9px;
+    border-radius: 8px;
     cursor: pointer;
     font-size: 14px;
     white-space: nowrap;
@@ -404,31 +207,38 @@ button {
     background: #e9e9e9;
 }
 
+.dark .history-item:hover {
+    background: #292929;
+}
+
 .sidebar-bottom {
-    border-top: 1px solid #ddd;
-    padding-top: 10px;
+    display: flex;
+    gap: 8px;
 }
 
-.theme-btn {
-    width: 100%;
-    border: 0;
-    background: transparent;
-    padding: 10px;
-    text-align: left;
-    border-radius: 9px;
+.sidebar-button {
+    flex: 1;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 8px;
+    padding: 9px;
+    cursor: pointer;
 }
 
-.theme-btn:hover {
-    background: #e9e9e9;
+.dark .sidebar-button {
+    background: #222;
+    color: white;
+    border-color: #444;
 }
 
 
-/* =====================================================
+/* =========================================================
    MAIN
-   ===================================================== */
+   ========================================================= */
 
 .main {
     flex: 1;
+    height: 100vh;
     display: flex;
     flex-direction: column;
     min-width: 0;
@@ -436,225 +246,169 @@ button {
 
 .topbar {
     height: 58px;
+    border-bottom: 1px solid #e5e7eb;
     display: flex;
     align-items: center;
     padding: 0 18px;
-    border-bottom: 1px solid #eeeeee;
     gap: 12px;
 }
 
-.menu-btn {
+.dark .topbar {
+    border-color: #333;
+}
+
+.mobile-menu {
     display: none;
-    border: 0;
+    border: none;
     background: transparent;
-    font-size: 23px;
+    font-size: 22px;
+    cursor: pointer;
+    color: inherit;
 }
 
 .model-name {
     font-weight: 600;
 }
 
-.status {
-    margin-left: auto;
-    color: #666;
-    font-size: 13px;
-}
 
-
-/* =====================================================
+/* =========================================================
    CHAT
-   ===================================================== */
+   ========================================================= */
 
 .chat {
     flex: 1;
     overflow-y: auto;
-    padding: 28px 20px 170px;
+    padding: 28px 20px 160px;
 }
 
-.chat-inner {
-    width: min(900px, 100%);
+.messages {
+    max-width: 850px;
     margin: auto;
 }
-
-.welcome {
-    min-height: 65vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-}
-
-.welcome-icon {
-    width: 62px;
-    height: 62px;
-    background: #111827;
-    color: white;
-    border-radius: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 27px;
-    margin-bottom: 18px;
-}
-
-.welcome h1 {
-    font-size: 30px;
-    margin: 0 0 10px;
-}
-
-.welcome p {
-    color: #707070;
-    margin: 0;
-}
-
-
-/* =====================================================
-   MESSAGES
-   ===================================================== */
 
 .message {
     display: flex;
     gap: 12px;
-    margin: 0 auto 25px;
-    line-height: 1.65;
+    margin: 22px 0;
 }
 
 .avatar {
     width: 34px;
     height: 34px;
-    flex: 0 0 34px;
-    border-radius: 10px;
+    min-width: 34px;
+    border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 700;
 }
 
-.user .avatar {
-    background: #e8e8e8;
-    color: #333;
-}
-
-.assistant .avatar {
+.user-avatar {
     background: #111827;
     color: white;
 }
 
-.message-body {
+.ai-avatar {
+    background: #10a37f;
+    color: white;
+}
+
+.message-content {
     flex: 1;
-    min-width: 0;
-}
-
-.message-role {
-    font-size: 13px;
-    font-weight: 700;
-    margin-bottom: 3px;
-}
-
-.message-text {
+    line-height: 1.7;
     white-space: pre-wrap;
-    word-break: break-word;
+    overflow-wrap: anywhere;
 }
 
-.message-image {
-    max-width: min(500px, 100%);
-    border-radius: 12px;
-    margin-top: 8px;
-    border: 1px solid #ddd;
+.welcome {
+    text-align: center;
+    margin-top: 16vh;
+}
+
+.welcome h1 {
+    font-size: 34px;
+    margin-bottom: 8px;
+}
+
+.welcome p {
+    color: #777;
 }
 
 
-/* =====================================================
+/* =========================================================
    THINKING
-   ===================================================== */
+   ========================================================= */
 
 .thinking {
-    display: flex;
+    display: inline-flex;
     gap: 5px;
-    align-items: center;
-    height: 25px;
+    padding: 8px 0;
 }
 
-.dot {
+.thinking span {
     width: 7px;
     height: 7px;
     background: #888;
     border-radius: 50%;
-    animation: bounce 1.1s infinite;
+    animation: blink 1.3s infinite;
 }
 
-.dot:nth-child(2) {
-    animation-delay: 0.15s;
+.thinking span:nth-child(2) {
+    animation-delay: .2s;
 }
 
-.dot:nth-child(3) {
-    animation-delay: 0.3s;
+.thinking span:nth-child(3) {
+    animation-delay: .4s;
 }
 
-@keyframes bounce {
-    0%, 60%, 100% {
-        transform: translateY(0);
+@keyframes blink {
+    0%, 80%, 100% {
+        opacity: .25;
     }
 
-    30% {
-        transform: translateY(-5px);
+    40% {
+        opacity: 1;
     }
 }
 
 
-/* =====================================================
+/* =========================================================
    COMPOSER
-   ===================================================== */
+   ========================================================= */
 
 .composer-area {
     position: fixed;
-    bottom: 0;
     left: 270px;
     right: 0;
-    padding: 18px 20px 22px;
-    background:
-        linear-gradient(
-            to top,
-            rgba(255,255,255,1) 65%,
-            rgba(255,255,255,0)
-        );
+    bottom: 0;
+    padding: 18px 20px 20px;
+    background: linear-gradient(
+        transparent,
+        rgba(255,255,255,.96) 25%
+    );
+}
+
+.dark .composer-area {
+    background: linear-gradient(
+        transparent,
+        rgba(33,33,33,.96) 25%
+    );
 }
 
 .composer {
-    width: min(900px, 100%);
+    max-width: 850px;
     margin: auto;
-    border: 1px solid #d8d8d8;
     background: white;
-    border-radius: 18px;
-    box-shadow: 0 5px 25px rgba(0,0,0,0.08);
+    border: 1px solid #d1d5db;
+    border-radius: 16px;
     padding: 10px;
+    box-shadow: 0 4px 20px rgba(0,0,0,.08);
 }
 
-.preview {
-    display: none;
-    position: relative;
-    padding: 6px;
-}
-
-.preview img {
-    width: 90px;
-    height: 90px;
-    object-fit: cover;
-    border-radius: 12px;
-}
-
-.remove-image {
-    position: absolute;
-    top: 0;
-    left: 85px;
-    width: 25px;
-    height: 25px;
-    border-radius: 50%;
-    border: 0;
-    background: #111;
-    color: white;
+.dark .composer {
+    background: #2b2b2b;
+    border-color: #444;
 }
 
 .input-row {
@@ -666,132 +420,110 @@ button {
 textarea {
     flex: 1;
     resize: none;
-    min-height: 45px;
-    max-height: 180px;
-    border: 0;
-    outline: 0;
-    padding: 12px;
+    border: none;
+    outline: none;
     background: transparent;
+    color: inherit;
+    font-size: 16px;
+    line-height: 1.5;
+    min-height: 42px;
+    max-height: 180px;
+    padding: 8px;
 }
 
-.icon-btn,
-.send-btn {
+.icon-button {
     width: 42px;
     height: 42px;
-    border-radius: 12px;
-    border: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.icon-btn {
+    border: none;
     background: transparent;
+    border-radius: 9px;
+    cursor: pointer;
+    font-size: 20px;
+    color: inherit;
 }
 
-.icon-btn:hover {
-    background: #eeeeee;
+.icon-button:hover {
+    background: #eee;
 }
 
-.send-btn {
+.dark .icon-button:hover {
+    background: #444;
+}
+
+.send-button {
+    width: 42px;
+    height: 42px;
+    border: none;
     background: #111827;
     color: white;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 18px;
 }
 
-.send-btn:disabled {
-    opacity: 0.4;
-}
-
-.hint {
-    text-align: center;
-    color: #888;
-    font-size: 11px;
-    margin-top: 8px;
+.send-button:disabled {
+    opacity: .4;
+    cursor: not-allowed;
 }
 
 
-/* =====================================================
-   DARK MODE
-   ===================================================== */
+/* =========================================================
+   IMAGE PREVIEW
+   ========================================================= */
 
-body.dark {
-    background: #212121;
-    color: #f3f3f3;
+.preview {
+    display: none;
+    position: relative;
+    margin: 5px 8px 10px;
 }
 
-body.dark .sidebar {
-    background: #171717;
-    border-color: #333;
+.preview img {
+    width: 100px;
+    height: 100px;
+    object-fit: cover;
+    border-radius: 10px;
+    border: 1px solid #ddd;
 }
 
-body.dark .topbar {
-    border-color: #333;
-}
-
-body.dark .new-chat,
-body.dark .composer {
-    background: #2b2b2b;
-    border-color: #444;
-    color: #fff;
-}
-
-body.dark textarea {
+.remove-image {
+    position: absolute;
+    left: 88px;
+    top: -7px;
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 50%;
+    background: #111;
     color: white;
-}
-
-body.dark .composer-area {
-    background:
-        linear-gradient(
-            to top,
-            rgba(33,33,33,1) 65%,
-            rgba(33,33,33,0)
-        );
-}
-
-body.dark .user .avatar {
-    background: #444;
-    color: white;
-}
-
-body.dark .history-item:hover,
-body.dark .theme-btn:hover,
-body.dark .icon-btn:hover {
-    background: #303030;
-}
-
-body.dark .welcome p,
-body.dark .status {
-    color: #aaa;
+    cursor: pointer;
 }
 
 
-/* =====================================================
+/* =========================================================
    MOBILE
-   ===================================================== */
+   ========================================================= */
 
-@media (max-width: 750px) {
+@media (max-width: 760px) {
 
     .sidebar {
         position: fixed;
-        z-index: 50;
+        z-index: 100;
+        left: -280px;
         top: 0;
-        bottom: 0;
-        left: 0;
-        transform: translateX(-100%);
-        box-shadow: 5px 0 25px rgba(0,0,0,.15);
+        transition: left .2s;
     }
 
     .sidebar.open {
-        transform: translateX(0);
+        left: 0;
     }
 
-    .menu-btn {
+    .mobile-menu {
         display: block;
     }
 
     .composer-area {
         left: 0;
-        padding: 10px 10px 14px;
+        padding: 10px;
     }
 
     .chat {
@@ -800,7 +532,7 @@ body.dark .status {
     }
 
     .welcome h1 {
-        font-size: 25px;
+        font-size: 28px;
     }
 
 }
@@ -815,26 +547,42 @@ body.dark .status {
 
     <aside class="sidebar" id="sidebar">
 
-        <div class="brand">
-            <div class="brand-icon">M</div>
-            <div class="brand-name">MedAI</div>
+        <div class="logo">
+            🩺 MedAI
         </div>
 
-        <button class="new-chat" onclick="newChat()">
-            <span>＋</span>
-            <span>New chat</span>
+        <button
+            class="new-chat"
+            onclick="newChat()"
+        >
+            ＋ New chat
         </button>
 
         <div class="sidebar-title">
             Recent chats
         </div>
 
-        <div class="history" id="historyList"></div>
+        <div
+            class="chat-history"
+            id="chatHistory"
+        ></div>
 
         <div class="sidebar-bottom">
-            <button class="theme-btn" onclick="toggleTheme()">
-                🌓 Theme
+
+            <button
+                class="sidebar-button"
+                onclick="toggleTheme()"
+            >
+                🌙 Theme
             </button>
+
+            <button
+                class="sidebar-button"
+                onclick="clearHistory()"
+            >
+                🗑 Clear
+            </button>
+
         </div>
 
     </aside>
@@ -844,7 +592,10 @@ body.dark .status {
 
         <header class="topbar">
 
-            <button class="menu-btn" onclick="toggleSidebar()">
+            <button
+                class="mobile-menu"
+                onclick="toggleSidebar()"
+            >
                 ☰
             </button>
 
@@ -852,27 +603,30 @@ body.dark .status {
                 MedAI
             </div>
 
-            <div class="status" id="status">
-                Online
-            </div>
-
         </header>
 
 
-        <section class="chat" id="chat">
+        <section
+            class="chat"
+            id="chat"
+        >
 
-            <div class="chat-inner" id="chatInner">
+            <div
+                class="messages"
+                id="messages"
+            >
 
-                <div class="welcome" id="welcome">
+                <div
+                    class="welcome"
+                    id="welcome"
+                >
 
-                    <div class="welcome-icon">
-                        ✦
-                    </div>
-
-                    <h1>How can I help you?</h1>
+                    <h1>
+                        How can I help you?
+                    </h1>
 
                     <p>
-                        Ask anything — education, coding, science, health, writing and more.
+                        Ask anything — in Pashto, Dari, or English.
                     </p>
 
                 </div>
@@ -881,411 +635,509 @@ body.dark .status {
 
         </section>
 
-    </main>
 
+        <div class="composer-area">
 
-    <div class="composer-area">
+            <div class="composer">
 
-        <div class="composer">
-
-            <div class="preview" id="preview">
-
-                <img id="previewImage" alt="Selected image">
-
-                <button
-                    class="remove-image"
-                    onclick="removeImage()">
-                    ×
-                </button>
-
-            </div>
-
-
-            <div class="input-row">
-
-                <input
-                    type="file"
-                    id="imageInput"
-                    accept="image/*"
-                    hidden
+                <div
+                    class="preview"
+                    id="preview"
                 >
 
-                <button
-                    class="icon-btn"
-                    onclick="document.getElementById('imageInput').click()"
-                    title="Upload image">
-                    📎
-                </button>
+                    <img
+                        id="previewImage"
+                        alt="Preview"
+                    >
 
-                <textarea
-                    id="messageInput"
-                    rows="1"
-                    placeholder="Message MedAI..."
-                    oninput="autoResize(this)"
-                    onkeydown="handleKey(event)"
-                ></textarea>
+                    <button
+                        class="remove-image"
+                        onclick="removeImage()"
+                    >
+                        ×
+                    </button>
 
-                <button
-                    class="icon-btn"
-                    onclick="startVoice()"
-                    title="Voice input">
-                    🎤
-                </button>
+                </div>
 
-                <button
-                    class="send-btn"
-                    id="sendBtn"
-                    onclick="sendMessage()">
-                    ↑
-                </button>
 
-            </div>
+                <div class="input-row">
 
-            <div class="hint">
-                MedAI can make mistakes. Check important information.
+                    <button
+                        class="icon-button"
+                        onclick="document.getElementById('imageInput').click()"
+                        title="Upload image"
+                    >
+                        📎
+                    </button>
+
+                    <input
+                        id="imageInput"
+                        type="file"
+                        accept="image/*"
+                        hidden
+                        onchange="handleImage(event)"
+                    >
+
+
+                    <textarea
+                        id="messageInput"
+                        placeholder="Message MedAI..."
+                        rows="1"
+                        onkeydown="handleKey(event)"
+                    ></textarea>
+
+
+                    <button
+                        class="icon-button"
+                        onclick="startVoice()"
+                        title="Voice input"
+                    >
+                        🎤
+                    </button>
+
+
+                    <button
+                        class="send-button"
+                        id="sendButton"
+                        onclick="sendMessage()"
+                    >
+                        ↑
+                    </button>
+
+                </div>
+
             </div>
 
         </div>
 
-    </div>
+    </main>
 
 </div>
 
 
 <script>
 
-let messages = [];
+const messageInput =
+    document.getElementById("messageInput");
+
+const messages =
+    document.getElementById("messages");
+
+const chatBox =
+    document.getElementById("chat");
+
+const sendButton =
+    document.getElementById("sendButton");
+
+const imageInput =
+    document.getElementById("imageInput");
+
+const preview =
+    document.getElementById("preview");
+
+const previewImage =
+    document.getElementById("previewImage");
+
+const sidebar =
+    document.getElementById("sidebar");
+
+let history = [];
+
 let selectedImage = null;
 
+let selectedMimeType = null;
 
-/* =====================================================
-   LOCAL STORAGE
-   ===================================================== */
 
-function saveCurrentChat() {
-    localStorage.setItem(
-        "medai_current_chat",
-        JSON.stringify(messages)
-    );
+/* =========================================================
+   LOAD THEME
+   ========================================================= */
 
-    updateHistory();
+if (localStorage.getItem("medai-theme") === "dark") {
+    document.body.classList.add("dark");
 }
 
 
-function loadCurrentChat() {
+/* =========================================================
+   LOAD HISTORY
+   ========================================================= */
+
+function loadHistory() {
 
     try {
 
-        const saved = localStorage.getItem(
-            "medai_current_chat"
-        );
+        const saved =
+            localStorage.getItem("medai-history");
 
-        if (!saved) {
-            return;
-        }
-
-        const data = JSON.parse(saved);
-
-        if (!Array.isArray(data)) {
-            return;
-        }
-
-        messages = data;
-
-        if (messages.length > 0) {
-            document.getElementById("welcome").style.display = "none";
-        }
-
-        for (const message of messages) {
-            renderMessage(
-                message.role,
-                message.text,
-                message.image
-            );
+        if (saved) {
+            history = JSON.parse(saved);
         }
 
     } catch (error) {
-        console.error(error);
+
+        history = [];
+
     }
+
+    renderHistory();
 }
 
 
-function updateHistory() {
+function saveHistory() {
 
-    const historyList =
-        document.getElementById("historyList");
+    localStorage.setItem(
+        "medai-history",
+        JSON.stringify(history)
+    );
 
-    historyList.innerHTML = "";
-
-    if (!messages.length) {
-        return;
-    }
-
-    const title =
-        messages.find(x => x.role === "user");
-
-    const item =
-        document.createElement("div");
-
-    item.className = "history-item";
-
-    item.textContent =
-        title
-        ? title.text.slice(0, 45)
-        : "New chat";
-
-    item.onclick = () => {
-        document.getElementById("chat").scrollTop = 0;
-    };
-
-    historyList.appendChild(item);
+    renderHistory();
 }
 
 
-/* =====================================================
+function renderHistory() {
+
+    const box =
+        document.getElementById("chatHistory");
+
+    box.innerHTML = "";
+
+    history.slice(-20).reverse().forEach(
+        function(item) {
+
+            const div =
+                document.createElement("div");
+
+            div.className = "history-item";
+
+            div.textContent =
+                item.substring(0, 60);
+
+            box.appendChild(div);
+
+        }
+    );
+}
+
+
+/* =========================================================
    NEW CHAT
-   ===================================================== */
+   ========================================================= */
 
 function newChat() {
 
-    messages = [];
+    messages.innerHTML = "";
 
-    localStorage.removeItem(
-        "medai_current_chat"
-    );
+    const welcome =
+        document.createElement("div");
 
-    const inner =
-        document.getElementById("chatInner");
+    welcome.className = "welcome";
 
-    inner.innerHTML = `
-        <div class="welcome" id="welcome">
-
-            <div class="welcome-icon">
-                ✦
-            </div>
-
-            <h1>How can I help you?</h1>
-
-            <p>
-                Ask anything — education, coding, science, health, writing and more.
-            </p>
-
-        </div>
+    welcome.innerHTML = `
+        <h1>How can I help you?</h1>
+        <p>Ask anything — in Pashto, Dari, or English.</p>
     `;
 
+    messages.appendChild(welcome);
+
     removeImage();
+
+    messageInput.value = "";
+
+    sidebar.classList.remove("open");
 }
 
 
-/* =====================================================
-   MESSAGE RENDER
-   ===================================================== */
+/* =========================================================
+   CLEAR HISTORY
+   ========================================================= */
 
-function renderMessage(role, text, image) {
+function clearHistory() {
+
+    history = [];
+
+    localStorage.removeItem(
+        "medai-history"
+    );
+
+    renderHistory();
+}
+
+
+/* =========================================================
+   THEME
+   ========================================================= */
+
+function toggleTheme() {
+
+    document.body.classList.toggle("dark");
+
+    localStorage.setItem(
+        "medai-theme",
+        document.body.classList.contains("dark")
+            ? "dark"
+            : "light"
+    );
+}
+
+
+/* =========================================================
+   SIDEBAR
+   ========================================================= */
+
+function toggleSidebar() {
+
+    sidebar.classList.toggle("open");
+}
+
+
+/* =========================================================
+   IMAGE
+   ========================================================= */
+
+function handleImage(event) {
+
+    const file =
+        event.target.files[0];
+
+    if (!file) {
+        return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+
+        alert("Please select an image.");
+
+        return;
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+
+        alert("Image must be smaller than 8 MB.");
+
+        imageInput.value = "";
+
+        return;
+    }
+
+    selectedMimeType = file.type;
+
+    const reader =
+        new FileReader();
+
+    reader.onload = function(e) {
+
+        selectedImage =
+            e.target.result.split(",")[1];
+
+        previewImage.src =
+            e.target.result;
+
+        preview.style.display =
+            "block";
+    };
+
+    reader.readAsDataURL(file);
+}
+
+
+function removeImage() {
+
+    selectedImage = null;
+
+    selectedMimeType = null;
+
+    imageInput.value = "";
+
+    preview.style.display =
+        "none";
+
+    previewImage.src = "";
+}
+
+
+/* =========================================================
+   MESSAGE UI
+   ========================================================= */
+
+function addMessage(
+    role,
+    text
+) {
 
     const welcome =
         document.getElementById("welcome");
 
     if (welcome) {
-        welcome.style.display = "none";
+        welcome.remove();
     }
 
-    const container =
-        document.getElementById("chatInner");
-
-    const message =
+    const wrapper =
         document.createElement("div");
 
-    message.className =
-        "message " + role;
+    wrapper.className =
+        "message";
 
     const avatar =
         document.createElement("div");
 
-    avatar.className = "avatar";
+    avatar.className =
+        "avatar " +
+        (role === "user"
+            ? "user-avatar"
+            : "ai-avatar");
 
     avatar.textContent =
-        role === "user" ? "You" : "M";
+        role === "user"
+            ? "U"
+            : "AI";
 
-    const body =
+    const content =
         document.createElement("div");
 
-    body.className = "message-body";
+    content.className =
+        "message-content";
 
-    const roleName =
-        document.createElement("div");
+    content.textContent =
+        text;
 
-    roleName.className = "message-role";
+    wrapper.appendChild(avatar);
 
-    roleName.textContent =
-        role === "user" ? "You" : "MedAI";
+    wrapper.appendChild(content);
 
-    const textElement =
-        document.createElement("div");
+    messages.appendChild(wrapper);
 
-    textElement.className = "message-text";
+    chatBox.scrollTop =
+        chatBox.scrollHeight;
 
-    textElement.textContent = text || "";
-
-    body.appendChild(roleName);
-
-    if (image) {
-
-        const imageElement =
-            document.createElement("img");
-
-        imageElement.className =
-            "message-image";
-
-        imageElement.src = image;
-
-        imageElement.alt =
-            "Uploaded image";
-
-        body.appendChild(imageElement);
-    }
-
-    body.appendChild(textElement);
-
-    message.appendChild(avatar);
-    message.appendChild(body);
-
-    container.appendChild(message);
-
-    scrollToBottom();
+    return content;
 }
 
 
-function addThinking() {
+function showThinking() {
 
-    const container =
-        document.getElementById("chatInner");
-
-    const message =
+    const wrapper =
         document.createElement("div");
 
-    message.className =
-        "message assistant";
+    wrapper.className =
+        "message";
 
-    message.id = "thinkingMessage";
+    wrapper.id =
+        "thinkingMessage";
 
-    message.innerHTML = `
-        <div class="avatar">M</div>
+    const avatar =
+        document.createElement("div");
 
-        <div class="message-body">
+    avatar.className =
+        "avatar ai-avatar";
 
-            <div class="message-role">
-                MedAI
-            </div>
+    avatar.textContent =
+        "AI";
 
-            <div class="thinking">
+    const content =
+        document.createElement("div");
 
-                <span class="dot"></span>
-                <span class="dot"></span>
-                <span class="dot"></span>
+    content.className =
+        "message-content";
 
-            </div>
-
+    content.innerHTML = `
+        <div class="thinking">
+            <span></span>
+            <span></span>
+            <span></span>
         </div>
     `;
 
-    container.appendChild(message);
+    wrapper.appendChild(avatar);
 
-    scrollToBottom();
+    wrapper.appendChild(content);
+
+    messages.appendChild(wrapper);
+
+    chatBox.scrollTop =
+        chatBox.scrollHeight;
 }
 
 
 function removeThinking() {
 
-    const thinking =
-        document.getElementById("thinkingMessage");
+    const element =
+        document.getElementById(
+            "thinkingMessage"
+        );
 
-    if (thinking) {
-        thinking.remove();
+    if (element) {
+        element.remove();
     }
 }
 
 
-/* =====================================================
-   SEND MESSAGE
-   ===================================================== */
+/* =========================================================
+   SEND
+   ========================================================= */
 
 async function sendMessage() {
 
-    const input =
-        document.getElementById("messageInput");
-
-    const sendBtn =
-        document.getElementById("sendBtn");
-
     const text =
-        input.value.trim();
+        messageInput.value.trim();
 
     if (!text && !selectedImage) {
         return;
     }
 
-    const imageForUI =
-        selectedImage
-        ? selectedImage.dataUrl
-        : null;
+    sendButton.disabled = true;
 
-    messages.push({
-        role: "user",
-        text: text || "Please analyze this image.",
-        image: imageForUI
-    });
-
-    renderMessage(
+    addMessage(
         "user",
-        text || "Please analyze this image.",
-        imageForUI
+        text || "Image"
     );
 
-    saveCurrentChat();
+    if (text) {
+        history.push(text);
+        saveHistory();
+    }
 
-    input.value = "";
+    const oldHistory =
+        history.slice(-20).map(
+            function(item) {
+                return {
+                    role: "user",
+                    text: item
+                };
+            }
+        );
 
-    autoResize(input);
+    messageInput.value = "";
 
-    sendBtn.disabled = true;
+    showThinking();
 
-    addThinking();
+    const imageToSend =
+        selectedImage;
 
-    document.getElementById("status").textContent =
-        "Thinking...";
+    const mimeToSend =
+        selectedMimeType;
+
+    removeImage();
 
     try {
 
-        const history =
-            messages.slice(0, -1).map(item => ({
-                role: item.role,
-                text: item.text
-            }));
-
-        const payload = {
-            message:
-                text || "Please analyze this image.",
-            history: history
-        };
-
-        if (selectedImage) {
-
-            payload.image =
-                selectedImage.base64;
-
-            payload.mime_type =
-                selectedImage.mimeType;
-        }
-
         const response =
-            await fetch("/api/chat", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(payload)
-            });
+            await fetch(
+                "/api/chat",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        message: text,
+                        history: oldHistory,
+                        image: imageToSend,
+                        mime_type: mimeToSend
+                    })
+                }
+            );
 
         const data =
             await response.json();
@@ -1296,223 +1148,40 @@ async function sendMessage() {
 
             throw new Error(
                 data.error ||
-                "Server error"
+                "Request failed."
             );
         }
 
-        messages.push({
-            role: "assistant",
-            text: data.answer
-        });
+        const answer =
+            data.answer ||
+            "No answer received.";
 
-        renderMessage(
+        addMessage(
             "assistant",
-            data.answer,
-            null
+            answer
         );
-
-        saveCurrentChat();
-
-        document.getElementById("status").textContent =
-            "Online";
 
     } catch (error) {
 
         removeThinking();
 
-        const errorText =
-            "Sorry, something went wrong.\n\n" +
-            error.message;
-
-        messages.push({
-            role: "assistant",
-            text: errorText
-        });
-
-        renderMessage(
+        addMessage(
             "assistant",
-            errorText,
-            null
+            "Error: " + error.message
         );
-
-        saveCurrentChat();
-
-        document.getElementById("status").textContent =
-            "Error";
 
     } finally {
 
-        sendBtn.disabled = false;
+        sendButton.disabled = false;
 
-        input.focus();
+        messageInput.focus();
     }
 }
 
 
-/* =====================================================
-   IMAGE PICKER
-   ===================================================== */
-
-document
-    .getElementById("imageInput")
-    .addEventListener("change", function(event) {
-
-        const file =
-            event.target.files[0];
-
-        if (!file) {
-            return;
-        }
-
-        if (!file.type.startsWith("image/")) {
-
-            alert("Please select an image.");
-
-            return;
-        }
-
-        if (file.size > 8 * 1024 * 1024) {
-
-            alert(
-                "Image must be smaller than 8 MB."
-            );
-
-            return;
-        }
-
-        const reader =
-            new FileReader();
-
-        reader.onload = function(e) {
-
-            const dataUrl =
-                e.target.result;
-
-            const base64 =
-                dataUrl.split(",")[1];
-
-            selectedImage = {
-                dataUrl: dataUrl,
-                base64: base64,
-                mimeType: file.type
-            };
-
-            document.getElementById(
-                "previewImage"
-            ).src = dataUrl;
-
-            document.getElementById(
-                "preview"
-            ).style.display = "block";
-        };
-
-        reader.readAsDataURL(file);
-    });
-
-
-function removeImage() {
-
-    selectedImage = null;
-
-    document.getElementById(
-        "imageInput"
-    ).value = "";
-
-    document.getElementById(
-        "preview"
-    ).style.display = "none";
-}
-
-
-/* =====================================================
-   VOICE INPUT
-   ===================================================== */
-
-function startVoice() {
-
-    const SpeechRecognition =
-        window.SpeechRecognition ||
-        window.webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-
-        alert(
-            "Voice input is not supported in this browser."
-        );
-
-        return;
-    }
-
-    const recognition =
-        new SpeechRecognition();
-
-    recognition.lang = "ps-AF";
-
-    recognition.interimResults = true;
-
-    recognition.continuous = false;
-
-    recognition.onresult = function(event) {
-
-        let transcript = "";
-
-        for (
-            let i = event.resultIndex;
-            i < event.results.length;
-            i++
-        ) {
-            transcript +=
-                event.results[i][0].transcript;
-        }
-
-        document.getElementById(
-            "messageInput"
-        ).value = transcript;
-
-        autoResize(
-            document.getElementById("messageInput")
-        );
-    };
-
-    recognition.onerror = function() {
-
-        alert(
-            "Voice input could not be started."
-        );
-    };
-
-    recognition.start();
-}
-
-
-/* =====================================================
-   TEXT TO SPEECH
-   ===================================================== */
-
-function speakText(text) {
-
-    if (!("speechSynthesis" in window)) {
-        return;
-    }
-
-    window.speechSynthesis.cancel();
-
-    const utterance =
-        new SpeechSynthesisUtterance(text);
-
-    utterance.lang = "ps-AF";
-
-    utterance.rate = 0.95;
-
-    window.speechSynthesis.speak(
-        utterance
-    );
-}
-
-
-/* =====================================================
+/* =========================================================
    KEYBOARD
-   ===================================================== */
+   ========================================================= */
 
 function handleKey(event) {
 
@@ -1528,85 +1197,66 @@ function handleKey(event) {
 }
 
 
-function autoResize(element) {
+/* =========================================================
+   VOICE INPUT
+   ========================================================= */
 
-    element.style.height = "auto";
+function startVoice() {
 
-    element.style.height =
-        Math.min(
-            element.scrollHeight,
-            180
-        ) + "px";
-}
+    const SpeechRecognition =
+        window.SpeechRecognition ||
+        window.webkitSpeechRecognition;
 
+    if (!SpeechRecognition) {
 
-/* =====================================================
-   SCROLL
-   ===================================================== */
+        alert(
+            "Voice input is not supported by this browser."
+        );
 
-function scrollToBottom() {
-
-    const chat =
-        document.getElementById("chat");
-
-    setTimeout(() => {
-
-        chat.scrollTo({
-            top: chat.scrollHeight,
-            behavior: "smooth"
-        });
-
-    }, 50);
-}
-
-
-/* =====================================================
-   SIDEBAR
-   ===================================================== */
-
-function toggleSidebar() {
-
-    document
-        .getElementById("sidebar")
-        .classList.toggle("open");
-}
-
-
-/* =====================================================
-   THEME
-   ===================================================== */
-
-function toggleTheme() {
-
-    document.body.classList.toggle("dark");
-
-    localStorage.setItem(
-        "medai_dark",
-        document.body.classList.contains("dark")
-    );
-}
-
-
-function loadTheme() {
-
-    const dark =
-        localStorage.getItem("medai_dark");
-
-    if (dark === "true") {
-        document.body.classList.add("dark");
+        return;
     }
+
+    const recognition =
+        new SpeechRecognition();
+
+    recognition.lang =
+        "ps-AF";
+
+    recognition.interimResults =
+        false;
+
+    recognition.continuous =
+        false;
+
+    recognition.onresult =
+        function(event) {
+
+            const transcript =
+                event.results[0][0].transcript;
+
+            messageInput.value +=
+                transcript;
+        };
+
+    recognition.onerror =
+        function() {
+
+            alert(
+                "Voice input could not be started."
+            );
+        };
+
+    recognition.start();
 }
 
 
-/* =====================================================
+/* =========================================================
    START
-   ===================================================== */
+   ========================================================= */
 
-loadTheme();
+loadHistory();
 
-loadCurrentChat();
-
-updateHistory();
+messageInput.focus();
 
 </script>
 
@@ -1616,32 +1266,281 @@ updateHistory();
 
 
 # =========================================================
+# HELPERS
+# =========================================================
+
+def clean_history(history_data):
+    """
+    Keep only safe and useful conversation history.
+    """
+
+    if not isinstance(history_data, list):
+        return []
+
+    cleaned = []
+
+    for item in history_data[-MAX_HISTORY:]:
+
+        if not isinstance(item, dict):
+            continue
+
+        role = item.get("role", "")
+        text = item.get("text", "")
+
+        if role not in ("user", "assistant"):
+            continue
+
+        if not isinstance(text, str):
+            continue
+
+        text = text.strip()
+
+        if not text:
+            continue
+
+        cleaned.append({
+            "role": role,
+            "text": text[:6000]
+        })
+
+    return cleaned
+
+
+def build_prompt(message, history_data):
+    """
+    Build a simple conversation prompt.
+    """
+
+    parts = [
+        SYSTEM_PROMPT,
+        "",
+        "Conversation history:"
+    ]
+
+    for item in history_data:
+
+        role_name = (
+            "User"
+            if item["role"] == "user"
+            else "Assistant"
+        )
+
+        parts.append(
+            role_name + ": " + item["text"]
+        )
+
+    parts.extend([
+        "",
+        "Current user message:",
+        message if message else "(No text; analyze the uploaded image.)",
+        "",
+        "Answer the user now."
+    ])
+
+    return "\n".join(parts)
+
+
+def ask_gemini(
+    message,
+    history_data,
+    image_data=None,
+    mime_type="image/jpeg"
+):
+    """
+    Send the request to Gemini.
+    """
+
+    if not GEMINI_API_KEY:
+
+        raise ValueError(
+            "GEMINI_API_KEY is not configured in Vercel Environment Variables."
+        )
+
+    if not message and not image_data:
+
+        raise ValueError(
+            "Please enter a message or upload an image."
+        )
+
+    parts = []
+
+    prompt = build_prompt(
+        message,
+        history_data
+    )
+
+    parts.append({
+        "text": prompt
+    })
+
+    if image_data:
+
+        try:
+
+            decoded_image = base64.b64decode(
+                image_data,
+                validate=True
+            )
+
+        except Exception:
+
+            raise ValueError(
+                "Invalid image data."
+            )
+
+        if len(decoded_image) > MAX_IMAGE_SIZE:
+
+            raise ValueError(
+                "Image is too large. Maximum size is 8 MB."
+            )
+
+        parts.append({
+            "inline_data": {
+                "mime_type": mime_type or "image/jpeg",
+                "data": image_data
+            }
+        })
+
+    payload = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": parts
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.7,
+            "maxOutputTokens": 4096
+        }
+    }
+
+    try:
+
+        response = requests.post(
+            GEMINI_URL,
+            params={
+                "key": GEMINI_API_KEY
+            },
+            headers={
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=55
+        )
+
+    except requests.exceptions.Timeout:
+
+        raise requests.exceptions.Timeout()
+
+    except requests.exceptions.RequestException as error:
+
+        raise requests.exceptions.RequestException(
+            str(error)
+        )
+
+    if response.status_code != 200:
+
+        error_text = response.text[:1500]
+
+        raise ValueError(
+            "Gemini API error. HTTP "
+            + str(response.status_code)
+            + ". "
+            + error_text
+        )
+
+    try:
+
+        result = response.json()
+
+    except Exception:
+
+        raise ValueError(
+            "Gemini returned an invalid response."
+        )
+
+    candidates = result.get(
+        "candidates",
+        []
+    )
+
+    if not candidates:
+
+        raise ValueError(
+            "Gemini returned no answer."
+        )
+
+    candidate = candidates[0]
+
+    content = candidate.get(
+        "content",
+        {}
+    )
+
+    response_parts = content.get(
+        "parts",
+        []
+    )
+
+    answer_parts = []
+
+    for part in response_parts:
+
+        text = part.get("text")
+
+        if text:
+            answer_parts.append(text)
+
+    answer = "\n".join(
+        answer_parts
+    ).strip()
+
+    if not answer:
+
+        raise ValueError(
+            "Gemini returned an empty answer."
+        )
+
+    return answer
+
+
+# =========================================================
 # ROUTES
 # =========================================================
 
 @app.route("/")
 def home():
-    return render_template_string(HTML)
+
+    return render_template_string(
+        HTML
+    )
 
 
 @app.route("/health")
 def health():
+
     return jsonify({
         "status": "ok",
-        "service": "MedAI",
-        "model": GEMINI_MODEL,
-        "api_key_configured": bool(GEMINI_API_KEY)
+        "service": "MedAI"
     })
 
 
-@app.route("/api/chat", methods=["POST"])
-def api_chat():
+@app.route(
+    "/api/chat",
+    methods=["POST"]
+)
+def chat_api():
 
     try:
 
-        data = request.get_json(silent=True) or {}
+        data = request.get_json(
+            silent=True
+        ) or {}
 
-        message = data.get("message", "")
+        message = data.get(
+            "message",
+            ""
+        )
 
         if not isinstance(message, str):
             message = ""
@@ -1649,29 +1548,40 @@ def api_chat():
         message = message.strip()
 
         if len(message) > MAX_MESSAGE_LENGTH:
+
             return jsonify({
                 "error": "Message is too long."
             }), 400
 
-        history = clean_history(
-            data.get("history", [])
+        history_data = clean_history(
+            data.get(
+                "history",
+                []
+            )
         )
 
-        image_data = data.get("image")
+        image_data = data.get(
+            "image"
+        )
 
         mime_type = data.get(
             "mime_type",
             "image/jpeg"
         )
 
+        if not isinstance(image_data, str):
+            image_data = None
+
         if not message and not image_data:
+
             return jsonify({
-                "error": "Please enter a message or upload an image."
+                "error":
+                    "Please enter a message or upload an image."
             }), 400
 
-        answer = call_gemini(
+        answer = ask_gemini(
             message=message,
-            history=history,
+            history_data=history_data,
             image_data=image_data,
             mime_type=mime_type
         )
@@ -1689,39 +1599,56 @@ def api_chat():
     except requests.exceptions.Timeout:
 
         return jsonify({
-            "error": "Gemini request timed out. Please try again."
+            "error":
+                "Gemini request timed out. Please try again."
         }), 504
 
     except requests.exceptions.RequestException as error:
 
+        print(
+            "MedAI connection error:",
+            repr(error)
+        )
+
         return jsonify({
-            "error": "Could not connect to Gemini.",
-            "details": str(error)
+            "error":
+                "Could not connect to Gemini."
         }), 502
 
     except Exception as error:
 
-        print("MedAI error:", repr(error))
+        print(
+            "MedAI ERROR:",
+            repr(error)
+        )
 
         return jsonify({
-            "error": str(error)
+            "error":
+                "Server error: " + str(error)
         }), 500
 
 
 @app.errorhandler(404)
-def not_found(error):
+def page_not_found(error):
+
     return jsonify({
-        "error": "Not found"
+        "error": "Page not found."
     }), 404
 
 
 # =========================================================
-# LOCAL DEVELOPMENT
+# LOCAL SERVER
 # =========================================================
 
 if __name__ == "__main__":
+
     app.run(
         host="0.0.0.0",
-        port=int(os.environ.get("PORT", 5000)),
+        port=int(
+            os.environ.get(
+                "PORT",
+                5000
+            )
+        ),
         debug=False
     )
