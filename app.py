@@ -1,41 +1,32 @@
-from flask import Flask, request, jsonify, render_template_string
 import os
-import json
 import base64
-import urllib.request
-import urllib.error
-import time
+import requests
+
+from flask import Flask, request, jsonify, render_template_string
+
+
+# =========================================================
+# MEDAI - FLASK APP
+# =========================================================
 
 app = Flask(__name__)
 
-# =========================================================
-# CONFIG
-# =========================================================
+# -------------------------
+# Configuration
+# -------------------------
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-
-# General AI
-GEMINI_MODEL = os.environ.get(
-    "GEMINI_MODEL",
-    "gemini-3.8-flash"
-).strip()
-
-# Image generation
-IMAGE_MODEL = os.environ.get(
-    "IMAGE_MODEL",
-    "gemini-3.1-flash-image"
-).strip()
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
 GEMINI_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/"
-    "models/{model}:generateContent"
+    "https://generativelanguage.googleapis.com/v1beta/models/"
+    + GEMINI_MODEL
+    + ":generateContent"
 )
 
-MAX_MESSAGE = 20000
-MAX_HISTORY = 16
-
-# Keep uploaded images reasonably small for serverless requests.
-MAX_IMAGE_BYTES = 8 * 1024 * 1024
+MAX_MESSAGE_LENGTH = 12000
+MAX_HISTORY = 20
+MAX_IMAGE_SIZE = 8 * 1024 * 1024
 
 
 # =========================================================
@@ -43,123 +34,55 @@ MAX_IMAGE_BYTES = 8 * 1024 * 1024
 # =========================================================
 
 SYSTEM_PROMPT = """
-You are MedAI, a modern general-purpose AI assistant.
+You are MedAI, a helpful general-purpose AI assistant.
 
-You should answer a wide variety of questions, similar to a
-general AI assistant.
-
-You can help with:
-
-- General questions
+You can answer questions about:
+- General knowledge
 - Education
 - Science
 - Mathematics
 - Programming
-- Coding
 - Technology
-- Business
-- History
-- Geography
 - Writing
-- Rewriting
 - Translation
-- Summaries
-- Study help
-- Creative writing
-- Problem solving
+- History
+- Business
 - Everyday questions
-- Medical and health information
-- Image understanding
+- Medicine and health
 
-LANGUAGE:
-
-If the user writes in Pashto, answer in Pashto.
-
-If the user writes in Dari, answer in Dari.
-
-If the user writes in English, answer in English.
-
-If the user mixes languages, respond naturally.
-
-CONVERSATION:
-
-Use the conversation history when available.
-
-Understand follow-up questions.
-
-Do not unnecessarily repeat previous answers.
-
-GENERAL BEHAVIOR:
-
-Be helpful, natural and clear.
-
-For simple questions, answer directly.
-
-For complicated questions, use sections,
-steps and examples.
-
-Do not invent facts.
-
-If you are uncertain, say so.
-
-Do not claim to have done something you did not do.
-
-CODING:
-
-When asked for programming help, provide complete,
-working code when appropriate.
-
-Check code carefully for obvious syntax errors.
-
-Never expose API keys or private secrets.
-
-IMAGE UNDERSTANDING:
-
-If an image is provided, inspect it carefully and
-answer the user's question about the image.
-
-Do not pretend to see details that are not actually
-visible.
-
-MEDICAL SAFETY:
-
-You may provide general medical information.
-
-You are not a replacement for a licensed doctor.
-
-Do not claim a diagnosis with certainty.
-
-If symptoms could indicate a serious emergency,
-recommend urgent medical evaluation.
-
-Do not recommend dangerous self-treatment.
-
-For medication questions, explain that the correct
-medicine and dosage depend on the individual,
-condition, age, medical history and interactions.
-
-EMERGENCY:
-
-If a user describes a potentially life-threatening
-situation, prioritize immediate safety and recommend
-urgent emergency medical care.
+LANGUAGE RULE:
+Answer in the same language the user uses.
+If the user writes Pashto, answer in Pashto.
+If the user writes Dari, answer in Dari.
+If the user writes English, answer in English.
+If the user mixes languages, naturally match the user's language.
 
 STYLE:
+- Be clear and useful.
+- Be friendly.
+- Give direct answers.
+- Use headings and bullet points when helpful.
+- For coding questions, provide practical code.
+- Do not unnecessarily repeat the question.
+- If the question is unclear, ask a short clarification.
 
-Be friendly, respectful and concise when possible.
+MEDICAL SAFETY:
+For medical questions, provide general educational information.
+Do not pretend to be a doctor.
+Do not make a certain diagnosis from limited information.
+For emergencies, tell the user to contact local emergency medical services or seek urgent medical care.
+Mention important warning signs when appropriate.
+Do not recommend dangerous medication use.
+For medication dosage, consider age, weight, medical conditions, allergies,
+other medicines, and local medical guidance.
 
-Use Markdown when useful.
+IMAGE:
+If an image is provided, analyze what can reasonably be observed.
+For medical images, do not claim certainty or provide a definitive diagnosis.
+Explain limitations and recommend professional medical evaluation when appropriate.
 
-Do not repeatedly say that you are an AI.
-
-Product:
-MedAI
-
-Developer:
-Toyebullah Dawoodzay
-
-Year:
-2026
+PRIVACY:
+Do not ask for unnecessary personal information.
 """
 
 
@@ -167,133 +90,19 @@ Year:
 # HELPERS
 # =========================================================
 
-def make_request(url, payload, timeout=90):
-    body = json.dumps(payload).encode("utf-8")
-
-    req = urllib.request.Request(
-        url,
-        data=body,
-        method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "x-goog-api-key": GEMINI_API_KEY
-        }
-    )
-
-    with urllib.request.urlopen(req, timeout=timeout) as response:
-        raw = response.read().decode("utf-8")
-
-    return json.loads(raw)
-
-
-def extract_text(data):
-    try:
-        candidates = data.get("candidates", [])
-
-        if not candidates:
-            return None
-
-        content = candidates[0].get(
-            "content",
-            {}
-        )
-
-        parts = content.get(
-            "parts",
-            []
-        )
-
-        texts = []
-
-        for part in parts:
-
-            text = part.get("text")
-
-            if isinstance(text, str):
-                texts.append(text)
-
-        answer = "".join(texts).strip()
-
-        return answer or None
-
-    except Exception:
-        return None
-
-
-def extract_images(data):
-    images = []
-
-    try:
-        candidates = data.get("candidates", [])
-
-        for candidate in candidates:
-
-            content = candidate.get(
-                "content",
-                {}
-            )
-
-            parts = content.get(
-                "parts",
-                []
-            )
-
-            for part in parts:
-
-                inline = part.get(
-                    "inlineData"
-                )
-
-                if not inline:
-                    inline = part.get(
-                        "inline_data"
-                    )
-
-                if not inline:
-                    continue
-
-                image_data = inline.get(
-                    "data"
-                )
-
-                mime_type = inline.get(
-                    "mimeType"
-                )
-
-                if not mime_type:
-                    mime_type = inline.get(
-                        "mime_type"
-                    )
-
-                if image_data:
-
-                    images.append({
-                        "mime_type": mime_type or "image/png",
-                        "data": image_data
-                    })
-
-    except Exception:
-        pass
-
-    return images
-
-
 def clean_history(history):
+    """Keep only safe, useful conversation history."""
     if not isinstance(history, list):
         return []
 
-    result = []
+    cleaned = []
 
     for item in history[-MAX_HISTORY:]:
-
         if not isinstance(item, dict):
             continue
 
-        role = item.get("role")
-        text = item.get("text")
-
-        if role not in ("user", "model"):
-            continue
+        role = item.get("role", "user")
+        text = item.get("text", "")
 
         if not isinstance(text, str):
             continue
@@ -303,251 +112,167 @@ def clean_history(history):
         if not text:
             continue
 
-        result.append({
+        if len(text) > MAX_MESSAGE_LENGTH:
+            text = text[:MAX_MESSAGE_LENGTH]
+
+        if role not in ("user", "assistant"):
+            role = "user"
+
+        cleaned.append({
             "role": role,
-            "parts": [
-                {
-                    "text": text
-                }
-            ]
+            "text": text
         })
 
-    return result
+    return cleaned
 
 
-def call_text_model(
-    model,
-    message,
-    history,
-    image_data=None,
-    image_mime=None
-):
-    contents = clean_history(history)
+def build_prompt(message, history):
+    parts = [SYSTEM_PROMPT]
 
-    parts = []
+    if history:
+        parts.append("\nCONVERSATION HISTORY:")
 
-    # Image first
+        for item in history:
+            role_name = "User" if item["role"] == "user" else "Assistant"
+            parts.append(
+                f"{role_name}: {item['text']}"
+            )
+
+    parts.append("\nCURRENT USER MESSAGE:")
+    parts.append(message)
+
+    return "\n\n".join(parts)
+
+
+def call_gemini(message, history, image_data=None, mime_type=None):
+    if not GEMINI_API_KEY:
+        raise RuntimeError(
+            "GEMINI_API_KEY is missing. Add it in Vercel Environment Variables."
+        )
+
+    prompt = build_prompt(message, history)
+
+    parts = [
+        {
+            "text": prompt
+        }
+    ]
+
+    # Optional image
     if image_data:
+        if not isinstance(image_data, str):
+            raise ValueError("Invalid image data.")
 
-        parts.append({
-            "inline_data": {
-                "mime_type": image_mime or "image/jpeg",
-                "data": image_data
+        if len(image_data) > MAX_IMAGE_SIZE * 2:
+            raise ValueError("Image is too large.")
+
+        try:
+            # Accept either raw base64 or data:image/...;base64,...
+            if "," in image_data and image_data.startswith("data:"):
+                image_data = image_data.split(",", 1)[1]
+
+            # Validate base64
+            base64.b64decode(image_data, validate=True)
+
+        except Exception:
+            raise ValueError("Invalid image format.")
+
+        parts.append(
+            {
+                "inline_data": {
+                    "mime_type": mime_type or "image/jpeg",
+                    "data": image_data
+                }
             }
-        })
-
-    parts.append({
-        "text": message
-    })
-
-    contents.append({
-        "role": "user",
-        "parts": parts
-    })
+        )
 
     payload = {
-        "systemInstruction": {
-            "parts": [
-                {
-                    "text": SYSTEM_PROMPT
-                }
-            ]
-        },
-        "contents": contents,
+        "contents": [
+            {
+                "role": "user",
+                "parts": parts
+            }
+        ],
         "generationConfig": {
+            "temperature": 0.7,
             "maxOutputTokens": 4096
         }
     }
 
-    url = GEMINI_URL.format(
-        model=model
-    )
-
-    return make_request(
-        url,
-        payload,
-        timeout=90
-    )
-
-
-# =========================================================
-# CHAT WITH RETRIES
-# =========================================================
-
-def chat_with_retry(
-    message,
-    history,
-    image_data=None,
-    image_mime=None
-):
-    last_error = None
-
-    # Use current model first, then a stable fallback.
-    models = [
-        GEMINI_MODEL,
-        "gemini-3.7-flash",
-        "gemini-3.5-flash"
-    ]
-
-    # Remove duplicates
-    models = list(dict.fromkeys(models))
-
-    for model in models:
-
-        for attempt in range(4):
-
-            try:
-
-                result = call_text_model(
-                    model=model,
-                    message=message,
-                    history=history,
-                    image_data=image_data,
-                    image_mime=image_mime
-                )
-
-                answer = extract_text(result)
-
-                if answer:
-
-                    return {
-                        "reply": answer,
-                        "model": model
-                    }
-
-                last_error = (
-                    "Gemini returned an empty response."
-                )
-
-            except urllib.error.HTTPError as error:
-
-                status = error.code
-
-                try:
-                    body = (
-                        error.read()
-                        .decode("utf-8")
-                    )
-                except Exception:
-                    body = ""
-
-                last_error = (
-                    f"HTTP {status}: {body[:1200]}"
-                )
-
-                # Temporary errors
-                if status in (
-                    429,
-                    500,
-                    502,
-                    503,
-                    504
-                ):
-
-                    if attempt < 3:
-
-                        time.sleep(
-                            min(
-                                2 ** attempt,
-                                8
-                            )
-                        )
-
-                        continue
-
-                    # Move to next model
-                    break
-
-                # Invalid request / auth / permission
-                return {
-                    "error": (
-                        f"Gemini API error "
-                        f"HTTP {status}"
-                    ),
-                    "details": body[:1200]
-                }
-
-            except urllib.error.URLError as error:
-
-                last_error = (
-                    f"Network error: {error}"
-                )
-
-                if attempt < 3:
-
-                    time.sleep(
-                        min(
-                            2 ** attempt,
-                            8
-                        )
-                    )
-
-                    continue
-
-                break
-
-            except Exception as error:
-
-                last_error = str(error)
-                break
-
-    return {
-        "error": (
-            "Gemini service is temporarily "
-            "unavailable."
-        ),
-        "details": last_error
+    headers = {
+        "Content-Type": "application/json"
     }
 
+    response = requests.post(
+        GEMINI_URL,
+        headers=headers,
+        params={
+            "key": GEMINI_API_KEY
+        },
+        json=payload,
+        timeout=55
+    )
+
+    if response.status_code != 200:
+        try:
+            error_data = response.json()
+        except Exception:
+            error_data = response.text
+
+        raise RuntimeError(
+            f"Gemini API error. HTTP {response.status_code}: {error_data}"
+        )
+
+    data = response.json()
+
+    candidates = data.get("candidates", [])
+
+    if not candidates:
+        raise RuntimeError("Gemini returned no response.")
+
+    candidate = candidates[0]
+
+    content = candidate.get("content", {})
+    response_parts = content.get("parts", [])
+
+    texts = []
+
+    for part in response_parts:
+        text = part.get("text")
+
+        if isinstance(text, str):
+            texts.append(text)
+
+    answer = "\n".join(texts).strip()
+
+    if not answer:
+        raise RuntimeError("Gemini returned an empty answer.")
+
+    return answer
+
 
 # =========================================================
-# SECURITY
+# SECURITY HEADERS
 # =========================================================
 
 @app.after_request
-def security_headers(response):
-
-    response.headers[
-        "X-Content-Type-Options"
-    ] = "nosniff"
-
-    response.headers[
-        "X-Frame-Options"
-    ] = "SAMEORIGIN"
-
-    response.headers[
-        "Referrer-Policy"
-    ] = "strict-origin-when-cross-origin"
-
-    response.headers[
-        "Permissions-Policy"
-    ] = (
-        "camera=(), "
-        "microphone=(self), "
-        "geolocation=()"
-    )
-
+def add_security_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     return response
 
 
 # =========================================================
-# FRONTEND
+# HOME PAGE
 # =========================================================
 
 HTML = r"""
 <!DOCTYPE html>
-
 <html lang="en">
-
 <head>
-
 <meta charset="UTF-8">
-
-<meta name="viewport"
-      content="width=device-width, initial-scale=1.0">
-
-<meta name="theme-color"
-      content="#0d0d0d">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <title>MedAI</title>
 
@@ -560,928 +285,594 @@ HTML = r"""
 html,
 body {
     margin: 0;
-    width: 100%;
+    padding: 0;
     height: 100%;
-}
-
-body {
-
     font-family:
+        Inter,
+        system-ui,
         -apple-system,
         BlinkMacSystemFont,
         "Segoe UI",
-        Roboto,
         Arial,
         sans-serif;
+}
 
+body {
     background: #ffffff;
-
     color: #171717;
-
-    transition:
-        background .2s,
-        color .2s;
+    overflow: hidden;
 }
 
 button,
 textarea,
 input {
-
     font: inherit;
 }
 
 button {
-
     cursor: pointer;
-}
-
-.app {
-
-    display: flex;
-
-    width: 100%;
-    height: 100vh;
-
-    overflow: hidden;
 }
 
 
 /* =====================================================
-SIDEBAR
-===================================================== */
+   APP
+   ===================================================== */
+
+.app {
+    display: flex;
+    height: 100vh;
+    width: 100%;
+}
+
+
+/* =====================================================
+   SIDEBAR
+   ===================================================== */
 
 .sidebar {
-
     width: 270px;
-
     background: #f7f7f8;
-
-    border-right:
-        1px solid #e5e5e5;
-
+    border-right: 1px solid #e5e5e5;
     display: flex;
-
     flex-direction: column;
-
     padding: 14px;
-
-    flex-shrink: 0;
-
-    transition: .2s;
+    transition: transform 0.25s ease;
 }
 
 .brand {
-
     display: flex;
-
     align-items: center;
-
     gap: 10px;
-
-    padding: 8px 5px 18px;
+    padding: 8px 7px 18px;
 }
 
-.brand-logo {
-
-    width: 38px;
-    height: 38px;
-
+.brand-icon {
+    width: 36px;
+    height: 36px;
     border-radius: 12px;
-
-    background: #111111;
-
-    color: #ffffff;
-
+    background: #111827;
+    color: white;
     display: flex;
-
     align-items: center;
-
     justify-content: center;
-
     font-weight: 800;
-
-    font-size: 18px;
 }
 
 .brand-name {
-
-    font-weight: 800;
-
-    font-size: 19px;
+    font-size: 18px;
+    font-weight: 700;
 }
 
 .new-chat {
-
-    width: 100%;
-
+    border: 1px solid #dedede;
+    background: white;
+    border-radius: 12px;
     padding: 11px 13px;
-
-    background: #ffffff;
-
-    border:
-        1px solid #dddddd;
-
-    border-radius: 10px;
-
     text-align: left;
-
-    font-weight: 600;
-
-    margin-bottom: 18px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 15px;
 }
 
 .new-chat:hover {
-
     background: #eeeeee;
 }
 
-.section-label {
-
-    font-size: 11px;
-
-    color: #777777;
-
-    text-transform: uppercase;
-
-    font-weight: 700;
-
-    padding: 7px;
+.sidebar-title {
+    font-size: 12px;
+    color: #777;
+    padding: 8px;
 }
 
 .history {
-
     flex: 1;
-
     overflow-y: auto;
 }
 
 .history-item {
-
-    padding: 9px 10px;
-
-    border-radius: 8px;
-
-    font-size: 13px;
-
+    padding: 10px;
+    border-radius: 9px;
+    cursor: pointer;
+    font-size: 14px;
     white-space: nowrap;
-
     overflow: hidden;
-
     text-overflow: ellipsis;
-
-    margin-bottom: 2px;
 }
 
 .history-item:hover {
-
-    background: #e8e8e8;
+    background: #e9e9e9;
 }
 
 .sidebar-bottom {
-
-    border-top:
-        1px solid #dddddd;
-
+    border-top: 1px solid #ddd;
     padding-top: 10px;
 }
 
-.side-button {
-
+.theme-btn {
     width: 100%;
-
     border: 0;
-
     background: transparent;
-
-    text-align: left;
-
     padding: 10px;
-
-    border-radius: 8px;
+    text-align: left;
+    border-radius: 9px;
 }
 
-.side-button:hover {
-
-    background: #e8e8e8;
+.theme-btn:hover {
+    background: #e9e9e9;
 }
 
 
 /* =====================================================
-MAIN
-===================================================== */
+   MAIN
+   ===================================================== */
 
 .main {
-
     flex: 1;
-
-    min-width: 0;
-
     display: flex;
-
     flex-direction: column;
+    min-width: 0;
 }
 
 .topbar {
-
-    height: 60px;
-
-    border-bottom:
-        1px solid #eeeeee;
-
+    height: 58px;
     display: flex;
-
     align-items: center;
-
     padding: 0 18px;
-
+    border-bottom: 1px solid #eeeeee;
     gap: 12px;
-
-    flex-shrink: 0;
 }
 
-.mobile-menu {
-
+.menu-btn {
     display: none;
-
     border: 0;
-
     background: transparent;
-
     font-size: 23px;
 }
 
-.title {
-
-    font-weight: 700;
-
-    font-size: 15px;
+.model-name {
+    font-weight: 600;
 }
 
-.top-space {
-
-    flex: 1;
-}
-
-.icon-button {
-
-    border: 0;
-
-    background: transparent;
-
-    padding: 8px;
-
-    border-radius: 8px;
-}
-
-.icon-button:hover {
-
-    background: #eeeeee;
+.status {
+    margin-left: auto;
+    color: #666;
+    font-size: 13px;
 }
 
 
 /* =====================================================
-CHAT
-===================================================== */
+   CHAT
+   ===================================================== */
 
 .chat {
-
     flex: 1;
-
     overflow-y: auto;
-
-    padding:
-        30px 20px 170px;
+    padding: 28px 20px 170px;
 }
 
 .chat-inner {
-
-    max-width: 860px;
-
+    width: min(900px, 100%);
     margin: auto;
 }
 
 .welcome {
-
-    min-height: 60vh;
-
+    min-height: 65vh;
     display: flex;
-
-    align-items: center;
-
-    justify-content: center;
-
     flex-direction: column;
-
+    align-items: center;
+    justify-content: center;
     text-align: center;
 }
 
-.welcome-logo {
-
-    width: 68px;
-
-    height: 68px;
-
-    border-radius: 20px;
-
-    background: #111111;
-
+.welcome-icon {
+    width: 62px;
+    height: 62px;
+    background: #111827;
     color: white;
-
+    border-radius: 20px;
     display: flex;
-
     align-items: center;
-
     justify-content: center;
-
-    font-size: 26px;
-
-    font-weight: 800;
-
-    margin-bottom: 20px;
+    font-size: 27px;
+    margin-bottom: 18px;
 }
 
 .welcome h1 {
-
-    font-size: 34px;
-
-    margin:
-        0 0 10px;
+    font-size: 30px;
+    margin: 0 0 10px;
 }
 
 .welcome p {
-
-    color: #777777;
-
+    color: #707070;
     margin: 0;
 }
 
 
 /* =====================================================
-MESSAGES
-===================================================== */
+   MESSAGES
+   ===================================================== */
 
 .message {
-
     display: flex;
-
     gap: 12px;
-
-    margin-bottom: 28px;
+    margin: 0 auto 25px;
+    line-height: 1.65;
 }
 
 .avatar {
-
     width: 34px;
     height: 34px;
-
     flex: 0 0 34px;
-
     border-radius: 10px;
-
     display: flex;
-
     align-items: center;
-
     justify-content: center;
-
-    font-size: 12px;
-
-    font-weight: 800;
+    font-size: 13px;
+    font-weight: 700;
 }
 
 .user .avatar {
-
-    background: #eeeeee;
+    background: #e8e8e8;
+    color: #333;
 }
 
-.ai .avatar {
-
-    background: #111111;
-
+.assistant .avatar {
+    background: #111827;
     color: white;
 }
 
-.message-content {
-
+.message-body {
     flex: 1;
-
     min-width: 0;
 }
 
-.message-name {
-
-    font-size: 12px;
-
+.message-role {
+    font-size: 13px;
     font-weight: 700;
-
-    margin-bottom: 5px;
+    margin-bottom: 3px;
 }
 
 .message-text {
-
     white-space: pre-wrap;
-
-    line-height: 1.7;
-
-    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .message-image {
-
-    max-width: 360px;
-
-    width: 100%;
-
+    max-width: min(500px, 100%);
     border-radius: 12px;
-
-    margin-bottom: 8px;
-
-    border:
-        1px solid #dddddd;
-}
-
-.copy-btn {
-
-    border: 0;
-
-    background: transparent;
-
-    color: #777777;
-
-    font-size: 12px;
-
-    padding:
-        5px 0;
+    margin-top: 8px;
+    border: 1px solid #ddd;
 }
 
 
 /* =====================================================
-TYPING
-===================================================== */
+   THINKING
+   ===================================================== */
 
-.typing {
-
+.thinking {
     display: flex;
-
     gap: 5px;
-
-    padding: 8px 0;
+    align-items: center;
+    height: 25px;
 }
 
 .dot {
-
     width: 7px;
-
     height: 7px;
-
+    background: #888;
     border-radius: 50%;
-
-    background: #999999;
-
-    animation:
-        blink 1.2s infinite;
+    animation: bounce 1.1s infinite;
 }
 
 .dot:nth-child(2) {
-
-    animation-delay:
-        .15s;
+    animation-delay: 0.15s;
 }
 
 .dot:nth-child(3) {
-
-    animation-delay:
-        .3s;
+    animation-delay: 0.3s;
 }
 
-@keyframes blink {
-
-    0%, 80%, 100% {
-        opacity: .25;
+@keyframes bounce {
+    0%, 60%, 100% {
+        transform: translateY(0);
     }
 
-    40% {
-        opacity: 1;
+    30% {
+        transform: translateY(-5px);
     }
 }
 
 
 /* =====================================================
-COMPOSER
-===================================================== */
+   COMPOSER
+   ===================================================== */
 
-.input-area {
-
+.composer-area {
     position: fixed;
-
-    left: 270px;
-
-    right: 0;
-
     bottom: 0;
-
-    padding:
-        35px 20px 18px;
-
+    left: 270px;
+    right: 0;
+    padding: 18px 20px 22px;
     background:
         linear-gradient(
-            transparent,
-            #ffffff 28%
+            to top,
+            rgba(255,255,255,1) 65%,
+            rgba(255,255,255,0)
         );
-}
-
-.input-inner {
-
-    max-width: 860px;
-
-    margin: auto;
-}
-
-.preview {
-
-    display: none;
-
-    position: relative;
-
-    margin-bottom: 8px;
-}
-
-.preview img {
-
-    max-height: 130px;
-
-    max-width: 200px;
-
-    border-radius: 10px;
-
-    border:
-        1px solid #dddddd;
-}
-
-.remove-image {
-
-    position: absolute;
-
-    top: -7px;
-
-    left: 185px;
-
-    width: 25px;
-
-    height: 25px;
-
-    border: 0;
-
-    border-radius: 50%;
-
-    background: #111111;
-
-    color: #ffffff;
 }
 
 .composer {
+    width: min(900px, 100%);
+    margin: auto;
+    border: 1px solid #d8d8d8;
+    background: white;
+    border-radius: 18px;
+    box-shadow: 0 5px 25px rgba(0,0,0,0.08);
+    padding: 10px;
+}
 
+.preview {
+    display: none;
+    position: relative;
+    padding: 6px;
+}
+
+.preview img {
+    width: 90px;
+    height: 90px;
+    object-fit: cover;
+    border-radius: 12px;
+}
+
+.remove-image {
+    position: absolute;
+    top: 0;
+    left: 85px;
+    width: 25px;
+    height: 25px;
+    border-radius: 50%;
+    border: 0;
+    background: #111;
+    color: white;
+}
+
+.input-row {
     display: flex;
-
     align-items: flex-end;
-
-    gap: 7px;
-
-    padding: 8px;
-
-    background: #ffffff;
-
-    border:
-        1px solid #d5d5d5;
-
-    border-radius: 16px;
-
-    box-shadow:
-        0 8px 30px
-        rgba(0,0,0,.08);
+    gap: 8px;
 }
 
 textarea {
-
     flex: 1;
-
-    min-height: 42px;
-
-    max-height: 180px;
-
     resize: none;
-
+    min-height: 45px;
+    max-height: 180px;
     border: 0;
-
     outline: 0;
-
-    padding: 10px;
-
-    line-height: 1.5;
-
+    padding: 12px;
     background: transparent;
 }
 
-.tool-button {
-
-    width: 40px;
-
-    height: 40px;
-
+.icon-btn,
+.send-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
     border: 0;
-
-    border-radius: 10px;
-
-    background: #f1f1f1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.tool-button:hover {
-
-    background: #e5e5e5;
+.icon-btn {
+    background: transparent;
 }
 
-.send {
+.icon-btn:hover {
+    background: #eeeeee;
+}
 
-    background: #111111;
-
+.send-btn {
+    background: #111827;
     color: white;
 }
 
-.disclaimer {
-
-    text-align: center;
-
-    font-size: 11px;
-
-    color: #999999;
-
-    margin-top: 7px;
+.send-btn:disabled {
+    opacity: 0.4;
 }
 
-.file-input {
-
-    display: none;
+.hint {
+    text-align: center;
+    color: #888;
+    font-size: 11px;
+    margin-top: 8px;
 }
 
 
 /* =====================================================
-DARK
-===================================================== */
+   DARK MODE
+   ===================================================== */
 
 body.dark {
-
     background: #212121;
-
-    color: #f5f5f5;
+    color: #f3f3f3;
 }
 
 body.dark .sidebar {
-
     background: #171717;
-
-    border-color: #333333;
-}
-
-body.dark .new-chat {
-
-    background: #212121;
-
-    color: white;
-
-    border-color: #444444;
-}
-
-body.dark .history-item:hover,
-body.dark .side-button:hover,
-body.dark .icon-button:hover {
-
-    background: #2d2d2d;
-}
-
-body.dark .sidebar-bottom {
-
-    border-color: #333333;
+    border-color: #333;
 }
 
 body.dark .topbar {
-
-    border-color: #333333;
+    border-color: #333;
 }
 
-body.dark .input-area {
-
-    background:
-        linear-gradient(
-            transparent,
-            #212121 28%
-        );
-}
-
+body.dark .new-chat,
 body.dark .composer {
-
     background: #2b2b2b;
-
-    border-color: #444444;
+    border-color: #444;
+    color: #fff;
 }
 
 body.dark textarea {
-
     color: white;
 }
 
-body.dark .tool-button {
+body.dark .composer-area {
+    background:
+        linear-gradient(
+            to top,
+            rgba(33,33,33,1) 65%,
+            rgba(33,33,33,0)
+        );
+}
 
-    background: #3a3a3a;
-
+body.dark .user .avatar {
+    background: #444;
     color: white;
 }
 
-body.dark .welcome p {
+body.dark .history-item:hover,
+body.dark .theme-btn:hover,
+body.dark .icon-btn:hover {
+    background: #303030;
+}
 
-    color: #999999;
+body.dark .welcome p,
+body.dark .status {
+    color: #aaa;
 }
 
 
 /* =====================================================
-MOBILE
-===================================================== */
+   MOBILE
+   ===================================================== */
 
-@media (max-width: 760px) {
+@media (max-width: 750px) {
 
     .sidebar {
-
         position: fixed;
-
-        z-index: 100;
-
-        left: -280px;
-
+        z-index: 50;
         top: 0;
-
         bottom: 0;
-
-        box-shadow:
-            10px 0 30px
-            rgba(0,0,0,.15);
+        left: 0;
+        transform: translateX(-100%);
+        box-shadow: 5px 0 25px rgba(0,0,0,.15);
     }
 
     .sidebar.open {
-
-        left: 0;
+        transform: translateX(0);
     }
 
-    .mobile-menu {
-
+    .menu-btn {
         display: block;
     }
 
-    .input-area {
-
+    .composer-area {
         left: 0;
-
-        padding:
-            30px 9px 12px;
+        padding: 10px 10px 14px;
     }
 
     .chat {
-
-        padding:
-            20px 12px 150px;
+        padding-left: 12px;
+        padding-right: 12px;
     }
 
     .welcome h1 {
-
-        font-size: 27px;
+        font-size: 25px;
     }
+
 }
 
 </style>
-
 </head>
+
 
 <body>
 
 <div class="app">
 
-    <!-- SIDEBAR -->
-
     <aside class="sidebar" id="sidebar">
 
         <div class="brand">
-
-            <div class="brand-logo">
-                M
-            </div>
-
-            <div class="brand-name">
-                MedAI
-            </div>
-
+            <div class="brand-icon">M</div>
+            <div class="brand-name">MedAI</div>
         </div>
 
-        <button
-            class="new-chat"
-            onclick="newChat()">
-
-            ＋ New chat
-
+        <button class="new-chat" onclick="newChat()">
+            <span>＋</span>
+            <span>New chat</span>
         </button>
 
-        <div class="section-label">
+        <div class="sidebar-title">
             Recent chats
         </div>
 
-        <div
-            class="history"
-            id="history">
-        </div>
+        <div class="history" id="historyList"></div>
 
         <div class="sidebar-bottom">
-
-            <button
-                class="side-button"
-                onclick="toggleDark()">
-
-                ◐ Dark mode
-
+            <button class="theme-btn" onclick="toggleTheme()">
+                🌓 Theme
             </button>
-
-            <button
-                class="side-button"
-                onclick="clearHistory()">
-
-                🗑 Clear chats
-
-            </button>
-
-            <button
-                class="side-button"
-                onclick="about()">
-
-                ℹ About
-
-            </button>
-
         </div>
 
     </aside>
 
 
-    <!-- MAIN -->
-
     <main class="main">
 
         <header class="topbar">
 
-            <button
-                class="mobile-menu"
-                onclick="toggleSidebar()">
-
+            <button class="menu-btn" onclick="toggleSidebar()">
                 ☰
-
             </button>
 
-            <div class="title">
+            <div class="model-name">
                 MedAI
             </div>
 
-            <div class="top-space"></div>
-
-            <button
-                class="icon-button"
-                onclick="toggleDark()">
-
-                ◐
-
-            </button>
+            <div class="status" id="status">
+                Online
+            </div>
 
         </header>
 
 
-        <!-- CHAT -->
+        <section class="chat" id="chat">
 
-        <section
-            class="chat"
-            id="chat">
+            <div class="chat-inner" id="chatInner">
 
-            <div
-                class="chat-inner"
-                id="chatInner">
+                <div class="welcome" id="welcome">
 
-                <div
-                    class="welcome"
-                    id="welcome">
-
-                    <div class="welcome-logo">
-                        M
+                    <div class="welcome-icon">
+                        ✦
                     </div>
 
-                    <h1>
-                        How can I help you?
-                    </h1>
+                    <h1>How can I help you?</h1>
 
                     <p>
-                        Ask MedAI anything.
+                        Ask anything — education, coding, science, health, writing and more.
                     </p>
 
                 </div>
@@ -1490,848 +881,560 @@ MOBILE
 
         </section>
 
-
-        <!-- INPUT -->
-
-        <div class="input-area">
-
-            <div class="input-inner">
-
-                <div
-                    class="preview"
-                    id="preview">
-
-                    <img
-                        id="previewImage"
-                        src=""
-                        alt="Selected image">
-
-                    <button
-                        class="remove-image"
-                        onclick="removeImage()">
-
-                        ×
-
-                    </button>
-
-                </div>
+    </main>
 
 
-                <div class="composer">
+    <div class="composer-area">
 
-                    <!-- IMAGE PICKER -->
+        <div class="composer">
 
-                    <button
-                        class="tool-button"
-                        onclick="openImagePicker()"
-                        title="Add image">
+            <div class="preview" id="preview">
 
-                        🖼️
+                <img id="previewImage" alt="Selected image">
 
-                    </button>
+                <button
+                    class="remove-image"
+                    onclick="removeImage()">
+                    ×
+                </button>
 
-                    <input
-                        type="file"
-                        id="imageInput"
-                        class="file-input"
-                        accept="image/png,image/jpeg,image/webp,image/gif"
-                        onchange="selectImage(event)">
+            </div>
 
 
-                    <!-- VOICE -->
+            <div class="input-row">
 
-                    <button
-                        class="tool-button"
-                        onclick="voiceInput()"
-                        title="Voice">
+                <input
+                    type="file"
+                    id="imageInput"
+                    accept="image/*"
+                    hidden
+                >
 
-                        🎙️
+                <button
+                    class="icon-btn"
+                    onclick="document.getElementById('imageInput').click()"
+                    title="Upload image">
+                    📎
+                </button>
 
-                    </button>
+                <textarea
+                    id="messageInput"
+                    rows="1"
+                    placeholder="Message MedAI..."
+                    oninput="autoResize(this)"
+                    onkeydown="handleKey(event)"
+                ></textarea>
 
+                <button
+                    class="icon-btn"
+                    onclick="startVoice()"
+                    title="Voice input">
+                    🎤
+                </button>
 
-                    <!-- TEXT -->
+                <button
+                    class="send-btn"
+                    id="sendBtn"
+                    onclick="sendMessage()">
+                    ↑
+                </button>
 
-                    <textarea
-                        id="message"
-                        rows="1"
-                        placeholder="Message MedAI..."
-                        onkeydown="handleKey(event)"
-                        oninput="resizeText(this)">
-                    </textarea>
+            </div>
 
-
-                    <!-- SEND -->
-
-                    <button
-                        class="tool-button send"
-                        id="sendButton"
-                        onclick="sendMessage()">
-
-                        ↑
-
-                    </button>
-
-                </div>
-
-                <div class="disclaimer">
-
-                    MedAI can make mistakes.
-                    Check important information.
-
-                </div>
-
+            <div class="hint">
+                MedAI can make mistakes. Check important information.
             </div>
 
         </div>
 
-    </main>
+    </div>
 
 </div>
 
 
 <script>
 
-/* =====================================================
-STATE
-===================================================== */
-
 let messages = [];
-
 let selectedImage = null;
 
-let conversations =
-    JSON.parse(
-        localStorage.getItem(
-            "medai_chats"
-        ) || "[]"
-    );
-
-let darkMode =
-    localStorage.getItem(
-        "medai_dark"
-    ) === "true";
-
 
 /* =====================================================
-START
-===================================================== */
+   LOCAL STORAGE
+   ===================================================== */
 
-if (darkMode) {
-
-    document.body.classList.add(
-        "dark"
-    );
-}
-
-renderHistory();
-
-
-/* =====================================================
-SIDEBAR
-===================================================== */
-
-function toggleSidebar() {
-
-    document
-        .getElementById("sidebar")
-        .classList.toggle("open");
-}
-
-
-/* =====================================================
-DARK MODE
-===================================================== */
-
-function toggleDark() {
-
-    darkMode = !darkMode;
-
-    document.body.classList.toggle(
-        "dark",
-        darkMode
-    );
-
+function saveCurrentChat() {
     localStorage.setItem(
-        "medai_dark",
-        darkMode
+        "medai_current_chat",
+        JSON.stringify(messages)
     );
+
+    updateHistory();
+}
+
+
+function loadCurrentChat() {
+
+    try {
+
+        const saved = localStorage.getItem(
+            "medai_current_chat"
+        );
+
+        if (!saved) {
+            return;
+        }
+
+        const data = JSON.parse(saved);
+
+        if (!Array.isArray(data)) {
+            return;
+        }
+
+        messages = data;
+
+        if (messages.length > 0) {
+            document.getElementById("welcome").style.display = "none";
+        }
+
+        for (const message of messages) {
+            renderMessage(
+                message.role,
+                message.text,
+                message.image
+            );
+        }
+
+    } catch (error) {
+        console.error(error);
+    }
+}
+
+
+function updateHistory() {
+
+    const historyList =
+        document.getElementById("historyList");
+
+    historyList.innerHTML = "";
+
+    if (!messages.length) {
+        return;
+    }
+
+    const title =
+        messages.find(x => x.role === "user");
+
+    const item =
+        document.createElement("div");
+
+    item.className = "history-item";
+
+    item.textContent =
+        title
+        ? title.text.slice(0, 45)
+        : "New chat";
+
+    item.onclick = () => {
+        document.getElementById("chat").scrollTop = 0;
+    };
+
+    historyList.appendChild(item);
 }
 
 
 /* =====================================================
-ABOUT
-===================================================== */
-
-function about() {
-
-    alert(
-        "MedAI\\n\\n" +
-        "General-purpose AI assistant.\\n\\n" +
-        "Developer: Toyebullah Dawoodzay\\n" +
-        "2026"
-    );
-}
-
-
-/* =====================================================
-NEW CHAT
-===================================================== */
+   NEW CHAT
+   ===================================================== */
 
 function newChat() {
 
     messages = [];
 
-    removeImage();
+    localStorage.removeItem(
+        "medai_current_chat"
+    );
 
-    document
-        .getElementById("chatInner")
-        .innerHTML = `
+    const inner =
+        document.getElementById("chatInner");
 
-        <div
-            class="welcome"
-            id="welcome">
+    inner.innerHTML = `
+        <div class="welcome" id="welcome">
 
-            <div class="welcome-logo">
-                M
+            <div class="welcome-icon">
+                ✦
             </div>
 
-            <h1>
-                How can I help you?
-            </h1>
+            <h1>How can I help you?</h1>
 
             <p>
-                Ask MedAI anything.
+                Ask anything — education, coding, science, health, writing and more.
             </p>
 
         </div>
     `;
 
-    document
-        .getElementById("message")
-        .focus();
-
-    closeMobileSidebar();
+    removeImage();
 }
 
 
 /* =====================================================
-IMAGE PICKER
-===================================================== */
+   MESSAGE RENDER
+   ===================================================== */
 
-function openImagePicker() {
+function renderMessage(role, text, image) {
 
-    document
-        .getElementById("imageInput")
-        .click();
+    const welcome =
+        document.getElementById("welcome");
+
+    if (welcome) {
+        welcome.style.display = "none";
+    }
+
+    const container =
+        document.getElementById("chatInner");
+
+    const message =
+        document.createElement("div");
+
+    message.className =
+        "message " + role;
+
+    const avatar =
+        document.createElement("div");
+
+    avatar.className = "avatar";
+
+    avatar.textContent =
+        role === "user" ? "You" : "M";
+
+    const body =
+        document.createElement("div");
+
+    body.className = "message-body";
+
+    const roleName =
+        document.createElement("div");
+
+    roleName.className = "message-role";
+
+    roleName.textContent =
+        role === "user" ? "You" : "MedAI";
+
+    const textElement =
+        document.createElement("div");
+
+    textElement.className = "message-text";
+
+    textElement.textContent = text || "";
+
+    body.appendChild(roleName);
+
+    if (image) {
+
+        const imageElement =
+            document.createElement("img");
+
+        imageElement.className =
+            "message-image";
+
+        imageElement.src = image;
+
+        imageElement.alt =
+            "Uploaded image";
+
+        body.appendChild(imageElement);
+    }
+
+    body.appendChild(textElement);
+
+    message.appendChild(avatar);
+    message.appendChild(body);
+
+    container.appendChild(message);
+
+    scrollToBottom();
 }
 
 
-function selectImage(event) {
+function addThinking() {
 
-    const file =
-        event.target.files[0];
+    const container =
+        document.getElementById("chatInner");
 
-    if (!file) {
+    const message =
+        document.createElement("div");
+
+    message.className =
+        "message assistant";
+
+    message.id = "thinkingMessage";
+
+    message.innerHTML = `
+        <div class="avatar">M</div>
+
+        <div class="message-body">
+
+            <div class="message-role">
+                MedAI
+            </div>
+
+            <div class="thinking">
+
+                <span class="dot"></span>
+                <span class="dot"></span>
+                <span class="dot"></span>
+
+            </div>
+
+        </div>
+    `;
+
+    container.appendChild(message);
+
+    scrollToBottom();
+}
+
+
+function removeThinking() {
+
+    const thinking =
+        document.getElementById("thinkingMessage");
+
+    if (thinking) {
+        thinking.remove();
+    }
+}
+
+
+/* =====================================================
+   SEND MESSAGE
+   ===================================================== */
+
+async function sendMessage() {
+
+    const input =
+        document.getElementById("messageInput");
+
+    const sendBtn =
+        document.getElementById("sendBtn");
+
+    const text =
+        input.value.trim();
+
+    if (!text && !selectedImage) {
         return;
     }
 
-    if (file.size > 8 * 1024 * 1024) {
+    const imageForUI =
+        selectedImage
+        ? selectedImage.dataUrl
+        : null;
 
-        alert(
-            "Image is too large. " +
-            "Please select an image under 8 MB."
+    messages.push({
+        role: "user",
+        text: text || "Please analyze this image.",
+        image: imageForUI
+    });
+
+    renderMessage(
+        "user",
+        text || "Please analyze this image.",
+        imageForUI
+    );
+
+    saveCurrentChat();
+
+    input.value = "";
+
+    autoResize(input);
+
+    sendBtn.disabled = true;
+
+    addThinking();
+
+    document.getElementById("status").textContent =
+        "Thinking...";
+
+    try {
+
+        const history =
+            messages.slice(0, -1).map(item => ({
+                role: item.role,
+                text: item.text
+            }));
+
+        const payload = {
+            message:
+                text || "Please analyze this image.",
+            history: history
+        };
+
+        if (selectedImage) {
+
+            payload.image =
+                selectedImage.base64;
+
+            payload.mime_type =
+                selectedImage.mimeType;
+        }
+
+        const response =
+            await fetch("/api/chat", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            });
+
+        const data =
+            await response.json();
+
+        removeThinking();
+
+        if (!response.ok) {
+
+            throw new Error(
+                data.error ||
+                "Server error"
+            );
+        }
+
+        messages.push({
+            role: "assistant",
+            text: data.answer
+        });
+
+        renderMessage(
+            "assistant",
+            data.answer,
+            null
         );
 
-        event.target.value = "";
+        saveCurrentChat();
 
-        return;
-    }
+        document.getElementById("status").textContent =
+            "Online";
 
-    if (!file.type.startsWith("image/")) {
+    } catch (error) {
 
-        alert(
-            "Please select an image file."
+        removeThinking();
+
+        const errorText =
+            "Sorry, something went wrong.\n\n" +
+            error.message;
+
+        messages.push({
+            role: "assistant",
+            text: errorText
+        });
+
+        renderMessage(
+            "assistant",
+            errorText,
+            null
         );
 
-        return;
+        saveCurrentChat();
+
+        document.getElementById("status").textContent =
+            "Error";
+
+    } finally {
+
+        sendBtn.disabled = false;
+
+        input.focus();
     }
+}
 
-    selectedImage = file;
 
-    const reader =
-        new FileReader();
+/* =====================================================
+   IMAGE PICKER
+   ===================================================== */
 
-    reader.onload = function(e) {
+document
+    .getElementById("imageInput")
+    .addEventListener("change", function(event) {
 
-        document
-            .getElementById(
+        const file =
+            event.target.files[0];
+
+        if (!file) {
+            return;
+        }
+
+        if (!file.type.startsWith("image/")) {
+
+            alert("Please select an image.");
+
+            return;
+        }
+
+        if (file.size > 8 * 1024 * 1024) {
+
+            alert(
+                "Image must be smaller than 8 MB."
+            );
+
+            return;
+        }
+
+        const reader =
+            new FileReader();
+
+        reader.onload = function(e) {
+
+            const dataUrl =
+                e.target.result;
+
+            const base64 =
+                dataUrl.split(",")[1];
+
+            selectedImage = {
+                dataUrl: dataUrl,
+                base64: base64,
+                mimeType: file.type
+            };
+
+            document.getElementById(
                 "previewImage"
-            )
-            .src = e.target.result;
+            ).src = dataUrl;
 
-        document
-            .getElementById(
+            document.getElementById(
                 "preview"
-            )
-            .style.display = "block";
-    };
+            ).style.display = "block";
+        };
 
-    reader.readAsDataURL(file);
-}
+        reader.readAsDataURL(file);
+    });
 
 
 function removeImage() {
 
     selectedImage = null;
 
-    const input =
-        document.getElementById(
-            "imageInput"
-        );
+    document.getElementById(
+        "imageInput"
+    ).value = "";
 
-    input.value = "";
-
-    document
-        .getElementById(
-            "preview"
-        )
-        .style.display = "none";
-
-    document
-        .getElementById(
-            "previewImage"
-        )
-        .src = "";
+    document.getElementById(
+        "preview"
+    ).style.display = "none";
 }
 
 
 /* =====================================================
-SEND
-===================================================== */
+   VOICE INPUT
+   ===================================================== */
 
-async function sendMessage() {
+function startVoice() {
 
-    const textarea =
-        document.getElementById(
-            "message"
-        );
-
-    const text =
-        textarea.value.trim();
-
-    if (!text && !selectedImage) {
-        return;
-    }
-
-    const oldHistory =
-        [...messages];
-
-    let imageToSend =
-        selectedImage;
-
-    let imagePreview =
-        null;
-
-    if (imageToSend) {
-
-        imagePreview =
-            await fileToDataURL(
-                imageToSend
-            );
-    }
-
-    textarea.value = "";
-
-    textarea.style.height =
-        "42px";
-
-    removeImage();
-
-    addMessage(
-        "user",
-        text ||
-        "Please analyze this image.",
-        imagePreview
-    );
-
-    const typingId =
-        addTyping();
-
-    document
-        .getElementById(
-            "sendButton"
-        )
-        .disabled = true;
-
-    try {
-
-        let imageBase64 = null;
-
-        let imageMime = null;
-
-        if (imageToSend) {
-
-            const dataUrl =
-                imagePreview;
-
-            imageBase64 =
-                dataUrl.split(",")[1];
-
-            imageMime =
-                imageToSend.type;
-        }
-
-        const response =
-            await fetch(
-                "/api/chat",
-                {
-                    method: "POST",
-
-                    headers: {
-                        "Content-Type":
-                            "application/json"
-                    },
-
-                    body: JSON.stringify({
-                        message:
-                            text ||
-                            "Analyze this image.",
-                        history:
-                            oldHistory,
-                        image:
-                            imageBase64,
-                        image_mime:
-                            imageMime
-                    })
-                }
-            );
-
-        const data =
-            await response.json();
-
-        removeTyping(
-            typingId
-        );
-
-        if (!response.ok) {
-
-            addMessage(
-                "ai",
-                data.error ||
-                "Something went wrong."
-            );
-
-            return;
-        }
-
-        addMessage(
-            "ai",
-            data.reply ||
-            "I could not generate a response."
-        );
-
-        saveChat();
-
-    } catch (error) {
-
-        removeTyping(
-            typingId
-        );
-
-        addMessage(
-            "ai",
-            "Connection error. Please try again."
-        );
-
-    } finally {
-
-        document
-            .getElementById(
-                "sendButton"
-            )
-            .disabled = false;
-
-        textarea.focus();
-    }
-}
-
-
-/* =====================================================
-FILE TO DATA URL
-===================================================== */
-
-function fileToDataURL(file) {
-
-    return new Promise(
-        (resolve, reject) => {
-
-            const reader =
-                new FileReader();
-
-            reader.onload =
-                () => resolve(
-                    reader.result
-                );
-
-            reader.onerror =
-                reject;
-
-            reader.readAsDataURL(
-                file
-            );
-        }
-    );
-}
-
-
-/* =====================================================
-ADD MESSAGE
-===================================================== */
-
-function addMessage(
-    role,
-    text,
-    imageData = null
-) {
-
-    const welcome =
-        document.getElementById(
-            "welcome"
-        );
-
-    if (welcome) {
-        welcome.remove();
-    }
-
-    const chatInner =
-        document.getElementById(
-            "chatInner"
-        );
-
-    const div =
-        document.createElement(
-            "div"
-        );
-
-    div.className =
-        "message " + role;
-
-    div.innerHTML = `
-
-        <div class="avatar">
-            ${role === "user" ? "U" : "M"}
-        </div>
-
-        <div class="message-content">
-
-            <div class="message-name">
-                ${role === "user" ? "You" : "MedAI"}
-            </div>
-
-            ${
-                imageData
-                ?
-                `
-                <img
-                    class="message-image"
-                    src="${imageData}"
-                    alt="Uploaded image">
-                `
-                :
-                ""
-            }
-
-            <div class="message-text"></div>
-
-            ${
-                role === "ai"
-                ?
-                `
-                <button
-                    class="copy-btn"
-                    onclick="copyMessage(this)">
-                    Copy
-                </button>
-                `
-                :
-                ""
-            }
-
-        </div>
-    `;
-
-    div.querySelector(
-        ".message-text"
-    ).textContent = text;
-
-    chatInner.appendChild(
-        div
-    );
-
-    messages.push({
-        role:
-            role === "user"
-                ? "user"
-                : "model",
-
-        text: text
-    });
-
-    scrollBottom();
-}
-
-
-/* =====================================================
-TYPING
-===================================================== */
-
-function addTyping() {
-
-    const id =
-        "typing-" +
-        Date.now();
-
-    const div =
-        document.createElement(
-            "div"
-        );
-
-    div.className =
-        "message";
-
-    div.id = id;
-
-    div.innerHTML = `
-
-        <div class="avatar">
-            M
-        </div>
-
-        <div class="message-content">
-
-            <div class="message-name">
-                MedAI
-            </div>
-
-            <div class="typing">
-
-                <span class="dot"></span>
-                <span class="dot"></span>
-                <span class="dot"></span>
-
-            </div>
-
-        </div>
-    `;
-
-    document
-        .getElementById(
-            "chatInner"
-        )
-        .appendChild(div);
-
-    scrollBottom();
-
-    return id;
-}
-
-
-function removeTyping(id) {
-
-    const element =
-        document.getElementById(
-            id
-        );
-
-    if (element) {
-        element.remove();
-    }
-}
-
-
-/* =====================================================
-COPY
-===================================================== */
-
-async function copyMessage(button) {
-
-    const text =
-        button
-        .parentElement
-        .querySelector(
-            ".message-text"
-        )
-        .textContent;
-
-    try {
-
-        await navigator.clipboard.writeText(
-            text
-        );
-
-        button.textContent =
-            "Copied!";
-
-        setTimeout(
-            () => {
-                button.textContent =
-                    "Copy";
-            },
-            1200
-        );
-
-    } catch {
-
-        button.textContent =
-            "Copy failed";
-    }
-}
-
-
-/* =====================================================
-HISTORY
-===================================================== */
-
-function saveChat() {
-
-    if (
-        messages.length === 0
-    ) {
-        return;
-    }
-
-    const firstUser =
-        messages.find(
-            x => x.role === "user"
-        );
-
-    const title =
-        firstUser
-            ? firstUser.text
-                .slice(0, 60)
-            : "New chat";
-
-    conversations.unshift({
-        id: Date.now(),
-        title: title,
-        messages: [
-            ...messages
-        ]
-    });
-
-    conversations =
-        conversations.slice(
-            0,
-            30
-        );
-
-    localStorage.setItem(
-        "medai_chats",
-        JSON.stringify(
-            conversations
-        )
-    );
-
-    renderHistory();
-}
-
-
-function renderHistory() {
-
-    const container =
-        document.getElementById(
-            "history"
-        );
-
-    container.innerHTML = "";
-
-    conversations.forEach(
-        item => {
-
-            const div =
-                document.createElement(
-                    "div"
-                );
-
-            div.className =
-                "history-item";
-
-            div.textContent =
-                item.title;
-
-            div.onclick =
-                () => loadChat(item);
-
-            container.appendChild(
-                div
-            );
-        }
-    );
-}
-
-
-function loadChat(item) {
-
-    messages = [];
-
-    document
-        .getElementById(
-            "chatInner"
-        )
-        .innerHTML = "";
-
-    item.messages.forEach(
-        message => {
-
-            addMessage(
-                message.role === "user"
-                    ? "user"
-                    : "ai",
-                message.text
-            );
-        }
-    );
-
-    closeMobileSidebar();
-
-    scrollBottom();
-}
-
-
-function clearHistory() {
-
-    if (
-        !confirm(
-            "Clear all saved chats?"
-        )
-    ) {
-        return;
-    }
-
-    conversations = [];
-
-    localStorage.removeItem(
-        "medai_chats"
-    );
-
-    renderHistory();
-
-    newChat();
-}
-
-
-/* =====================================================
-VOICE
-===================================================== */
-
-function voiceInput() {
-
-    const Recognition =
+    const SpeechRecognition =
         window.SpeechRecognition ||
         window.webkitSpeechRecognition;
 
-    if (!Recognition) {
+    if (!SpeechRecognition) {
 
         alert(
             "Voice input is not supported in this browser."
@@ -2341,61 +1444,75 @@ function voiceInput() {
     }
 
     const recognition =
-        new Recognition();
+        new SpeechRecognition();
 
-    recognition.lang =
-        "en-US";
+    recognition.lang = "ps-AF";
 
-    recognition.interimResults =
-        false;
+    recognition.interimResults = true;
 
-    recognition.maxAlternatives =
-        1;
+    recognition.continuous = false;
 
-    recognition.onresult =
-        function(event) {
+    recognition.onresult = function(event) {
 
-            const result =
-                event.results[0][0]
-                    .transcript;
+        let transcript = "";
 
-            const textarea =
-                document.getElementById(
-                    "message"
-                );
+        for (
+            let i = event.resultIndex;
+            i < event.results.length;
+            i++
+        ) {
+            transcript +=
+                event.results[i][0].transcript;
+        }
 
-            textarea.value +=
-                (
-                    textarea.value
-                        ? " "
-                        : ""
-                ) + result;
+        document.getElementById(
+            "messageInput"
+        ).value = transcript;
 
-            resizeText(
-                textarea
-            );
-        };
+        autoResize(
+            document.getElementById("messageInput")
+        );
+    };
+
+    recognition.onerror = function() {
+
+        alert(
+            "Voice input could not be started."
+        );
+    };
 
     recognition.start();
 }
 
 
 /* =====================================================
-TEXTAREA
-===================================================== */
+   TEXT TO SPEECH
+   ===================================================== */
 
-function resizeText(element) {
+function speakText(text) {
 
-    element.style.height =
-        "auto";
+    if (!("speechSynthesis" in window)) {
+        return;
+    }
 
-    element.style.height =
-        Math.min(
-            element.scrollHeight,
-            180
-        ) + "px";
+    window.speechSynthesis.cancel();
+
+    const utterance =
+        new SpeechSynthesisUtterance(text);
+
+    utterance.lang = "ps-AF";
+
+    utterance.rate = 0.95;
+
+    window.speechSynthesis.speak(
+        utterance
+    );
 }
 
+
+/* =====================================================
+   KEYBOARD
+   ===================================================== */
 
 function handleKey(event) {
 
@@ -2411,264 +1528,200 @@ function handleKey(event) {
 }
 
 
-/* =====================================================
-SCROLL
-===================================================== */
+function autoResize(element) {
 
-function scrollBottom() {
+    element.style.height = "auto";
+
+    element.style.height =
+        Math.min(
+            element.scrollHeight,
+            180
+        ) + "px";
+}
+
+
+/* =====================================================
+   SCROLL
+   ===================================================== */
+
+function scrollToBottom() {
 
     const chat =
-        document.getElementById(
-            "chat"
-        );
+        document.getElementById("chat");
 
-    setTimeout(
-        () => {
+    setTimeout(() => {
 
-            chat.scrollTo({
-                top:
-                    chat.scrollHeight,
-                behavior:
-                    "smooth"
-            });
+        chat.scrollTo({
+            top: chat.scrollHeight,
+            behavior: "smooth"
+        });
 
-        },
-        30
+    }, 50);
+}
+
+
+/* =====================================================
+   SIDEBAR
+   ===================================================== */
+
+function toggleSidebar() {
+
+    document
+        .getElementById("sidebar")
+        .classList.toggle("open");
+}
+
+
+/* =====================================================
+   THEME
+   ===================================================== */
+
+function toggleTheme() {
+
+    document.body.classList.toggle("dark");
+
+    localStorage.setItem(
+        "medai_dark",
+        document.body.classList.contains("dark")
     );
 }
 
 
-/* =====================================================
-MOBILE
-===================================================== */
+function loadTheme() {
 
-function closeMobileSidebar() {
+    const dark =
+        localStorage.getItem("medai_dark");
 
-    if (
-        window.innerWidth <= 760
-    ) {
-
-        document
-            .getElementById(
-                "sidebar"
-            )
-            .classList.remove(
-                "open"
-            );
+    if (dark === "true") {
+        document.body.classList.add("dark");
     }
 }
+
+
+/* =====================================================
+   START
+   ===================================================== */
+
+loadTheme();
+
+loadCurrentChat();
+
+updateHistory();
 
 </script>
 
 </body>
-
 </html>
 """
 
 
 # =========================================================
-# HOME
+# ROUTES
 # =========================================================
 
-@app.route("/", methods=["GET"])
+@app.route("/")
 def home():
-    return render_template_string(
-        HTML
-    )
+    return render_template_string(HTML)
 
 
-# =========================================================
-# HEALTH
-# =========================================================
-
-@app.route("/health", methods=["GET"])
+@app.route("/health")
 def health():
-
     return jsonify({
         "status": "ok",
         "service": "MedAI",
-        "chat_model": GEMINI_MODEL,
-        "image_model": IMAGE_MODEL,
-        "api_key_configured":
-            bool(GEMINI_API_KEY)
+        "model": GEMINI_MODEL,
+        "api_key_configured": bool(GEMINI_API_KEY)
     })
 
 
-# =========================================================
-# CHAT API
-# =========================================================
-
-@app.route(
-    "/api/chat",
-    methods=["POST"]
-)
+@app.route("/api/chat", methods=["POST"])
 def api_chat():
 
-    if not GEMINI_API_KEY:
+    try:
 
-        return jsonify({
-            "error":
-                "GEMINI_API_KEY is not configured."
-        }), 500
+        data = request.get_json(silent=True) or {}
 
-    data =
-        request.get_json(
-            silent=True
-        ) or {}
+        message = data.get("message", "")
 
-    message = str(
-        data.get(
-            "message",
-            ""
-        )
-    ).strip()
+        if not isinstance(message, str):
+            message = ""
 
-    if not message:
-        message = "Please analyze this image."
+        message = message.strip()
 
-    if len(message) > MAX_MESSAGE:
-
-        return jsonify({
-            "error":
-                "Message is too long."
-        }), 400
-
-    history =
-        data.get(
-            "history",
-            []
-        )
-
-    image_data =
-        data.get(
-            "image"
-        )
-
-    image_mime =
-        data.get(
-            "image_mime"
-        )
-
-    # Validate image
-    if image_data:
-
-        if not isinstance(
-            image_data,
-            str
-        ):
-
+        if len(message) > MAX_MESSAGE_LENGTH:
             return jsonify({
-                "error":
-                    "Invalid image data."
+                "error": "Message is too long."
             }), 400
 
-        try:
+        history = clean_history(
+            data.get("history", [])
+        )
 
-            raw_image =
-                base64.b64decode(
-                    image_data,
-                    validate=True
-                )
+        image_data = data.get("image")
 
-            if len(raw_image) > MAX_IMAGE_BYTES:
+        mime_type = data.get(
+            "mime_type",
+            "image/jpeg"
+        )
 
-                return jsonify({
-                    "error":
-                        "Image is too large."
-                }), 400
-
-        except Exception:
-
+        if not message and not image_data:
             return jsonify({
-                "error":
-                    "Invalid image encoding."
+                "error": "Please enter a message or upload an image."
             }), 400
 
-        allowed_mime = {
-            "image/jpeg",
-            "image/png",
-            "image/webp",
-            "image/gif"
-        }
-
-        if image_mime not in allowed_mime:
-
-            return jsonify({
-                "error":
-                    "Unsupported image type."
-            }), 400
-
-    result = chat_with_retry(
-        message=message,
-        history=history,
-        image_data=image_data,
-        image_mime=image_mime
-    )
-
-    if result.get("reply"):
+        answer = call_gemini(
+            message=message,
+            history=history,
+            image_data=image_data,
+            mime_type=mime_type
+        )
 
         return jsonify({
-            "reply":
-                result["reply"],
-            "model":
-                result.get(
-                    "model",
-                    GEMINI_MODEL
-                )
+            "answer": answer
         })
 
-    return jsonify({
-        "error":
-            result.get(
-                "error",
-                "AI service error."
-            ),
-        "details":
-            result.get(
-                "details",
-                ""
-            )
-    }), 503
+    except ValueError as error:
 
+        return jsonify({
+            "error": str(error)
+        }), 400
 
-# =========================================================
-# CHAT ALIAS
-# =========================================================
+    except requests.exceptions.Timeout:
 
-@app.route(
-    "/chat",
-    methods=["POST"]
-)
-def chat_alias():
+        return jsonify({
+            "error": "Gemini request timed out. Please try again."
+        }), 504
 
-    return api_chat()
+    except requests.exceptions.RequestException as error:
 
+        return jsonify({
+            "error": "Could not connect to Gemini.",
+            "details": str(error)
+        }), 502
 
-# =========================================================
-# 404
-# =========================================================
+    except Exception as error:
+
+        print("MedAI error:", repr(error))
+
+        return jsonify({
+            "error": str(error)
+        }), 500
+
 
 @app.errorhandler(404)
 def not_found(error):
-
     return jsonify({
         "error": "Not found"
     }), 404
 
 
 # =========================================================
-# LOCAL RUN
+# LOCAL DEVELOPMENT
 # =========================================================
 
 if __name__ == "__main__":
-
     app.run(
         host="0.0.0.0",
-        port=int(
-            os.environ.get(
-                "PORT",
-                5000
-            )
-        ),
+        port=int(os.environ.get("PORT", 5000)),
         debug=False
     )
