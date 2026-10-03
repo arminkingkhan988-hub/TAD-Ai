@@ -365,19 +365,44 @@ def chat():
     try:
 
         response = requests.post(
-    url,
-    headers={
-        "Content-Type": "application/json",
-        "x-goog-api-key": GEMINI_API_KEY
-    },
-    json=payload,
-    timeout=60
-)
+        url = (
+        f"https://generativelanguage.googleapis.com/"
+        f"v1beta/models/{GEMINI_MODEL}:generateContent"
+    )
+
+    payload = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "text": SYSTEM_PROMPT + "\n\nUser question:\n" + message
+                    }
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.7,
+            "maxOutputTokens": 2048
+        }
+    }
+
+    try:
+
+        response = requests.post(
+            url,
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": GEMINI_API_KEY
+            },
+            json=payload,
+            timeout=60
+        )
 
         if response.status_code != 200:
-
             return jsonify({
                 "error": "Gemini API error",
+                "status_code": response.status_code,
                 "details": response.text
             }), response.status_code
 
@@ -387,7 +412,8 @@ def chat():
 
         if not candidates:
             return jsonify({
-                "error": "Gemini returned no response."
+                "error": "Gemini returned no candidates.",
+                "details": result
             }), 500
 
         parts = candidates[0].get("content", {}).get("parts", [])
@@ -400,13 +426,33 @@ def chat():
 
         if not reply:
             return jsonify({
-                "error": "Gemini returned an empty response."
+                "error": "Gemini returned an empty response.",
+                "details": result
             }), 500
 
         return jsonify({
             "reply": reply
         })
 
+    except requests.exceptions.Timeout:
+
+        return jsonify({
+            "error": "Gemini request timed out."
+        }), 504
+
+    except requests.exceptions.RequestException as e:
+
+        return jsonify({
+            "error": "Could not connect to Gemini.",
+            "details": str(e)
+        }), 502
+
+    except Exception as e:
+
+        return jsonify({
+            "error": "Server error.",
+            "details": str(e)
+        }), 500
     except requests.exceptions.Timeout:
 
         return jsonify({
