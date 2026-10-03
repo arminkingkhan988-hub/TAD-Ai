@@ -365,13 +365,14 @@ def chat():
     try:
 
         response = requests.post(
-            url,
-            params={
-                "key": GEMINI_API_KEY
-            },
-            json=payload,
-            timeout=60
-        )
+    url,
+    headers={
+        "Content-Type": "application/json",
+        "x-goog-api-key": GEMINI_API_KEY
+    },
+    json=payload,
+    timeout=60
+)
 
         if response.status_code != 200:
 
