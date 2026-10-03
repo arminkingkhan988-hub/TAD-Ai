@@ -1,2348 +1,2706 @@
-import os
-import base64
-import requests
 from flask import Flask, request, jsonify, render_template_string
+import os
+import json
+import urllib.request
+import urllib.error
+import time
 
-# =========================================================
-# MedAI - Flask + Gemini
-# =========================================================
+app = Flask(name)
 
-app = Flask(__name__)
+=========================================================
+
+GEMINI CONFIGURATION
+
+=========================================================
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip()
 
-GEMINI_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    + GEMINI_MODEL
-    + ":generateContent"
+GEMINI_MODEL = os.environ.get(
+"GEMINI_MODEL",
+"gemini-3.5-flash-lite"
+).strip()
+
+GEMINI_FALLBACK_MODEL = os.environ.get(
+"GEMINI_FALLBACK_MODEL",
+"gemini-3.8-flash"
+).strip()
+
+GEMINI_BASE_URL = (
+"https://generativelanguage.googleapis.com/v1beta/"
+"models/{model}:generateContent"
 )
 
+=========================================================
+
+MEDICAL SYSTEM PROMPT
+
+=========================================================
 
 SYSTEM_PROMPT = """
-You are MedAI, a helpful multilingual AI assistant.
+You are MedAI, an educational medical information assistant.
 
-IMPORTANT:
-- Answer in the same language as the user's latest message.
-- Support Pashto, Dari, and English.
-- You can help with general questions, education, science, mathematics,
-  programming, writing, history, business, technology, and medicine.
-- Give clear, useful, structured answers.
-- Do not pretend to be a doctor.
-- For medical questions, provide general educational information, not a diagnosis.
-- If symptoms may indicate an emergency, clearly recommend contacting local
-  emergency medical services or going to an emergency department.
-- Never claim certainty when information is incomplete.
-- If an image is provided, carefully describe what can be observed and explain
-  uncertainty. For medical images, do not provide a definitive diagnosis.
-- Do not invent sources, test results, medications, or facts.
-- When the user asks for code, provide complete and runnable code when practical.
-- Be concise but helpful.
+Developer: Toyebullah Dawoodzay.
+Created in 2026.
+
+IMPORTANT LANGUAGE RULE:
+Answer in the SAME LANGUAGE as the user's question.
+
+If the user asks in Pashto, answer in Pashto.
+If the user asks in Dari, answer in Dari.
+If the user asks in English, answer in English.
+If the user asks in Urdu, answer in Urdu.
+If the user asks in Arabic, answer in Arabic.
+
+Use simple, clear, understandable language.
+
+Provide educational medical information only.
+
+SAFETY RULES:
+
+Do not diagnose a person from symptoms alone.
+
+Do not claim that you physically examined the patient.
+
+Do not invent medical facts.
+
+Do not provide personalized prescription instructions.
+
+Do not provide personalized medication dosing.
+
+Do not tell users to start, stop, or change prescription medicines.
+
+Explain that a qualified healthcare professional should make personal medical decisions.
+
+If emergency warning signs are present, advise urgent professional medical care.
+
+Do not replace a qualified healthcare professional.
+
+
+For symptoms:
+Explain possible general causes or categories,
+but clearly state that symptoms alone cannot confirm a diagnosis.
+
+For medicines:
+Provide general educational information such as:
+what the medicine is commonly used for,
+general precautions,
+common side effects,
+and important safety considerations.
+
+Do not provide personalized dose changes.
+
+If asked who created you, say:
+
+"زه MedAI یم، د Toyebullah Dawoodzay لخوا په ۲۰۲۶ کال کې جوړ شوی یم."
+
+Always prioritize patient safety.
 """
 
+=========================================================
 
-# =========================================================
-# Basic pages
-# =========================================================
+CHATGPT STYLE MOBILE UI
+
+=========================================================
+
+HTML = r"""
+<!doctype html>
+
+<html lang="ps" dir="rtl">  <head>  
+<meta charset="utf-8">  
+<meta name="viewport" content="width=device-width,initial-scale=1">  
+<meta name="theme-color" content="#ffffff">  <title>MedAI</title>  <style>  
+  
+*{  
+    box-sizing:border-box;  
+}  
+  
+:root{  
+    --bg:#ffffff;  
+    --panel:#f7f7f8;  
+    --text:#202123;  
+    --muted:#6b6f76;  
+    --border:#e5e5e5;  
+    --blue:#1677ff;  
+    --blue-dark:#0d5ed7;  
+    --user:#eef6ff;  
+    --danger:#d93025;  
+}  
+  
+body.dark{  
+    --bg:#212121;  
+    --panel:#171717;  
+    --text:#ececec;  
+    --muted:#a0a0a0;  
+    --border:#383838;  
+    --user:#26384d;  
+}  
+  
+html,  
+body{  
+    margin:0;  
+    padding:0;  
+    width:100%;  
+    height:100%;  
+    background:var(--bg);  
+    color:var(--text);  
+    font-family:  
+        Arial,  
+        "Noto Sans Arabic",  
+        sans-serif;  
+}  
+  
+body{  
+    overflow:hidden;  
+}  
+  
+/* ========================================================  
+   APP  
+======================================================== */  
+  
+.app{  
+    width:100%;  
+    height:100vh;  
+    display:flex;  
+    background:var(--bg);  
+}  
+  
+/* ========================================================  
+   SIDEBAR  
+======================================================== */  
+  
+.sidebar{  
+    width:285px;  
+    height:100vh;  
+    background:var(--panel);  
+    border-left:1px solid var(--border);  
+    padding:12px;  
+    display:flex;  
+    flex-direction:column;  
+    position:fixed;  
+    right:0;  
+    top:0;  
+    z-index:30;  
+    transition:.25s ease;  
+}  
+  
+.sidebar-header{  
+    display:flex;  
+    align-items:center;  
+    justify-content:space-between;  
+    margin-bottom:12px;  
+}  
+  
+.logo-area{  
+    display:flex;  
+    align-items:center;  
+    gap:9px;  
+}  
+  
+.logo{  
+    width:38px;  
+    height:38px;  
+    border-radius:11px;  
+    display:flex;  
+    align-items:center;  
+    justify-content:center;  
+    background:var(--blue);  
+    color:white;  
+    font-size:21px;  
+}  
+  
+.logo-name{  
+    font-weight:700;  
+    font-size:18px;  
+}  
+  
+.new-chat{  
+    width:100%;  
+    display:flex;  
+    align-items:center;  
+    justify-content:center;  
+    gap:8px;  
+    margin-bottom:12px;  
+    background:var(--blue);  
+}  
+  
+.menu-title{  
+    color:var(--muted);  
+    font-size:12px;  
+    margin:13px 8px 7px;  
+}  
+  
+.side-btn{  
+    width:100%;  
+    background:transparent;  
+    color:var(--text);  
+    text-align:right;  
+    padding:12px;  
+    border-radius:10px;  
+    display:flex;  
+    align-items:center;  
+    gap:10px;  
+    margin-bottom:3px;  
+}  
+  
+.side-btn:hover{  
+    background:rgba(128,128,128,.12);  
+}  
+  
+.sidebar-bottom{  
+    margin-top:auto;  
+    border-top:1px solid var(--border);  
+    padding-top:10px;  
+}  
+  
+/* ========================================================  
+   MAIN  
+======================================================== */  
+  
+.main{  
+    width:calc(100% - 285px);  
+    height:100vh;  
+    margin-right:285px;  
+    position:relative;  
+    display:flex;  
+    flex-direction:column;  
+}  
+  
+/* ========================================================  
+   TOP BAR  
+======================================================== */  
+  
+.topbar{  
+    height:58px;  
+    min-height:58px;  
+    border-bottom:1px solid var(--border);  
+    background:var(--bg);  
+    display:flex;  
+    align-items:center;  
+    justify-content:space-between;  
+    padding:0 18px;  
+    position:relative;  
+    z-index:10;  
+}  
+  
+.top-left{  
+    display:flex;  
+    align-items:center;  
+    gap:9px;  
+}  
+  
+.top-title{  
+    font-size:16px;  
+    font-weight:700;  
+}  
+  
+.model{  
+    color:var(--muted);  
+    font-size:12px;  
+}  
+  
+.icon-btn{  
+    width:39px;  
+    height:39px;  
+    padding:0;  
+    border-radius:10px;  
+    background:transparent;  
+    color:var(--text);  
+    border:1px solid transparent;  
+    font-size:19px;  
+}  
+  
+.icon-btn:hover{  
+    background:var(--panel);  
+}  
+  
+.mobile-menu{  
+    display:none;  
+}  
+  
+/* ========================================================  
+   CHAT AREA  
+======================================================== */  
+  
+.chat-area{  
+    flex:1;  
+    overflow-y:auto;  
+    padding:25px 18px 175px;  
+    scroll-behavior:smooth;  
+}  
+  
+.chat-content{  
+    max-width:760px;  
+    margin:auto;  
+}  
+  
+/* ========================================================  
+   WELCOME  
+======================================================== */  
+  
+.welcome{  
+    min-height:55vh;  
+    display:flex;  
+    align-items:center;  
+    justify-content:center;  
+    text-align:center;  
+    padding:25px 10px;  
+}  
+  
+.welcome-inner{  
+    width:100%;  
+}  
+  
+.welcome-logo{  
+    width:64px;  
+    height:64px;  
+    border-radius:20px;  
+    background:var(--blue);  
+    color:white;  
+    margin:0 auto 17px;  
+    display:flex;  
+    align-items:center;  
+    justify-content:center;  
+    font-size:34px;  
+    box-shadow:0 10px 30px rgba(22,119,255,.2);  
+}  
+  
+.welcome h1{  
+    margin:0 0 10px;  
+    font-size:28px;  
+}  
+  
+.welcome p{  
+    color:var(--muted);  
+    line-height:1.8;  
+    margin:0 auto 25px;  
+    max-width:560px;  
+}  
+  
+.suggestions{  
+    display:grid;  
+    grid-template-columns:repeat(2,1fr);  
+    gap:9px;  
+    max-width:600px;  
+    margin:auto;  
+}  
+  
+.suggestion{  
+    background:var(--bg);  
+    color:var(--text);  
+    border:1px solid var(--border);  
+    padding:13px 10px;  
+    border-radius:13px;  
+    text-align:right;  
+    cursor:pointer;  
+}  
+  
+.suggestion:hover{  
+    border-color:var(--blue);  
+}  
+  
+/* ========================================================  
+   MESSAGES  
+======================================================== */  
+  
+.message{  
+    display:flex;  
+    gap:12px;  
+    padding:17px 3px;  
+    line-height:1.9;  
+}  
+  
+.message.user{  
+    background:var(--user);  
+    border-radius:15px;  
+    padding:14px;  
+    margin:8px 0;  
+}  
+  
+.message.ai{  
+    background:transparent;  
+}  
+  
+.avatar{  
+    min-width:32px;  
+    width:32px;  
+    height:32px;  
+    border-radius:9px;  
+    display:flex;  
+    align-items:center;  
+    justify-content:center;  
+    background:var(--blue);  
+    color:white;  
+    font-size:16px;  
+}  
+  
+.user .avatar{  
+    background:#68707a;  
+}  
+  
+.message-body{  
+    flex:1;  
+    min-width:0;  
+    white-space:pre-wrap;  
+    overflow-wrap:anywhere;  
+}  
+  
+.message-actions{  
+    display:flex;  
+    gap:4px;  
+    margin-top:8px;  
+}  
+  
+.message-action{  
+    background:transparent;  
+    color:var(--muted);  
+    padding:5px 8px;  
+    font-size:13px;  
+}  
+  
+.message-action:hover{  
+    background:var(--panel);  
+}  
+  
+/* ========================================================  
+   COMPOSER  
+======================================================== */  
+  
+.composer-wrap{  
+    position:absolute;  
+    bottom:0;  
+    left:0;  
+    right:0;  
+    padding:16px 18px 18px;  
+    background:  
+        linear-gradient(  
+            transparent,  
+            var(--bg) 28%  
+        );  
+}  
+  
+.composer{  
+    max-width:760px;  
+    margin:auto;  
+    border:1px solid var(--border);  
+    background:var(--bg);  
+    border-radius:18px;  
+    box-shadow:0 6px 28px rgba(0,0,0,.08);  
+    overflow:hidden;  
+}  
+  
+.composer textarea{  
+    width:100%;  
+    min-height:58px;  
+    max-height:180px;  
+    border:0;  
+    outline:0;  
+    resize:none;  
+    padding:16px 16px 5px;  
+    background:transparent;  
+    color:var(--text);  
+    font-size:15px;  
+    line-height:1.7;  
+}  
+  
+.composer textarea::placeholder{  
+    color:var(--muted);  
+}  
+  
+.composer-bottom{  
+    display:flex;  
+    align-items:center;  
+    justify-content:space-between;  
+    padding:6px 8px 8px;  
+}  
+  
+.composer-tools{  
+    display:flex;  
+    gap:4px;  
+}  
+  
+.tool-btn{  
+    width:38px;  
+    height:38px;  
+    padding:0;  
+    border-radius:10px;  
+    background:transparent;  
+    color:var(--muted);  
+    font-size:18px;  
+}  
+  
+.tool-btn:hover{  
+    background:var(--panel);  
+}  
+  
+.send-btn{  
+    width:42px;  
+    height:42px;  
+    padding:0;  
+    border-radius:12px;  
+    background:var(--blue);  
+    color:white;  
+    font-size:18px;  
+}  
+  
+.send-btn:hover{  
+    background:var(--blue-dark);  
+}  
+  
+.send-btn:disabled{  
+    opacity:.45;  
+}  
+  
+.disclaimer{  
+    max-width:760px;  
+    margin:7px auto 0;  
+    text-align:center;  
+    color:var(--muted);  
+    font-size:10px;  
+}  
+  
+/* ========================================================  
+   STATUS  
+======================================================== */  
+  
+.status{  
+    text-align:center;  
+    color:var(--muted);  
+    font-size:12px;  
+    margin:8px;  
+}  
+  
+.loading{  
+    animation:pulse 1s infinite;  
+}  
+  
+@keyframes pulse{  
+    50%{opacity:.35}  
+}  
+  
+/* ========================================================  
+   MODAL  
+======================================================== */  
+  
+.modal{  
+    display:none;  
+    position:fixed;  
+    inset:0;  
+    background:rgba(0,0,0,.55);  
+    z-index:100;  
+    padding:15px;  
+    overflow:auto;  
+}  
+  
+.modal.show{  
+    display:block;  
+}  
+  
+.modal-box{  
+    max-width:650px;  
+    margin:45px auto;  
+    background:var(--bg);  
+    color:var(--text);  
+    border-radius:18px;  
+    padding:18px;  
+    border:1px solid var(--border);  
+}  
+  
+.modal-box h3{  
+    margin-top:0;  
+}  
+  
+.modal-input,  
+.modal-box textarea,  
+.modal-box select{  
+    width:100%;  
+    padding:12px;  
+    border-radius:11px;  
+    border:1px solid var(--border);  
+    background:var(--panel);  
+    color:var(--text);  
+    outline:none;  
+    margin-bottom:9px;  
+}  
+  
+.modal-row{  
+    display:flex;  
+    gap:8px;  
+    margin-top:8px;  
+}  
+  
+.modal-row button{  
+    flex:1;  
+}  
+  
+.pill{  
+    display:inline-block;  
+    background:var(--panel);  
+    border:1px solid var(--border);  
+    border-radius:20px;  
+    padding:6px 10px;  
+    margin:3px;  
+    font-size:12px;  
+}  
+  
+.small{  
+    color:var(--muted);  
+    font-size:12px;  
+    line-height:1.7;  
+}  
+  
+.danger{  
+    background:#feeceb;  
+    color:var(--danger);  
+}  
+  
+/* ========================================================  
+   MOBILE  
+======================================================== */  
+  
+@media(max-width:760px){  
+  
+    body{  
+        overflow:hidden;  
+    }  
+  
+    .sidebar{  
+        width:290px;  
+        transform:translateX(100%);  
+        box-shadow:-15px 0 40px rgba(0,0,0,.16);  
+    }  
+  
+    .sidebar.open{  
+        transform:translateX(0);  
+    }  
+  
+    .main{  
+        width:100%;  
+        margin-right:0;  
+    }  
+  
+    .mobile-menu{  
+        display:block;  
+    }  
+  
+    .topbar{  
+        padding:0 10px;  
+    }  
+  
+    .chat-area{  
+        padding:  
+            18px  
+            12px  
+            170px;  
+    }  
+  
+    .chat-content{  
+        width:100%;  
+    }  
+  
+    .welcome{  
+        min-height:58vh;  
+    }  
+  
+    .welcome h1{  
+        font-size:25px;  
+    }  
+  
+    .welcome-logo{  
+        width:58px;  
+        height:58px;  
+        font-size:29px;  
+    }  
+  
+    .suggestions{  
+        grid-template-columns:1fr;  
+    }  
+  
+    .message{  
+        padding:13px 1px;  
+    }  
+  
+    .message.user{  
+        padding:12px;  
+    }  
+  
+    .composer-wrap{  
+        padding:  
+            8px  
+            8px  
+            calc(8px + env(safe-area-inset-bottom));  
+    }  
+  
+    .composer{  
+        border-radius:17px;  
+    }  
+  
+    .composer textarea{  
+        min-height:52px;  
+        padding:14px 13px 4px;  
+    }  
+  
+    .disclaimer{  
+        font-size:9px;  
+        padding:0 15px;  
+    }  
+  
+    .top-title{  
+        font-size:15px;  
+    }  
+  
+    .model{  
+        display:none;  
+    }  
+}  
+  
+/* ========================================================  
+   EXTRA SMALL  
+======================================================== */  
+  
+@media(max-width:380px){  
+  
+    .suggestion{  
+        font-size:13px;  
+    }  
+  
+    .avatar{  
+        min-width:29px;  
+        width:29px;  
+        height:29px;  
+    }  
+  
+    .message{  
+        gap:8px;  
+    }  
+  
+}  
+  
+</style>  </head>  <body>  <div class="app">  <!-- =====================================================  
+     SIDEBAR  
+===================================================== -->  <aside class="sidebar" id="sidebar">  <div class="sidebar-header">  
+
+    <div class="logo-area">  
+
+        <div class="logo">🩺</div>  
+
+        <div class="logo-name">  
+            MedAI  
+        </div>  
+
+    </div>  
+
+    <button  
+        class="icon-btn"  
+        onclick="closeSidebar()"  
+    >  
+        ✕  
+    </button>  
+
+</div>  
+
+<button  
+    class="new-chat"  
+    onclick="newChat()"  
+>  
+    ＋ نوی چټ  
+</button>  
+
+<div class="menu-title">  
+    چټ او معلومات  
+</div>  
+
+<button  
+    class="side-btn"  
+    onclick="showHistory()"  
+>  
+    🕘 تاریخچه  
+</button>  
+
+<button  
+    class="side-btn"  
+    onclick="showFavorites()"  
+>  
+    ⭐ خوښې  
+</button>  
+
+<div class="menu-title">  
+    طبي وسایل  
+</div>  
+
+<button  
+    class="side-btn"  
+    onclick="askPreset('د دې نښو په اړه عمومي طبي معلومات راکړه: ')"  
+>  
+    🩺 نښې  
+</button>  
+
+<button  
+    class="side-btn"  
+    onclick="askPreset('د دې درمل په اړه عمومي معلومات راکړه: ')"  
+>  
+    💊 درمل  
+</button>  
+
+<button  
+    class="side-btn"  
+    onclick="askPreset('دا Lab Report په ساده ژبه تشریح کړه: ')"  
+>  
+    🧪 لابراتوار  
+</button>  
+
+<button  
+    class="side-btn"  
+    onclick="askPreset('د First Aid مهم اصول راکړه.')"  
+>  
+    🩹 لومړنۍ مرسته  
+</button>  
+
+<button  
+    class="side-btn"  
+    onclick="askPreset('د Emergency warning signs په اړه معلومات راکړه.')"  
+>  
+    🚨 بیړنی حالت  
+</button>  
+
+<button  
+    class="side-btn"  
+    onclick="openModal('tracker')"  
+>  
+    📊 Health Tracker  
+</button>  
+
+<button  
+    class="side-btn"  
+    onclick="openModal('reminder')"  
+>  
+    ⏰ درملو یادونه  
+</button>  
+
+<div class="sidebar-bottom">  
+
+    <button  
+        class="side-btn"  
+        onclick="toggleDark()"  
+    >  
+        🌙 Dark / Light  
+    </button>  
+
+    <button  
+        class="side-btn"  
+        onclick="openModal('account')"  
+    >  
+        👤 حساب  
+    </button>  
+
+    <button  
+        class="side-btn"  
+        onclick="openModal('about')"  
+    >  
+        ℹ️ د MedAI په اړه  
+    </button>  
+
+</div>
+
+</aside>  <!-- =====================================================  
+     MAIN  
+===================================================== -->  <main class="main">  <!-- TOP BAR -->  
+
+<header class="topbar">  
+
+    <div class="top-left">  
+
+        <button  
+            class="icon-btn mobile-menu"  
+            onclick="toggleSidebar()"  
+        >  
+            ☰  
+        </button>  
+
+        <div>  
+            <div class="top-title">  
+                MedAI  
+            </div>  
+
+            <div class="model">  
+                طبي معلوماتي مرستیال  
+            </div>  
+        </div>  
+
+    </div>  
+
+
+    <div>  
+
+        <button  
+            class="icon-btn"  
+            onclick="newChat()"  
+            title="New Chat"  
+        >  
+            ＋  
+        </button>  
+
+        <button  
+            class="icon-btn"  
+            onclick="toggleDark()"  
+            title="Dark Mode"  
+        >  
+            ◐  
+        </button>  
+
+    </div>  
+
+</header>  
+
+
+<!-- CHAT -->  
+
+<section  
+    class="chat-area"  
+    id="chatArea"  
+>  
+
+    <div  
+        class="chat-content"  
+        id="chatContent"  
+    >  
+
+        <div  
+            class="welcome"  
+            id="welcome"  
+        >  
+
+            <div class="welcome-inner">  
+
+                <div class="welcome-logo">  
+                    🩺  
+                </div>  
+
+                <h1>  
+                    له MedAI سره خبرې وکړئ  
+                </h1>  
+
+                <p>  
+                    ستاسې هوښیار طبي معلوماتي مرستیال.  
+                    خپله پوښتنه ولیکئ او د تعلیمي طبي معلوماتو  
+                    لپاره ځواب ترلاسه کړئ.  
+                </p>  
+
+
+                <div class="suggestions">  
+
+                    <button  
+                        class="suggestion"  
+                        onclick="askPreset('د شکر ناروغۍ په اړه مهم معلومات راکړه.')"  
+                    >  
+                        🩸 د شکر په اړه معلومات  
+                    </button>  
+
+                    <button  
+                        class="suggestion"  
+                        onclick="askPreset('د لوړ فشار په اړه عمومي معلومات راکړه.')"  
+                    >  
+                        ❤️ د فشار معلومات  
+                    </button>  
+
+                    <button  
+                        class="suggestion"  
+                        onclick="askPreset('د زړه د ناروغیو په اړه معلومات راکړه.')"  
+                    >  
+                        🫀 د زړه معلومات  
+                    </button>  
+
+                    <button  
+                        class="suggestion"  
+                        onclick="askPreset('د سالنډۍ یا Asthma په اړه معلومات راکړه.')"  
+                    >  
+                        🫁 د سالنډۍ معلومات  
+                    </button>  
+
+                </div>  
+
+            </div>  
+
+        </div>  
+
+    </div>  
+
+</section>  
+
+
+<!-- COMPOSER -->  
+
+<div class="composer-wrap">  
+
+    <div  
+        id="status"  
+        class="status"  
+    ></div>  
+
+    <div class="composer">  
+
+        <textarea  
+            id="question"  
+            rows="1"  
+            placeholder="له MedAI څخه پوښتنه وکړئ..."  
+        ></textarea>  
+
+
+        <div class="composer-bottom">  
+
+            <div class="composer-tools">  
+
+                <button  
+                    class="tool-btn"  
+                    onclick="startVoice()"  
+                    title="Voice"  
+                >  
+                    🎤  
+                </button>  
+
+                <button  
+                    class="tool-btn"  
+                    onclick="speakAnswer()"  
+                    title="Listen"  
+                >  
+                    🔊  
+                </button>  
+
+                <button  
+                    class="tool-btn"  
+                    onclick="saveFavorite()"  
+                    title="Favorite"  
+                >  
+                    ⭐  
+                </button>  
+
+            </div>  
+
+
+            <button  
+                id="sendBtn"  
+                class="send-btn"  
+                onclick="askAI()"  
+                title="Send"  
+            >  
+                ➤  
+            </button>  
+
+        </div>  
+
+    </div>  
+
+
+    <div class="disclaimer">  
+
+        MedAI یوازې تعلیمي طبي معلومات وړاندې کوي؛  
+        د ډاکټر بدیل نه دی.  
+
+    </div>  
+
+</div>
+
+</main>  </div>  <!-- =====================================================  
+     MODAL  
+===================================================== -->  <div  
+    class="modal"  
+    id="modal"  
+>  <div  
+    class="modal-box"  
+    id="modalBox"  
+></div>
+
+</div>  <script>  
+  
+/* ========================================================  
+   STORAGE  
+======================================================== */  
+  
+let lastAnswer = "";  
+  
+let historyList =  
+    JSON.parse(  
+        localStorage.getItem("medai_history") || "[]"  
+    );  
+  
+let favorites =  
+    JSON.parse(  
+        localStorage.getItem("medai_favorites") || "[]"  
+    );  
+  
+let reminders =  
+    JSON.parse(  
+        localStorage.getItem("medai_reminders") || "[]"  
+    );  
+  
+let tracker =  
+    JSON.parse(  
+        localStorage.getItem("medai_tracker") || "[]"  
+    );  
+  
+  
+/* ========================================================  
+   SIDEBAR  
+======================================================== */  
+  
+function toggleSidebar(){  
+  
+    document  
+        .getElementById("sidebar")  
+        .classList  
+        .toggle("open");  
+  
+}  
+  
+function closeSidebar(){  
+  
+    document  
+        .getElementById("sidebar")  
+        .classList  
+        .remove("open");  
+  
+}  
+  
+  
+/* ========================================================  
+   NEW CHAT  
+======================================================== */  
+  
+function newChat(){  
+  
+    const chat =  
+        document.getElementById("chatContent");  
+  
+    chat.innerHTML = `  
+  
+        <div class="welcome" id="welcome">  
+  
+            <div class="welcome-inner">  
+  
+                <div class="welcome-logo">  
+                    🩺  
+                </div>  
+  
+                <h1>  
+                    له MedAI سره خبرې وکړئ  
+                </h1>  
+  
+                <p>  
+                    ستاسې هوښیار طبي معلوماتي مرستیال.  
+                    خپله پوښتنه ولیکئ.  
+                </p>  
+  
+                <div class="suggestions">  
+  
+                    <button  
+                        class="suggestion"  
+                        onclick="askPreset('د شکر ناروغۍ په اړه مهم معلومات راکړه.')"  
+                    >  
+                        🩸 د شکر په اړه معلومات  
+                    </button>  
+  
+                    <button  
+                        class="suggestion"  
+                        onclick="askPreset('د لوړ فشار په اړه عمومي معلومات راکړه.')"  
+                    >  
+                        ❤️ د فشار معلومات  
+                    </button>  
+  
+                    <button  
+                        class="suggestion"  
+                        onclick="askPreset('د زړه د ناروغیو په اړه معلومات راکړه.')"  
+                    >  
+                        🫀 د زړه معلومات  
+                    </button>  
+  
+                    <button  
+                        class="suggestion"  
+                        onclick="askPreset('د سالنډۍ یا Asthma په اړه معلومات راکړه.')"  
+                    >  
+                        🫁 د سالنډۍ معلومات  
+                    </button>  
+  
+                </div>  
+  
+            </div>  
+  
+        </div>  
+    `;  
+  
+    lastAnswer = "";  
+  
+    document.getElementById("question").value = "";  
+  
+    document.getElementById("status").textContent = "";  
+  
+    closeSidebar();  
+  
+}  
+  
+  
+/* ========================================================  
+   DARK MODE  
+======================================================== */  
+  
+function toggleDark(){  
+  
+    document.body.classList.toggle("dark");  
+  
+    localStorage.setItem(  
+        "medai_dark",  
+        document.body.classList.contains("dark")  
+            ? "1"  
+            : "0"  
+    );  
+  
+}  
+  
+if(  
+    localStorage.getItem("medai_dark") === "1"  
+){  
+    document.body.classList.add("dark");  
+}  
+  
+  
+/* ========================================================  
+   ESCAPE HTML  
+======================================================== */  
+  
+function escapeHtml(value){  
+  
+    return String(value).replace(  
+        /[&<>"']/g,  
+        function(c){  
+  
+            return {  
+                "&":"&amp;",  
+                "<":"&lt;",  
+                ">":"&gt;",  
+                '"':"&quot;",  
+                "'":"&#39;"  
+            }[c];  
+  
+        }  
+    );  
+  
+}  
+  
+  
+/* ========================================================  
+   ADD USER MESSAGE  
+======================================================== */  
+  
+function addUserMessage(text){  
+  
+    const content =  
+        document.getElementById("chatContent");  
+  
+    const welcome =  
+        document.getElementById("welcome");  
+  
+    if(welcome){  
+        welcome.remove();  
+    }  
+  
+    content.innerHTML += `  
+  
+        <div class="message user">  
+  
+            <div class="avatar">  
+                👤  
+            </div>  
+  
+            <div class="message-body">  
+                ${escapeHtml(text)}  
+            </div>  
+  
+        </div>  
+  
+    `;  
+  
+}  
+  
+  
+/* ========================================================  
+   ADD AI MESSAGE  
+======================================================== */  
+  
+function addAIMessage(text){  
+  
+    const content =  
+        document.getElementById("chatContent");  
+  
+    const wrapper =  
+        document.createElement("div");  
+  
+    wrapper.className = "message ai";  
+  
+    wrapper.innerHTML = `  
+  
+        <div class="avatar">  
+            🩺  
+        </div>  
+  
+        <div class="message-body">  
+  
+            <div class="ai-text"></div>  
+  
+            <div class="message-actions">  
+  
+                <button  
+                    class="message-action"  
+                    onclick="copyText(this)"  
+                >  
+                    📋 کاپي  
+                </button>  
+  
+                <button  
+                    class="message-action"  
+                    onclick="saveFavorite()"  
+                >  
+                    ⭐ خوندي  
+                </button>  
+  
+                <button  
+                    class="message-action"  
+                    onclick="speakAnswer()"  
+                >  
+                    🔊 واورئ  
+                </button>  
+  
+            </div>  
+  
+        </div>  
+  
+    `;  
+  
+    wrapper  
+        .querySelector(".ai-text")  
+        .textContent = text;  
+  
+    content.appendChild(wrapper);  
+  
+    return wrapper;  
+  
+}  
+  
+  
+/* ========================================================  
+   ASK PRESET  
+======================================================== */  
+  
+function askPreset(text){  
+  
+    document.getElementById("question").value = text;  
+  
+    autoResize();  
+  
+    askAI();  
+  
+    closeSidebar();  
+  
+}  
+  
+  
+/* ========================================================  
+   ASK AI  
+======================================================== */  
+  
+async function askAI(){  
+  
+    const input =  
+        document.getElementById("question");  
+  
+    const button =  
+        document.getElementById("sendBtn");  
+  
+    const status =  
+        document.getElementById("status");  
+  
+    const message =  
+        input.value.trim();  
+  
+    if(!message){  
+        return;  
+    }  
+  
+    addUserMessage(message);  
+  
+    input.value = "";  
+  
+    autoResize();  
+  
+    button.disabled = true;  
+  
+    status.innerHTML =  
+        '<span class="loading">MedAI فکر کوي...</span>';  
+  
+    scrollToBottom();  
+  
+    try{  
+  
+        const response =  
+            await fetch(  
+                "/api/chat",  
+                {  
+                    method:"POST",  
+  
+                    headers:{  
+                        "Content-Type":  
+                            "application/json"  
+                    },  
+  
+                    body:  
+                        JSON.stringify({  
+                            message:message  
+                        })  
+                }  
+            );  
+  
+  
+        let data = {};  
+  
+        try{  
+  
+            data = await response.json();  
+  
+        }catch{  
+  
+            data = {};  
+  
+        }  
+  
+  
+        if(!response.ok){  
+  
+            throw new Error(  
+                data.error ||  
+                "API request failed."  
+            );  
+  
+        }  
+  
+  
+        lastAnswer =  
+            data.reply ||  
+            "ځواب ترلاسه نه شو.";  
+  
+  
+        addAIMessage(lastAnswer);  
+  
+        addHistory(  
+            message,  
+            lastAnswer  
+        );  
+  
+  
+        status.textContent =  
+            data.model  
+                ? "چمتو دی"  
+                : "";  
+  
+  
+        scrollToBottom();  
+  
+  
+    }catch(error){  
+  
+        addAIMessage(  
+            "بخښنه، یوه ستونزه رامنځته شوه:\n" +  
+            error.message  
+        );  
+  
+        status.textContent =  
+            "API Error";  
+  
+  
+        scrollToBottom();  
+  
+    }finally{  
+  
+        button.disabled = false;  
+  
+    }  
+  
+}  
+  
+  
+/* ========================================================  
+   SCROLL  
+======================================================== */  
+  
+function scrollToBottom(){  
+  
+    const area =  
+        document.getElementById("chatArea");  
+  
+    setTimeout(  
+        function(){  
+  
+            area.scrollTop =  
+                area.scrollHeight;  
+  
+        },  
+        50  
+    );  
+  
+}  
+  
+  
+/* ========================================================  
+   AUTO RESIZE  
+======================================================== */  
+  
+function autoResize(){  
+  
+    const textarea =  
+        document.getElementById("question");  
+  
+    textarea.style.height = "auto";  
+  
+    textarea.style.height =  
+        Math.min(  
+            textarea.scrollHeight,  
+            180  
+        ) + "px";  
+  
+}  
+  
+document  
+    .getElementById("question")  
+    .addEventListener(  
+        "input",  
+        autoResize  
+    );  
+  
+  
+/* ========================================================  
+   ENTER TO SEND  
+======================================================== */  
+  
+document  
+    .getElementById("question")  
+    .addEventListener(  
+        "keydown",  
+        function(event){  
+  
+            if(  
+                event.key === "Enter" &&  
+                !event.shiftKey  
+            ){  
+  
+                event.preventDefault();  
+  
+                askAI();  
+  
+            }  
+  
+        }  
+    );  
+  
+  
+/* ========================================================  
+   COPY  
+======================================================== */  
+  
+function copyText(button){  
+  
+    const message =  
+        button  
+            .closest(".message")  
+            .querySelector(".ai-text")  
+            .textContent;  
+  
+    if(  
+        navigator.clipboard  
+    ){  
+  
+        navigator.clipboard.writeText(message);  
+  
+    }  
+  
+}  
+  
+  
+/* ========================================================  
+   VOICE OUTPUT  
+======================================================== */  
+  
+function speakAnswer(){  
+  
+    if(  
+        lastAnswer &&  
+        "speechSynthesis" in window  
+    ){  
+  
+        speechSynthesis.cancel();  
+  
+        const speech =  
+            new SpeechSynthesisUtterance(  
+                lastAnswer  
+            );  
+  
+        speech.lang = "ps-AF";  
+  
+        speechSynthesis.speak(  
+            speech  
+        );  
+  
+    }  
+  
+}  
+  
+  
+/* ========================================================  
+   STOP VOICE  
+======================================================== */  
+  
+function stopVoice(){  
+  
+    if(  
+        "speechSynthesis" in window  
+    ){  
+  
+        speechSynthesis.cancel();  
+  
+    }  
+  
+}  
+  
+  
+/* ========================================================  
+   VOICE INPUT  
+======================================================== */  
+  
+function startVoice(){  
+  
+    const Recognition =  
+        window.SpeechRecognition ||  
+        window.webkitSpeechRecognition;  
+  
+    if(!Recognition){  
+  
+        alert(  
+            "ستاسې براوزر Voice Input نه ملاتړ کوي."  
+        );  
+  
+        return;  
+  
+    }  
+  
+    const recognition =  
+        new Recognition();  
+  
+    recognition.lang = "ps-AF";  
+  
+    recognition.interimResults = false;  
+  
+    recognition.onresult =  
+        function(event){  
+  
+            document.getElementById(  
+                "question"  
+            ).value =  
+                event.results[0][0].transcript;  
+  
+            autoResize();  
+  
+        };  
+  
+    recognition.onerror =  
+        function(){  
+  
+            alert(  
+                "Voice Input کې ستونزه راغله."  
+            );  
+  
+        };  
+  
+    recognition.start();  
+  
+}  
+  
+  
+/* ========================================================  
+   FAVORITES  
+======================================================== */  
+  
+function saveFavorite(){  
+  
+    if(!lastAnswer){  
+  
+        alert(  
+            "لومړی یو AI ځواب ترلاسه کړئ."  
+        );  
+  
+        return;  
+  
+    }  
+  
+    favorites.unshift(lastAnswer);  
+  
+    favorites =  
+        favorites.slice(0,30);  
+  
+    localStorage.setItem(  
+        "medai_favorites",  
+        JSON.stringify(favorites)  
+    );  
+  
+}  
+  
+  
+function showFavorites(){  
+  
+    openModal("favorites");  
+  
+    closeSidebar();  
+  
+}  
+  
+  
+function clearFavorites(){  
+  
+    favorites = [];  
+  
+    localStorage.setItem(  
+        "medai_favorites",  
+        "[]"  
+    );  
+  
+    openModal("favorites");  
+  
+}  
+  
+  
+/* ========================================================  
+   HISTORY  
+======================================================== */  
+  
+function addHistory(q,a){  
+  
+    historyList.unshift({  
+        q:q,  
+        a:a,  
+        t:new Date().toLocaleString()  
+    });  
+  
+    historyList =  
+        historyList.slice(0,50);  
+  
+    localStorage.setItem(  
+        "medai_history",  
+        JSON.stringify(historyList)  
+    );  
+  
+}  
+  
+  
+function showHistory(){  
+  
+    openModal("history");  
+  
+    closeSidebar();  
+  
+}  
+  
+  
+function clearHistory(){  
+  
+    historyList = [];  
+  
+    localStorage.setItem(  
+        "medai_history",  
+        "[]"  
+    );  
+  
+    openModal("history");  
+  
+}  
+  
+  
+/* ========================================================  
+   MODAL  
+======================================================== */  
+  
+function openModal(type){  
+  
+    const modal =  
+        document.getElementById("modal");  
+  
+    const box =  
+        document.getElementById("modalBox");  
+  
+    let html = "";  
+  
+  
+    /* ACCOUNT */  
+  
+    if(type === "account"){  
+  
+        const account =  
+            JSON.parse(  
+                localStorage.getItem(  
+                    "medai_account"  
+                ) || "{}"  
+            );  
+  
+        html = `  
+  
+            <h3>👤 حساب</h3>  
+  
+            <p class="small">  
+                دا د محلي Demo حساب دی.  
+                معلومات یوازې په دې وسیله کې ساتل کېږي.  
+            </p>  
+  
+            <input  
+                class="modal-input"  
+                id="name"  
+                placeholder="نوم"  
+                value="${escapeHtml(account.name || "")}"  
+            >  
+  
+            <input  
+                class="modal-input"  
+                id="email"  
+                placeholder="Email"  
+                value="${escapeHtml(account.email || "")}"  
+            >  
+  
+            <div class="modal-row">  
+  
+                <button onclick="localAccount()">  
+                    Save  
+                </button>  
+  
+                <button  
+                    class="secondary"  
+                    onclick="closeModal()"  
+                >  
+                    Close  
+                </button>  
+  
+            </div>  
+  
+            <div  
+                id="accountStatus"  
+                class="small"  
+            ></div>  
+        `;  
+  
+    }  
+  
+  
+    /* HISTORY */  
+  
+    if(type === "history"){  
+  
+        html = `  
+  
+            <h3>🕘 تاریخچه</h3>  
+  
+            ${  
+                historyList.length  
+                ?  
+                historyList.map(  
+                    function(x){  
+  
+                        return `  
+  
+                            <div  
+                                class="message ai"  
+                                style="border-bottom:1px solid var(--border)"  
+                            >  
+  
+                                <div class="avatar">  
+                                    🩺  
+                                </div>  
+  
+                                <div class="message-body">  
+  
+                                    <div class="small">  
+                                        ${escapeHtml(x.t)}  
+                                    </div>  
+  
+                                    <b>  
+                                        پوښتنه:  
+                                    </b>  
+  
+                                    <div>  
+                                        ${escapeHtml(x.q)}  
+                                    </div>  
+  
+                                    <br>  
+  
+                                    <b>  
+                                        ځواب:  
+                                    </b>  
+  
+                                    <div>  
+                                        ${escapeHtml(x.a)}  
+                                    </div>  
+  
+                                </div>  
+  
+                            </div>  
+  
+                        `;  
+  
+                    }  
+                ).join("")  
+                :  
+                "<p>تر اوسه تاریخچه نشته.</p>"  
+            }  
+  
+            <div class="modal-row">  
+  
+                <button  
+                    class="danger"  
+                    onclick="clearHistory()"  
+                >  
+                    Clear  
+                </button>  
+  
+                <button  
+                    class="secondary"  
+                    onclick="closeModal()"  
+                >  
+                    Close  
+                </button>  
+  
+            </div>  
+        `;  
+  
+    }  
+  
+  
+    /* FAVORITES */  
+  
+    if(type === "favorites"){  
+  
+        html = `  
+  
+            <h3>⭐ خوښې</h3>  
+  
+            ${  
+                favorites.length  
+                ?  
+                favorites.map(  
+                    function(x){  
+  
+                        return `  
+                            <div class="message ai">  
+                                <div class="avatar">🩺</div>  
+                                <div class="message-body">  
+                                    ${escapeHtml(x)}  
+                                </div>  
+                            </div>  
+                        `;  
+  
+                    }  
+                ).join("")  
+                :  
+                "<p>تر اوسه Favorite نشته.</p>"  
+            }  
+  
+            <div class="modal-row">  
+  
+                <button  
+                    class="danger"  
+                    onclick="clearFavorites()"  
+                >  
+                    Clear  
+                </button>  
+  
+                <button  
+                    class="secondary"  
+                    onclick="closeModal()"  
+                >  
+                    Close  
+                </button>  
+  
+            </div>  
+        `;  
+  
+    }  
+  
+  
+    /* TRACKER */  
+  
+    if(type === "tracker"){  
+  
+        html = `  
+  
+            <h3>📊 Health Tracker</h3>  
+  
+            <input  
+                class="modal-input"  
+                id="metric"  
+                placeholder="مثلاً وزن 70kg"  
+            >  
+  
+            <div class="modal-row">  
+  
+                <button onclick="saveTracker()">  
+                    Save  
+                </button>  
+  
+                <button  
+                    class="secondary"  
+                    onclick="closeModal()"  
+                >  
+                    Close  
+                </button>  
+  
+            </div>  
+  
+            <div>  
+                ${  
+                    tracker.map(  
+                        function(x){  
+  
+                            return `  
+                                <span class="pill">  
+                                    ${escapeHtml(x)}  
+                                </span>  
+                            `;  
+  
+                        }  
+                    ).join("")  
+                }  
+            </div>  
+        `;  
+  
+    }  
+  
+  
+    /* REMINDER */  
+  
+    if(type === "reminder"){  
+  
+        html = `  
+  
+            <h3>⏰ Medication Reminder</h3>  
+  
+            <input  
+                class="modal-input"  
+                id="reminderText"  
+                placeholder="د یادونې متن"  
+            >  
+  
+            <input  
+                class="modal-input"  
+                id="reminderTime"  
+                type="time"  
+            >  
+  
+            <div class="modal-row">  
+  
+                <button onclick="saveReminder()">  
+                    Save  
+                </button>  
+  
+                <button  
+                    class="secondary"  
+                    onclick="closeModal()"  
+                >  
+                    Close  
+                </button>  
+  
+            </div>  
+  
+            <div>  
+                ${  
+                    reminders.map(  
+                        function(x){  
+  
+                            return `  
+                                <span class="pill">  
+                                    ${escapeHtml(x.text)}  
+                                    —  
+                                    ${escapeHtml(x.time)}  
+                                </span>  
+                            `;  
+  
+                        }  
+                    ).join("")  
+                }  
+            </div>  
+        `;  
+  
+    }  
+  
+  
+    /* ABOUT */  
+  
+    if(type === "about"){  
+  
+        html = `  
+  
+            <h3>ℹ️ د MedAI په اړه</h3>  
+  
+            <p>  
+                MedAI یو تعلیمي طبي معلوماتي AI دی.  
+            </p>  
+  
+            <p>  
+                <b>Developer:</b>  
+                Toyebullah Dawoodzay  
+            </p>  
+  
+            <p>  
+                <b>Created:</b>  
+                2026  
+            </p>  
+  
+            <p class="small">  
+                MedAI د ډاکټر بدیل نه دی.  
+                د بیړني حالت پر مهال مسلکي طبي مرسته وغواړئ.  
+            </p>  
+  
+            <button onclick="closeModal()">  
+                Close  
+            </button>  
+        `;  
+  
+    }  
+  
+  
+    box.innerHTML = html;  
+  
+    modal.classList.add("show");  
+  
+}  
+  
+  
+function closeModal(){  
+  
+    document  
+        .getElementById("modal")  
+        .classList  
+        .remove("show");  
+  
+}  
+  
+  
+/* ========================================================  
+   ACCOUNT  
+======================================================== */  
+  
+function localAccount(){  
+  
+    const name =  
+        document.getElementById("name").value.trim();  
+  
+    const email =  
+        document.getElementById("email").value.trim();  
+  
+    localStorage.setItem(  
+        "medai_account",  
+        JSON.stringify({  
+            name:name,  
+            email:email  
+        })  
+    );  
+  
+    document.getElementById(  
+        "accountStatus"  
+    ).textContent =  
+        "حساب په دې وسیله کې خوندي شو.";  
+  
+}  
+  
+  
+/* ========================================================  
+   TRACKER  
+======================================================== */  
+  
+function saveTracker(){  
+  
+    const value =  
+        document  
+            .getElementById("metric")  
+            .value  
+            .trim();  
+  
+    if(!value){  
+        return;  
+    }  
+  
+    tracker.unshift(  
+        new Date().toLocaleDateString()  
+        + " — "  
+        + value  
+    );  
+  
+    localStorage.setItem(  
+        "medai_tracker",  
+        JSON.stringify(tracker)  
+    );  
+  
+    openModal("tracker");  
+  
+}  
+  
+  
+/* ========================================================  
+   REMINDER  
+======================================================== */  
+  
+function saveReminder(){  
+  
+    const text =  
+        document  
+            .getElementById("reminderText")  
+            .value  
+            .trim();  
+  
+    const time =  
+        document  
+            .getElementById("reminderTime")  
+            .value;  
+  
+    if(!text || !time){  
+        return;  
+    }  
+  
+    reminders.unshift({  
+        text:text,  
+        time:time  
+    });  
+  
+    localStorage.setItem(  
+        "medai_reminders",  
+        JSON.stringify(reminders)  
+    );  
+  
+    alert(  
+        "یادونه خوندي شوه."  
+    );  
+  
+    openModal("reminder");  
+  
+}  
+  
+  
+/* ========================================================  
+   MODAL OUTSIDE CLICK  
+======================================================== */  
+  
+document  
+    .getElementById("modal")  
+    .addEventListener(  
+        "click",  
+        function(event){  
+  
+            if(  
+                event.target.id === "modal"  
+            ){  
+  
+                closeModal();  
+  
+            }  
+  
+        }  
+    );  
+  
+  
+/* ========================================================  
+   CLOSE SIDEBAR ON OUTSIDE MOBILE  
+======================================================== */  
+  
+document.addEventListener(  
+    "click",  
+    function(event){  
+  
+        const sidebar =  
+            document.getElementById("sidebar");  
+  
+        if(  
+            window.innerWidth <= 760 &&  
+            sidebar.classList.contains("open") &&  
+            !sidebar.contains(event.target) &&  
+            !event.target.closest(".mobile-menu")  
+        ){  
+  
+            closeSidebar();  
+  
+        }  
+  
+    }  
+);  
+  
+  
+/* ========================================================  
+   ESC KEY  
+======================================================== */  
+  
+document.addEventListener(  
+    "keydown",  
+    function(event){  
+  
+        if(event.key === "Escape"){  
+  
+            closeModal();  
+            closeSidebar();  
+  
+        }  
+  
+    }  
+);  
+  
+</script>  </body>  
+</html>  
+"""  =========================================================
+
+HOME
+
+=========================================================
 
 @app.route("/")
 def home():
-    return render_template_string(HTML)
+return render_template_string(HTML)
 
+=========================================================
+
+HEALTH CHECK
+
+=========================================================
 
 @app.route("/health")
 def health():
-    return jsonify({
-        "status": "ok",
-        "service": "MedAI"
-    })
 
+return jsonify({  
 
-# =========================================================
-# Gemini API
-# =========================================================
+    "status":"ok",  
 
-@app.route("/api/chat", methods=["POST"])
+    "primary_model":  
+        GEMINI_MODEL,  
+
+    "fallback_model":  
+        GEMINI_FALLBACK_MODEL,  
+
+    "api_key_configured":  
+        bool(GEMINI_API_KEY)  
+
+})
+
+=========================================================
+
+GEMINI CHAT API
+
+=========================================================
+
+@app.route(
+"/api/chat",
+methods=["POST"]
+)
 def chat():
-    if not GEMINI_API_KEY:
-        return jsonify({
-            "ok": False,
-            "error": "GEMINI_API_KEY is not configured in Vercel."
-        }), 500
-
-    try:
-        data = request.get_json(silent=True) or {}
-
-        message = str(data.get("message", "")).strip()
-        history = data.get("history", [])
-        image_data = data.get("image")
-
-        if not message and not image_data:
-            return jsonify({
-                "ok": False,
-                "error": "Please enter a message or select an image."
-            }), 400
-
-        contents = []
-
-        # Conversation context
-        if isinstance(history, list):
-            for item in history[-12:]:
-                if not isinstance(item, dict):
-                    continue
-
-                role = item.get("role", "user")
-                text = str(item.get("text", "")).strip()
-
-                if not text:
-                    continue
-
-                gemini_role = "model" if role == "assistant" else "user"
-
-                contents.append({
-                    "role": gemini_role,
-                    "parts": [
-                        {
-                            "text": text
-                        }
-                    ]
-                })
-
-        # Current message
-        parts = []
-
-        if message:
-            parts.append({
-                "text": message
-            })
-
-        # Optional image
-        if image_data:
-            try:
-                if "," in image_data:
-                    header, encoded = image_data.split(",", 1)
-                    mime_type = "image/jpeg"
-
-                    if "image/png" in header:
-                        mime_type = "image/png"
-                    elif "image/webp" in header:
-                        mime_type = "image/webp"
-                    elif "image/gif" in header:
-                        mime_type = "image/gif"
-
-                    # Validate base64
-                    base64.b64decode(encoded, validate=True)
-
-                    parts.append({
-                        "inline_data": {
-                            "mime_type": mime_type,
-                            "data": encoded
-                        }
-                    })
-
-            except Exception:
-                return jsonify({
-                    "ok": False,
-                    "error": "The uploaded image could not be processed."
-                }), 400
-
-        contents.append({
-            "role": "user",
-            "parts": parts
-        })
-
-        payload = {
-            "system_instruction": {
-                "parts": [
-                    {
-                        "text": SYSTEM_PROMPT
-                    }
-                ]
-            },
-            "contents": contents,
-            "generationConfig": {
-                "temperature": 0.7,
-                "topP": 0.95,
-                "maxOutputTokens": 2048
-            }
-        }
-
-        response = requests.post(
-            GEMINI_URL,
-            params={
-                "key": GEMINI_API_KEY
-            },
-            json=payload,
-            timeout=55
-        )
-
-        if response.status_code != 200:
-            try:
-                error_data = response.json()
-            except Exception:
-                error_data = {
-                    "message": response.text[:500]
-                }
-
-            return jsonify({
-                "ok": False,
-                "error": "Gemini API error.",
-                "details": error_data
-            }), response.status_code
-
-        result = response.json()
-
-        answer = ""
-
-        candidates = result.get("candidates", [])
-
-        if candidates:
-            candidate = candidates[0]
-            candidate_content = candidate.get("content", {})
-            candidate_parts = candidate_content.get("parts", [])
-
-            for part in candidate_parts:
-                if isinstance(part, dict) and part.get("text"):
-                    answer += part["text"]
-
-        answer = answer.strip()
-
-        if not answer:
-            return jsonify({
-                "ok": False,
-                "error": "Gemini returned an empty response."
-            }), 502
-
-        return jsonify({
-            "ok": True,
-            "answer": answer,
-            "model": GEMINI_MODEL
-        })
-
-    except requests.Timeout:
-        return jsonify({
-            "ok": False,
-            "error": "The AI request timed out. Please try again."
-        }), 504
-
-    except requests.RequestException as exc:
-        return jsonify({
-            "ok": False,
-            "error": "Network error while contacting Gemini.",
-            "details": str(exc)
-        }), 502
-
-    except Exception as exc:
-        return jsonify({
-            "ok": False,
-            "error": "Server error.",
-            "details": str(exc)
-        }), 500
-
-
-# =========================================================
-# Frontend
-# =========================================================
-
-HTML = r"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<title>MedAI</title>
-
-<style>
-* {
-    box-sizing: border-box;
-}
-
-:root {
-    --bg: #f5f7fb;
-    --panel: #ffffff;
-    --panel2: #eef2f7;
-    --text: #172033;
-    --muted: #6b7280;
-    --border: #dfe4ec;
-    --primary: #2563eb;
-    --primary2: #1d4ed8;
-    --user: #2563eb;
-    --assistant: #ffffff;
-    --danger: #dc2626;
-    --shadow: 0 8px 30px rgba(0,0,0,.08);
-}
-
-body.dark {
-    --bg: #0b1220;
-    --panel: #111827;
-    --panel2: #1f2937;
-    --text: #f3f4f6;
-    --muted: #9ca3af;
-    --border: #374151;
-    --primary: #3b82f6;
-    --primary2: #2563eb;
-    --assistant: #111827;
-    --shadow: 0 8px 30px rgba(0,0,0,.30);
-}
-
-html,
-body {
-    margin: 0;
-    padding: 0;
-    width: 100%;
-    height: 100%;
-}
-
-body {
-    font-family:
-        Inter,
-        system-ui,
-        -apple-system,
-        BlinkMacSystemFont,
-        "Segoe UI",
-        sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    overflow: hidden;
-}
-
-/* APP */
-
-.app {
-    display: flex;
-    width: 100%;
-    height: 100vh;
-}
-
-/* SIDEBAR */
-
-.sidebar {
-    width: 280px;
-    min-width: 280px;
-    height: 100vh;
-    background: var(--panel);
-    border-right: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    padding: 16px;
-    z-index: 20;
-}
-
-.logo {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-weight: 800;
-    font-size: 21px;
-    margin-bottom: 18px;
-}
-
-.logo-icon {
-    width: 38px;
-    height: 38px;
-    border-radius: 12px;
-    background: linear-gradient(135deg, #2563eb, #06b6d4);
-    color: white;
-    display: grid;
-    place-items: center;
-    font-size: 20px;
-}
-
-.new-chat {
-    border: 1px solid var(--border);
-    background: var(--panel2);
-    color: var(--text);
-    padding: 12px 14px;
-    border-radius: 12px;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 700;
-    margin-bottom: 15px;
-}
-
-.new-chat:hover {
-    border-color: var(--primary);
-}
-
-.sidebar-title {
-    color: var(--muted);
-    font-size: 12px;
-    font-weight: 700;
-    margin: 8px 4px;
-    text-transform: uppercase;
-}
-
-.history {
-    flex: 1;
-    overflow-y: auto;
-}
-
-.history-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 10px;
-    border-radius: 10px;
-    cursor: pointer;
-    margin-bottom: 4px;
-    font-size: 13px;
-}
-
-.history-item:hover {
-    background: var(--panel2);
-}
-
-.history-text {
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-}
-
-.delete-history {
-    border: 0;
-    background: transparent;
-    color: var(--muted);
-    cursor: pointer;
-}
-
-.sidebar-bottom {
-    border-top: 1px solid var(--border);
-    padding-top: 12px;
-}
-
-.side-button {
-    width: 100%;
-    text-align: left;
-    padding: 10px;
-    border: 0;
-    background: transparent;
-    color: var(--text);
-    border-radius: 9px;
-    cursor: pointer;
-}
-
-.side-button:hover {
-    background: var(--panel2);
-}
-
-/* MAIN */
-
-.main {
-    flex: 1;
-    min-width: 0;
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-}
-
-/* TOP BAR */
-
-.topbar {
-    height: 62px;
-    min-height: 62px;
-    border-bottom: 1px solid var(--border);
-    background: var(--panel);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 18px;
-}
-
-.top-left {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.mobile-menu {
-    display: none;
-    border: 0;
-    background: transparent;
-    color: var(--text);
-    font-size: 23px;
-    cursor: pointer;
-}
-
-.status {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    font-size: 13px;
-    color: var(--muted);
-}
-
-.status-dot {
-    width: 8px;
-    height: 8px;
-    background: #22c55e;
-    border-radius: 50%;
-}
-
-.top-actions {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-}
-
-.icon-button {
-    width: 38px;
-    height: 38px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--panel);
-    color: var(--text);
-    cursor: pointer;
-}
-
-/* CHAT */
-
-.chat {
-    flex: 1;
-    overflow-y: auto;
-    padding: 25px 18px 130px;
-}
-
-.chat-inner {
-    width: min(900px, 100%);
-    margin: auto;
-}
-
-.welcome {
-    text-align: center;
-    padding: 60px 10px 30px;
-}
-
-.welcome-icon {
-    width: 72px;
-    height: 72px;
-    margin: auto;
-    border-radius: 22px;
-    display: grid;
-    place-items: center;
-    background: linear-gradient(135deg, #2563eb, #06b6d4);
-    color: white;
-    font-size: 35px;
-    box-shadow: var(--shadow);
-}
-
-.welcome h1 {
-    margin: 18px 0 8px;
-    font-size: 30px;
-}
-
-.welcome p {
-    color: var(--muted);
-    margin: 0 auto;
-    max-width: 620px;
-}
-
-.quick-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
-    max-width: 700px;
-    margin: 25px auto;
-}
-
-.quick {
-    text-align: left;
-    padding: 14px;
-    background: var(--panel);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 13px;
-    cursor: pointer;
-}
-
-.quick:hover {
-    border-color: var(--primary);
-}
-
-.quick strong {
-    display: block;
-    margin-bottom: 5px;
-}
-
-.quick span {
-    color: var(--muted);
-    font-size: 12px;
-}
-
-/* MESSAGES */
-
-.message {
-    display: flex;
-    margin-bottom: 20px;
-    gap: 10px;
-}
-
-.message.user {
-    justify-content: flex-end;
-}
-
-.avatar {
-    width: 34px;
-    height: 34px;
-    min-width: 34px;
-    border-radius: 10px;
-    display: grid;
-    place-items: center;
-    background: var(--panel2);
-    font-size: 16px;
-}
-
-.user .avatar {
-    order: 2;
-    background: var(--primary);
-    color: white;
-}
-
-.bubble {
-    max-width: 80%;
-    padding: 13px 15px;
-    border-radius: 15px;
-    line-height: 1.6;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-}
-
-.user .bubble {
-    background: var(--user);
-    color: white;
-    border-bottom-right-radius: 4px;
-}
-
-.assistant .bubble {
-    background: var(--assistant);
-    border: 1px solid var(--border);
-    border-bottom-left-radius: 4px;
-}
-
-.message-actions {
-    display: flex;
-    gap: 5px;
-    margin-top: 6px;
-}
-
-.small-button {
-    border: 0;
-    background: transparent;
-    color: var(--muted);
-    cursor: pointer;
-    font-size: 12px;
-}
-
-.small-button:hover {
-    color: var(--primary);
-}
-
-/* THINKING */
-
-.typing {
-    display: flex;
-    gap: 5px;
-    padding: 7px 2px;
-}
-
-.typing span {
-    width: 7px;
-    height: 7px;
-    background: var(--muted);
-    border-radius: 50%;
-    animation: blink 1.2s infinite;
-}
-
-.typing span:nth-child(2) {
-    animation-delay: .15s;
-}
-
-.typing span:nth-child(3) {
-    animation-delay: .30s;
-}
-
-@keyframes blink {
-    0%, 80%, 100% {
-        opacity: .3;
-        transform: translateY(0);
-    }
-    40% {
-        opacity: 1;
-        transform: translateY(-4px);
-    }
-}
-
-/* IMAGE PREVIEW */
-
-.preview {
-    display: none;
-    width: min(900px, 100%);
-    margin: 0 auto 8px;
-    padding: 8px;
-}
-
-.preview-box {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 6px;
-}
-
-.preview img {
-    width: 60px;
-    height: 60px;
-    object-fit: cover;
-    border-radius: 7px;
-}
-
-.remove-image {
-    border: 0;
-    background: transparent;
-    color: var(--danger);
-    cursor: pointer;
-}
-
-/* COMPOSER */
-
-.composer-area {
-    position: fixed;
-    bottom: 0;
-    right: 0;
-    left: 280px;
-    background: linear-gradient(
-        to top,
-        var(--bg) 72%,
-        transparent
-    );
-    padding: 15px 18px 17px;
-}
-
-.composer {
-    width: min(900px, 100%);
-    margin: auto;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 17px;
-    box-shadow: var(--shadow);
-    padding: 9px;
-}
-
-.input-row {
-    display: flex;
-    align-items: flex-end;
-    gap: 7px;
-}
-
-#messageInput {
-    flex: 1;
-    resize: none;
-    border: 0;
-    outline: 0;
-    background: transparent;
-    color: var(--text);
-    padding: 11px;
-    font-family: inherit;
-    font-size: 15px;
-    max-height: 150px;
-}
-
-#messageInput::placeholder {
-    color: var(--muted);
-}
-
-.send-button {
-    width: 43px;
-    height: 43px;
-    border: 0;
-    border-radius: 12px;
-    background: var(--primary);
-    color: white;
-    cursor: pointer;
-    font-size: 17px;
-}
-
-.send-button:hover {
-    background: var(--primary2);
-}
-
-.send-button:disabled {
-    opacity: .5;
-    cursor: not-allowed;
-}
-
-.composer-tools {
-    display: flex;
-    gap: 5px;
-    padding-top: 4px;
-}
-
-.tool-button {
-    border: 0;
-    background: transparent;
-    color: var(--muted);
-    cursor: pointer;
-    padding: 7px;
-    border-radius: 8px;
-}
-
-.tool-button:hover {
-    background: var(--panel2);
-    color: var(--text);
-}
-
-.disclaimer {
-    text-align: center;
-    color: var(--muted);
-    font-size: 10px;
-    margin-top: 7px;
-}
-
-/* MODAL */
-
-.modal {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,.55);
-    display: none;
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
-    padding: 20px;
-}
-
-.modal.show {
-    display: flex;
-}
-
-.modal-box {
-    width: min(520px, 100%);
-    max-height: 85vh;
-    overflow-y: auto;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 17px;
-    padding: 20px;
-    box-shadow: var(--shadow);
-}
-
-.modal-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-
-.modal-header h2 {
-    margin: 0;
-}
-
-.close {
-    border: 0;
-    background: transparent;
-    color: var(--muted);
-    font-size: 22px;
-    cursor: pointer;
-}
-
-.reminder-form {
-    display: grid;
-    gap: 10px;
-    margin-top: 15px;
-}
-
-.reminder-form input {
-    width: 100%;
-    padding: 11px;
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    background: var(--bg);
-    color: var(--text);
-}
-
-.primary-button {
-    border: 0;
-    background: var(--primary);
-    color: white;
-    padding: 11px;
-    border-radius: 10px;
-    cursor: pointer;
-}
-
-.reminder-item {
-    margin-top: 10px;
-    padding: 10px;
-    background: var(--panel2);
-    border-radius: 10px;
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-}
-
-/* MOBILE */
-
-@media (max-width: 760px) {
-    .sidebar {
-        position: fixed;
-        left: -290px;
-        top: 0;
-        transition: left .2s ease;
-        box-shadow: var(--shadow);
-    }
-
-    .sidebar.open {
-        left: 0;
-    }
-
-    .mobile-menu {
-        display: block;
-    }
-
-    .composer-area {
-        left: 0;
-        padding: 9px;
-    }
-
-    .chat {
-        padding: 18px 10px 125px;
-    }
-
-    .bubble {
-        max-width: 88%;
-    }
-
-    .quick-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .welcome {
-        padding-top: 35px;
-    }
-
-    .welcome h1 {
-        font-size: 25px;
-    }
-}
-</style>
-</head>
-
-<body>
-
-<div class="app">
-
-    <!-- SIDEBAR -->
-    <aside class="sidebar" id="sidebar">
-
-        <div class="logo">
-            <div class="logo-icon">⚕</div>
-            <span>MedAI</span>
-        </div>
-
-        <button class="new-chat" onclick="newChat()">
-            ＋ New Chat
-        </button>
-
-        <div class="sidebar-title">
-            Chat History
-        </div>
-
-        <div class="history" id="historyList"></div>
-
-        <div class="sidebar-bottom">
-
-            <button class="side-button" onclick="openReminders()">
-                ⏰ Reminders
-            </button>
-
-            <button class="side-button" onclick="exportChat()">
-                📤 Export Chat
-            </button>
-
-            <button class="side-button" onclick="clearAllChats()">
-                🗑️ Clear History
-            </button>
-
-        </div>
-    </aside>
-
-    <!-- MAIN -->
-    <main class="main">
-
-        <header class="topbar">
-
-            <div class="top-left">
-
-                <button
-                    class="mobile-menu"
-                    onclick="toggleSidebar()"
-                >
-                    ☰
-                </button>
-
-                <div class="status">
-                    <span class="status-dot"></span>
-                    MedAI Online
-                </div>
-
-            </div>
-
-            <div class="top-actions">
-
-                <button
-                    class="icon-button"
-                    title="Dark / Light"
-                    onclick="toggleTheme()"
-                >
-                    🌙
-                </button>
-
-                <button
-                    class="icon-button"
-                    title="New Chat"
-                    onclick="newChat()"
-                >
-                    ＋
-                </button>
-
-            </div>
-
-        </header>
-
-        <section class="chat" id="chat">
-
-            <div class="chat-inner" id="chatInner">
-
-                <div class="welcome" id="welcome">
-
-                    <div class="welcome-icon">
-                        ⚕
-                    </div>
-
-                    <h1>How can I help you?</h1>
-
-                    <p>
-                        MedAI can help with medicine, education,
-                        science, coding, mathematics, writing and
-                        general questions.
-                    </p>
-
-                    <div class="quick-grid">
-
-                        <button
-                            class="quick"
-                            onclick="quickPrompt('Explain this medical topic in simple language.')"
-                        >
-                            <strong>🩺 Medical</strong>
-                            <span>General health information</span>
-                        </button>
-
-                        <button
-                            class="quick"
-                            onclick="quickPrompt('Teach me this topic step by step.')"
-                        >
-                            <strong>📚 Education</strong>
-                            <span>Learn difficult topics</span>
-                        </button>
-
-                        <button
-                            class="quick"
-                            onclick="quickPrompt('Help me write clean and working code.')"
-                        >
-                            <strong>💻 Coding</strong>
-                            <span>Programming assistance</span>
-                        </button>
-
-                        <button
-                            class="quick"
-                            onclick="quickPrompt('Solve this math problem and explain every step.')"
-                        >
-                            <strong>🧮 Mathematics</strong>
-                            <span>Step-by-step solutions</span>
-                        </button>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-        </section>
-
-        <!-- IMAGE PREVIEW -->
-        <div class="preview" id="imagePreview">
-
-            <div class="preview-box">
-
-                <img id="previewImage" alt="Selected image">
-
-                <button
-                    class="remove-image"
-                    onclick="removeImage()"
-                >
-                    ✕
-                </button>
-
-            </div>
-
-        </div>
-
-        <!-- COMPOSER -->
-        <div class="composer-area">
-
-            <div class="composer">
-
-                <div class="input-row">
-
-                    <textarea
-                        id="messageInput"
-                        rows="1"
-                        placeholder="Message MedAI..."
-                        onkeydown="handleKey(event)"
-                        oninput="autoResize(this)"
-                    ></textarea>
-
-                    <button
-                        class="send-button"
-                        id="sendButton"
-                        onclick="sendMessage()"
-                    >
-                        ➤
-                    </button>
-
-                </div>
-
-                <div class="composer-tools">
-
-                    <button
-                        class="tool-button"
-                        title="Upload image"
-                        onclick="document.getElementById('imageInput').click()"
-                    >
-                        🖼️
-                    </button>
-
-                    <button
-                        class="tool-button"
-                        title="Voice input"
-                        onclick="startVoice()"
-                    >
-                        🎤
-                    </button>
-
-                    <button
-                        class="tool-button"
-                        title="Reminders"
-                        onclick="openReminders()"
-                    >
-                        ⏰
-                    </button>
-
-                </div>
-
-            </div>
-
-            <div class="disclaimer">
-                MedAI provides general information and is not a substitute
-                for professional medical care.
-            </div>
-
-        </div>
-
-    </main>
-
-</div>
-
-
-<input
-    type="file"
-    id="imageInput"
-    accept="image/*"
-    style="display:none"
-    onchange="handleImage(event)"
->
-
-
-<!-- REMINDERS MODAL -->
-
-<div class="modal" id="reminderModal">
-
-    <div class="modal-box">
-
-        <div class="modal-header">
-
-            <h2>⏰ Reminders</h2>
-
-            <button
-                class="close"
-                onclick="closeReminders()"
-            >
-                ✕
-            </button>
-
-        </div>
-
-        <div class="reminder-form">
-
-            <input
-                id="reminderText"
-                placeholder="Reminder text"
-            >
-
-            <input
-                id="reminderDate"
-                type="datetime-local"
-            >
-
-            <button
-                class="primary-button"
-                onclick="addReminder()"
-            >
-                Add Reminder
-            </button>
-
-        </div>
-
-        <div id="reminderList"></div>
-
-    </div>
-
-</div>
-
-
-<script>
-/* =========================================================
-   STATE
-   ========================================================= */
-
-let messages = [];
-let selectedImage = null;
-let isSending = false;
-let currentChatId = null;
-
-
-/* =========================================================
-   STORAGE
-   ========================================================= */
-
-const CHAT_KEY = "medai_chats_v1";
-const THEME_KEY = "medai_theme_v1";
-const REMINDER_KEY = "medai_reminders_v1";
-
-
-function getChats() {
-    try {
-        return JSON.parse(localStorage.getItem(CHAT_KEY) || "[]");
-    } catch (error) {
-        return [];
-    }
-}
-
-
-function saveChats(chats) {
-    localStorage.setItem(CHAT_KEY, JSON.stringify(chats));
-}
-
-
-function getReminders() {
-    try {
-        return JSON.parse(
-            localStorage.getItem(REMINDER_KEY) || "[]"
-        );
-    } catch (error) {
-        return [];
-    }
-}
-
-
-function saveReminders(items) {
-    localStorage.setItem(
-        REMINDER_KEY,
-        JSON.stringify(items)
-    );
-}
-
-
-/* =========================================================
-   INIT
-   ========================================================= */
-
-document.addEventListener("DOMContentLoaded", function() {
-
-    loadTheme();
-    renderHistory();
-    renderReminders();
-
-    const saved = sessionStorage.getItem("medai_current_chat");
-
-    if (saved) {
-        try {
-            messages = JSON.parse(saved);
-            renderMessages();
-        } catch (error) {
-            messages = [];
-        }
-    }
-
-});
-
-
-/* =========================================================
-   THEME
-   ========================================================= */
-
-function loadTheme() {
-
-    const theme = localStorage.getItem(THEME_KEY);
-
-    if (theme === "dark") {
-        document.body.classList.add("dark");
-    }
-}
-
-
-function toggleTheme() {
-
-    document.body.classList.toggle("dark");
-
-    const dark = document.body.classList.contains("dark");
-
-    localStorage.setItem(
-        THEME_KEY,
-        dark ? "dark" : "light"
-    );
-}
-
-
-/* =========================================================
-   SIDEBAR
-   ========================================================= */
-
-function toggleSidebar() {
-    document
-        .getElementById("sidebar")
-        .classList.toggle("open");
-}
-
-
-/* =========================================================
-   NEW CHAT
-   ========================================================= */
-
-function newChat() {
-
-    messages = [];
-    selectedImage = null;
-    currentChatId = null;
-
-    sessionStorage.removeItem("medai_current_chat");
-
-    removeImage();
-    renderMessages();
-
-    document
-        .getElementById("messageInput")
-        .focus();
-
-    document
-        .getElementById("sidebar")
-        .classList.remove("open");
-}
-
-
-/* =========================================================
-   MESSAGE RENDER
-   ========================================================= */
-
-function renderMessages() {
-
-    const container = document.getElementById("chatInner");
-
-    container.innerHTML = "";
-
-    if (messages.length === 0) {
-
-        container.innerHTML = `
-            <div class="welcome" id="welcome">
-
-                <div class="welcome-icon">⚕</div>
-
-                <h1>How can I help you?</h1>
-
-                <p>
-                    Ask MedAI anything about medicine, education,
-                    science, coding, mathematics, writing and more.
-                </p>
-
-                <div class="quick-grid">
-
-                    <button
-                        class="quick"
-                        onclick="quickPrompt('Explain this medical topic in simple language.')"
-                    >
-                        <strong>🩺 Medical</strong>
-                        <span>General health information</span>
-                    </button>
-
-                    <button
-                        class="quick"
-                        onclick="quickPrompt('Teach me this topic step by step.')"
-                    >
-                        <strong>📚 Education</strong>
-                        <span>Learn difficult topics</span>
-                    </button>
-
-                    <button
-                        class="quick"
-                        onclick="quickPrompt('Help me write clean and working code.')"
-                    >
-                        <strong>💻 Coding</strong>
-                        <span>Programming assistance</span>
-                    </button>
-
-                    <button
-                        class="quick"
-                        onclick="quickPrompt('Solve this math problem and explain every step.')"
-                    >
-                        <strong>🧮 Mathematics</strong>
-                        <span>Step-by-step solutions</span>
-                    </button>
-
-                </div>
-
-            </div>
-        `;
-
-        return;
-    }
-
-    messages.forEach(function(message, index) {
-
-        addMessageElement(
-            message.role,
-            message.text,
-            index
-        );
-
-    });
-
-    scrollToBottom();
-}
-
-
-function addMessageElement(role, text, index) {
-
-    const container = document.getElementById("chatInner");
-
-    const wrapper = document.createElement("div");
-
-    wrapper.className =
-        "message " +
-        (role === "user" ? "user" : "assistant");
-
-    const avatar = document.createElement("div");
-
-    avatar.className = "avatar";
-    avatar.textContent =
-        role === "user" ? "👤" : "⚕";
-
-    const content = document.createElement("div");
-
-    const bubble = document.createElement("div");
-
-    bubble.className = "bubble";
-    bubble.textContent = text;
-
-    content.appendChild(bubble);
-
-    if (role === "assistant") {
-
-        const actions = document.createElement("div");
-
-        actions.className = "message-actions";
-
-        const copyButton = document.createElement("button");
-
-        copyButton.className = "small-button";
-        copyButton.textContent = "Copy";
-
-        copyButton.onclick = function() {
-            copyText(text);
-        };
-
-        const speakButton = document.createElement("button");
-
-        speakButton.className = "small-button";
-        speakButton.textContent = "🔊 Speak";
-
-        speakButton.onclick = function() {
-            speak(text);
-        };
-
-        const favoriteButton = document.createElement("button");
-
-        favoriteButton.className = "small-button";
-        favoriteButton.textContent = "⭐ Save";
-
-        favoriteButton.onclick = function() {
-            favoriteAnswer(text);
-        };
-
-        actions.appendChild(copyButton);
-        actions.appendChild(speakButton);
-        actions.appendChild(favoriteButton);
-
-        content.appendChild(actions);
-    }
-
-    wrapper.appendChild(avatar);
-    wrapper.appendChild(content);
-
-    container.appendChild(wrapper);
-}
-
-
-/* =========================================================
-   SEND
-   ========================================================= */
-
-async function sendMessage() {
-
-    if (isSending) {
-        return;
-    }
-
-    const input = document.getElementById("messageInput");
-    const text = input.value.trim();
-
-    if (!text && !selectedImage) {
-        return;
-    }
-
-    isSending = true;
-
-    document.getElementById("sendButton").disabled = true;
-
-    const historyForApi = messages.slice(-12).map(function(item) {
-        return {
-            role: item.role,
-            text: item.text
-        };
-    });
-
-    const userText = text || "Please analyze this image.";
-
-    messages.push({
-        role: "user",
-        text: userText
-    });
-
-    input.value = "";
-    autoResize(input);
-
-    renderMessages();
-
-    showTyping();
-
-    const imageToSend = selectedImage;
-
-    removeImage();
-
-    try {
-
-        const response = await fetch("/api/chat", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                message: userText,
-                history: historyForApi,
-                image: imageToSend
-            })
-        });
-
-        const data = await response.json();
-
-        removeTyping();
-
-        if (!response.ok || !data.ok) {
-
-            const errorMessage =
-                data.error ||
-                "Something went wrong. Please try again.";
-
-            messages.push({
-                role: "assistant",
-                text: "⚠️ " + errorMessage
-            });
-
-        } else {
-
-            messages.push({
-                role: "assistant",
-                text: data.answer
-            });
-
-            saveCurrentChat();
-
-        }
-
-    } catch (error) {
-
-        removeTyping();
-
-        messages.push({
-            role: "assistant",
-            text:
-                "⚠️ Connection error. Please check your internet connection and try again."
-        });
-
-    }
-
-    isSending = false;
-
-    document.getElementById("sendButton").disabled = false;
-
-    saveCurrentChat();
-    renderMessages();
-}
-
-
-/* =========================================================
-   TYPING
-   ========================================================= */
-
-function showTyping() {
-
-    const container = document.getElementById("chatInner");
-
-    const wrapper = document.createElement("div");
-
-    wrapper.id = "typingMessage";
-    wrapper.className = "message assistant";
-
-    wrapper.innerHTML = `
-        <div class="avatar">⚕</div>
-        <div class="bubble">
-            <div class="typing">
-                <span></span>
-                <span></span>
-                <span></span>
-            </div>
-        </div>
-    `;
-
-    container.appendChild(wrapper);
-
-    scrollToBottom();
-}
-
-
-function removeTyping() {
-
-    const typing =
-        document.getElementById("typingMessage");
-
-    if (typing) {
-        typing.remove();
-    }
-}
-
-
-/* =========================================================
-   CHAT STORAGE
-   ========================================================= */
-
-function saveCurrentChat() {
-
-    if (messages.length === 0) {
-        return;
-    }
-
-    sessionStorage.setItem(
-        "medai_current_chat",
-        JSON.stringify(messages)
-    );
-
-    const chats = getChats();
-
-    let chatId = currentChatId;
-
-    if (!chatId) {
-        chatId =
-            Date.now().toString();
-
-        currentChatId = chatId;
-    }
-
-    const firstUser =
-        messages.find(function(item) {
-            return item.role === "user";
-        });
-
-    const title =
-        firstUser
-            ? firstUser.text.substring(0, 60)
-            : "New Chat";
-
-    const existingIndex =
-        chats.findIndex(function(item) {
-            return item.id === chatId;
-        });
-
-    const chatObject = {
-        id: chatId,
-        title: title,
-        messages: messages,
-        updated: Date.now()
-    };
-
-    if (existingIndex >= 0) {
-        chats[existingIndex] = chatObject;
-    } else {
-        chats.unshift(chatObject);
-    }
-
-    saveChats(chats.slice(0, 50));
-
-    renderHistory();
-}
-
-
-function renderHistory() {
-
-    const container =
-        document.getElementById("historyList");
-
-    const chats = getChats();
-
-    container.innerHTML = "";
-
-    chats.forEach(function(chat) {
-
-        const item =
-            document.createElement("div");
-
-        item.className = "history-item";
-
-        const text =
-            document.createElement("div");
-
-        text.className = "history-text";
-        text.textContent = chat.title;
-
-        text.onclick = function() {
-            loadChat(chat.id);
-        };
-
-        const deleteButton =
-            document.createElement("button");
-
-        deleteButton.className =
-            "delete-history";
-
-        deleteButton.textContent = "✕";
-
-        deleteButton.onclick = function(event) {
-
-            event.stopPropagation();
-
-            deleteChat(chat.id);
-        };
-
-        item.appendChild(text);
-        item.appendChild(deleteButton);
-
-        container.appendChild(item);
-    });
-}
-
-
-function loadChat(id) {
-
-    const chats = getChats();
-
-    const chat =
-        chats.find(function(item) {
-            return item.id === id;
-        });
-
-    if (!chat) {
-        return;
-    }
-
-    currentChatId = id;
-
-    messages =
-        Array.isArray(chat.messages)
-            ? chat.messages
-            : [];
-
-    sessionStorage.setItem(
-        "medai_current_chat",
-        JSON.stringify(messages)
-    );
-
-    renderMessages();
-
-    document
-        .getElementById("sidebar")
-        .classList.remove("open");
-}
-
-
-function deleteChat(id) {
-
-    const chats =
-        getChats().filter(function(item) {
-            return item.id !== id;
-        });
-
-    saveChats(chats);
-
-    if (currentChatId === id) {
-        newChat();
-    }
-
-    renderHistory();
-}
-
-
-function clearAllChats() {
-
-    const confirmed =
-        confirm(
-            "Delete all saved chat history?"
-        );
-
-    if (!confirmed) {
-        return;
-    }
-
-    localStorage.removeItem(CHAT_KEY);
-
-    newChat();
-
-    renderHistory();
-}
-
-
-/* =========================================================
-   IMAGE
-   ========================================================= */
-
-function handleImage(event) {
-
-    const file =
-        event.target.files[0];
-
-    if (!file) {
-        return;
-    }
-
-    if (!file.type.startsWith("image/")) {
-        alert("Please select an image file.");
-        return;
-    }
-
-    if (file.size > 8 * 1024 * 1024) {
-        alert("Please select an image smaller than 8 MB.");
-        return;
-    }
-
-    const reader =
-        new FileReader();
-
-    reader.onload = function(e) {
-
-        selectedImage =
-            e.target.result;
-
-        document.getElementById(
-            "previewImage"
-        ).src = selectedImage;
-
-        document.getElementById(
-            "imagePreview"
-        ).style.display = "block";
-    };
-
-    reader.readAsDataURL(file);
-
-    event.target.value = "";
-}
-
-
-function removeImage() {
-
-    selectedImage = null;
-
-    document.getElementById(
-        "imagePreview"
-    ).style.display = "none";
-
-    document.getElementById(
-        "previewImage"
-    ).src = "";
-}
-
-
-/* =========================================================
-   VOICE INPUT
-   ========================================================= */
-
-function startVoice() {
-
-    const SpeechRecognition =
-        window.SpeechRecognition ||
-        window.webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-
-        alert(
-            "Voice input is not supported by this browser. Try Chrome or Edge."
-        );
-
-        return;
-    }
-
-    const recognition =
-        new SpeechRecognition();
-
-    recognition.lang = "en-US";
-    recognition.interimResults = false;
-    recognition.continuous = false;
-
-    recognition.onstart = function() {
-        alert("Listening... Speak now.");
-    };
-
-    recognition.onresult = function(event) {
-
-        const transcript =
-            event.results[0][0].transcript;
-
-        const input =
-            document.getElementById("messageInput");
-
-        input.value =
-            transcript;
-
-        autoResize(input);
-    };
-
-    recognition.onerror = function() {
-        alert("Voice input could not be started.");
-    };
-
-    recognition.start();
-}
-
-
-/* =========================================================
-   VOICE OUTPUT
-   ========================================================= */
-
-function speak(text) {
-
-    if (!("speechSynthesis" in window)) {
-
-        alert(
-            "Voice output is not supported by this browser."
-        );
-
-        return;
-    }
-
-    window.speechSynthesis.cancel();
-
-    const utterance =
-        new SpeechSynthesisUtterance(text);
-
-    utterance.rate = 1;
-    utterance.pitch = 1;
-
-    window.speechSynthesis.speak(
-        utterance
-    );
-}
-
-
-/* =========================================================
-   COPY
-   ========================================================= */
-
-async function copyText(text) {
-
-    try {
-
-        await navigator.clipboard.writeText(text);
-
-        alert("Copied.");
-
-    } catch (error) {
-
-        alert("Could not copy the text.");
-    }
-}
-
-
-/* =========================================================
-   FAVORITES
-   ========================================================= */
-
-function favoriteAnswer(text) {
-
-    const key =
-        "medai_favorites_v1";
-
-    let favorites = [];
-
-    try {
-        favorites =
-            JSON.parse(
-                localStorage.getItem(key) || "[]"
-            );
-    } catch (error) {
-        favorites = [];
-    }
-
-    if (!favorites.includes(text)) {
-        favorites.push(text);
-    }
-
-    localStorage.setItem(
-        key,
-        JSON.stringify(favorites)
-    );
-
-    alert("Saved to favorites.");
-}
-
-
-/* =========================================================
-   EXPORT
-   ========================================================= */
-
-function exportChat() {
-
-    if (messages.length === 0) {
-        alert("There is no chat to export.");
-        return;
-    }
-
-    let output =
-        "MedAI Conversation\n";
-    output +=
-        "===================\n\n";
-
-    messages.forEach(function(item) {
-
-        output +=
-            (item.role === "user"
-                ? "You"
-                : "MedAI") +
-            ":\n";
-
-        output +=
-            item.text +
-            "\n\n";
-    });
-
-    const blob =
-        new Blob(
-            [output],
-            {
-                type: "text/plain;charset=utf-8"
-            }
-        );
-
-    const url =
-        URL.createObjectURL(blob);
-
-    const link =
-        document.createElement("a");
-
-    link.href = url;
-    link.download =
-        "medai-chat.txt";
-
-    document.body.appendChild(link);
-
-    link.click();
-
-    link.remove();
-
-    URL.revokeObjectURL(url);
-}
-
-
-/* =========================================================
-   REMINDERS
-   ========================================================= */
-
-function openReminders() {
-
-    document
-        .getElementById("reminderModal")
-        .classList.add("show");
-
-    renderReminders();
-}
-
-
-function closeReminders() {
-
-    document
-        .getElementById("reminderModal")
-        .classList.remove("show");
-}
-
-
-function addReminder() {
-
-    const text =
-        document
-            .getElementById("reminderText")
-            .value
-            .trim();
-
-    const date =
-        document
-            .getElementById("reminderDate")
-            .value;
-
-    if (!text || !date) {
-        alert("Please enter reminder text and date.");
-        return;
-    }
 
-    const reminders =
-        getReminders();
+if not GEMINI_API_KEY:  
 
-    reminders.push({
-        id: Date.now(),
-        text: text,
-        date: date,
-        done: false
-    });
+    return jsonify({  
 
-    saveReminders(reminders);
+        "error":  
+            "GEMINI_API_KEY په Vercel کې نه دی تنظیم شوی."  
 
-    document.getElementById(
-        "reminderText"
-    ).value = "";
+    }), 500  
 
-    document.getElementById(
-        "reminderDate"
-    ).value = "";
 
-    renderReminders();
-}
+data = request.get_json(  
+    silent=True  
+) or {}  
 
 
-function renderReminders() {
+message = str(  
+    data.get(  
+        "message",  
+        ""  
+    )  
+).strip()  
 
-    const container =
-        document.getElementById("reminderList");
 
-    if (!container) {
-        return;
-    }
+if not message:  
 
-    const reminders =
-        getReminders();
+    return jsonify({  
 
-    container.innerHTML = "";
+        "error":  
+            "مهرباني وکړئ خپله پوښتنه ولیکئ."  
 
-    reminders
-        .sort(function(a, b) {
-            return new Date(a.date) - new Date(b.date);
-        })
-        .forEach(function(item) {
+    }), 400  
 
-            const div =
-                document.createElement("div");
 
-            div.className =
-                "reminder-item";
+models = [  
+    GEMINI_MODEL,  
+    GEMINI_FALLBACK_MODEL  
+]  
 
-            const date =
-                new Date(item.date);
 
-            div.innerHTML =
-                "<div>" +
-                "<strong>" +
-                escapeHtml(item.text) +
-                "</strong><br>" +
-                "<small>" +
-                date.toLocaleString() +
-                "</small>" +
-                "</div>";
+models = list(  
+    dict.fromkeys(models)  
+)  
 
-            const button =
-                document.createElement("button");
 
-            button.className =
-                "small-button";
+last_error = None  
 
-            button.textContent =
-                "Delete";
 
-            button.onclick = function() {
-                deleteReminder(item.id);
-            };
+for model in models:  
 
-            div.appendChild(button);
+    url = GEMINI_BASE_URL.format(  
+        model=model  
+    )  
 
-            container.appendChild(div);
-        });
-}
 
+    payload = {  
 
-function deleteReminder(id) {
+        "contents":[  
 
-    const reminders =
-        getReminders().filter(function(item) {
-            return item.id !== id;
-        });
+            {  
 
-    saveReminders(reminders);
+                "role":"user",  
 
-    renderReminders();
-}
+                "parts":[  
 
+                    {  
 
-/* =========================================================
-   REMINDER CHECK
-   ========================================================= */
+                        "text":  
+                            SYSTEM_PROMPT  
+                            +  
+                            "\n\nUSER QUESTION:\n"  
+                            +  
+                            message  
 
-setInterval(function() {
+                    }  
 
-    const reminders =
-        getReminders();
+                ]  
 
-    const now =
-        new Date();
+            }  
 
-    let changed = false;
+        ],  
 
-    reminders.forEach(function(item) {
+        "generationConfig":{  
 
-        if (
-            !item.done &&
-            new Date(item.date) <= now
-        ) {
+            "temperature":0.3,  
 
-            item.done = true;
-            changed = true;
+            "maxOutputTokens":1200  
 
-            alert(
-                "⏰ Reminder: " +
-                item.text
-            );
-        }
-    });
+        }  
 
-    if (changed) {
-        saveReminders(reminders);
-        renderReminders();
-    }
+    }  
 
-}, 30000);
 
+    body = json.dumps(  
+        payload  
+    ).encode("utf-8")  
 
-/* =========================================================
-   QUICK PROMPTS
-   ========================================================= */
 
-function quickPrompt(text) {
+    for attempt in range(3):  
 
-    const input =
-        document.getElementById("messageInput");
+        req = urllib.request.Request(  
 
-    input.value = text;
+            url,  
 
-    autoResize(input);
+            data=body,  
 
-    input.focus();
-}
+            headers={  
 
+                "Content-Type":  
+                    "application/json",  
 
-/* =========================================================
-   INPUT
-   ========================================================= */
+                "x-goog-api-key":  
+                    GEMINI_API_KEY  
 
-function handleKey(event) {
+            },  
 
-    if (
-        event.key === "Enter" &&
-        !event.shiftKey
-    ) {
+            method="POST"  
 
-        event.preventDefault();
+        )  
 
-        sendMessage();
-    }
-}
 
+        try:  
 
-function autoResize(element) {
+            with urllib.request.urlopen(  
+                req,  
+                timeout=45  
+            ) as response:  
 
-    element.style.height = "auto";
+                result = json.loads(  
+                    response  
+                        .read()  
+                        .decode("utf-8")  
+                )  
 
-    element.style.height =
-        Math.min(
-            element.scrollHeight,
-            150
-        ) + "px";
-}
 
+            candidates = result.get(  
+                "candidates",  
+                []  
+            )  
 
-/* =========================================================
-   UTILITIES
-   ========================================================= */
 
-function scrollToBottom() {
+            if not candidates:  
 
-    const chat =
-        document.getElementById("chat");
+                last_error = (  
+                    f"{model}: "  
+                    "Gemini returned no candidates."  
+                )  
 
-    setTimeout(function() {
+                break  
 
-        chat.scrollTop =
-            chat.scrollHeight;
 
-    }, 30);
-}
+            content = candidates[0].get(  
+                "content",  
+                {}  
+            )  
 
 
-function escapeHtml(text) {
+            parts = content.get(  
+                "parts",  
+                []  
+            )  
 
-    return String(text)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
-}
 
-</script>
+            text = "".join(  
 
-</body>
-</html>
-"""
+                part.get(  
+                    "text",  
+                    ""  
+                )  
 
+                for part in parts  
 
-# =========================================================
-# Local development
-# =========================================================
+                if isinstance(  
+                    part,  
+                    dict  
+                )  
 
-if __name__ == "__main__":
-    app.run(
-        host="0.0.0.0",
-        port=5000,
-        debug=False
-    )
+            ).strip()  
+
+
+            if text:  
+
+                return jsonify({  
+
+                    "reply":  
+                        text,  
+
+                    "model":  
+                        model  
+
+                }), 200  
+
+
+            last_error = (  
+                f"{model}: "  
+                "Gemini returned empty response."  
+            )  
+
+            break  
+
+
+        except urllib.error.HTTPError as error:  
+
+            detail = error.read().decode(  
+                "utf-8",  
+                errors="ignore"  
+            )  
+
+
+            last_error = (  
+                f"{model}: "  
+                f"HTTP {error.code} — "  
+                f"{detail}"  
+            )  
+
+
+            retryable = error.code in (  
+                429,  
+                500,  
+                502,  
+                503,  
+                504  
+            )  
+
+
+            if retryable:  
+
+                time.sleep(  
+                    2 ** attempt  
+                )  
+
+                continue  
+
+
+            break  
+
+
+        except urllib.error.URLError as error:  
+
+            last_error = (  
+                f"{model}: "  
+                "connection error — "  
+                f"{error}"  
+            )  
+
+            time.sleep(  
+                2 ** attempt  
+            )  
+
+            continue  
+
+
+        except Exception as error:  
+
+            last_error = (  
+                f"{model}: "  
+                f"{str(error)}"  
+            )  
+
+            break  
+
+
+return jsonify({  
+
+    "error":  
+        "Gemini اوس مهال مصروف دی. "  
+        "سیستم څو ځله هڅه وکړه، "  
+        "خو ځواب ترلاسه نه شو. "  
+        "مهرباني وکړئ څو شېبې وروسته بیا هڅه وکړئ."  
+
+}), 503
+
+=========================================================
+
+CHAT ALIAS
+
+=========================================================
+
+@app.route(
+"/chat",
+methods=["POST"]
+)
+def chat_alias():
+
+return chat()
+
+=========================================================
+
+LOCAL DEVELOPMENT
+
+=========================================================
+
+if name == "main":
+
+app.run(  
+
+    host="0.0.0.0",  
+
+    port=int(  
+        os.environ.get(  
+            "PORT",  
+            "5000"  
+        )  
+    ),  
+
+    debug=False  
+
+)
