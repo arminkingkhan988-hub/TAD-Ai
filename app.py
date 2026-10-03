@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 
 from flask import Flask, request, jsonify, render_template_string
@@ -452,29 +453,25 @@ def chat():
 
 
     try:
+response = None
 
-        response = requests.post(
+for attempt in range(3):
 
-            url,
+    response = requests.post(
+        url,
+        headers={
+            "Content-Type": "application/json",
+            "x-goog-api-key": GEMINI_API_KEY
+        },
+        json=payload,
+        timeout=60
+    )
 
-            headers={
+    if response.status_code != 503:
+        break
 
-                "Content-Type":
-                    "application/json",
-
-                "x-goog-api-key":
-                    GEMINI_API_KEY
-
-            },
-
-            json=payload,
-
-            timeout=60
-
-        )
-
-
-        if response.status_code != 200:
+    if attempt < 2:
+        time.sleep(3)
 
             return jsonify({
 
