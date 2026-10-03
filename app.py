@@ -8,93 +8,331 @@ import time
 app = Flask(__name__)
 
 # =========================================================
-# GEMINI CONFIGURATION
+# CONFIG
 # =========================================================
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
+# Current Gemini model
 GEMINI_MODEL = os.environ.get(
     "GEMINI_MODEL",
-    "gemini-3.5-flash-lite"
-).strip()
-
-GEMINI_FALLBACK_MODEL = os.environ.get(
-    "GEMINI_FALLBACK_MODEL",
     "gemini-3.8-flash"
 ).strip()
 
-GEMINI_BASE_URL = (
+# Fallback model
+GEMINI_FALLBACK_MODEL = os.environ.get(
+    "GEMINI_FALLBACK_MODEL",
+    "gemini-3.5-flash"
+).strip()
+
+GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/"
     "models/{model}:generateContent"
 )
 
+MAX_MESSAGE = 20000
+MAX_HISTORY = 24
+
+
 # =========================================================
-# MEDICAL SYSTEM PROMPT
+# SYSTEM PROMPT
 # =========================================================
 
 SYSTEM_PROMPT = """
-You are MedAI, an educational medical information assistant.
+You are MedAI, a general-purpose AI assistant.
 
-Developer: Toyebullah Dawoodzay.
-Created in 2026.
+Your name is MedAI.
 
-IMPORTANT LANGUAGE RULE:
-Answer in the SAME LANGUAGE as the user's question.
+Developer:
+Toyebullah Dawoodzay.
+
+Created:
+2026.
+
+IMPORTANT:
+You are NOT limited to medical questions.
+
+You should answer general questions like a modern general-purpose AI assistant.
+
+You can help with:
+
+- General knowledge
+- Science
+- Mathematics
+- Programming
+- Coding
+- Debugging
+- Technology
+- Education
+- Writing
+- Rewriting
+- Translation
+- Summaries
+- Business
+- Study help
+- History
+- Geography
+- Languages
+- Creative writing
+- Ideas and brainstorming
+- Explanations
+- Computer questions
+- Website development
+- Python
+- JavaScript
+- HTML
+- CSS
+- Flask
+- APIs
+- Databases
+- AI
+- General life information
+- And other normal questions.
+
+LANGUAGE RULE:
+
+Always answer in the same language as the user's question whenever possible.
 
 If the user asks in Pashto, answer in Pashto.
+
 If the user asks in Dari, answer in Dari.
-If the user asks in English, answer in English.
+
 If the user asks in Urdu, answer in Urdu.
+
 If the user asks in Arabic, answer in Arabic.
 
-Use simple, clear, understandable language.
+If the user asks in English, answer in English.
 
-Provide educational medical information only.
+If the user asks in another language, answer in that language if you can.
 
-SAFETY RULES:
+For Pashto, use clear and natural Pashto.
 
-- Do not diagnose a person from symptoms alone.
-- Do not claim that you physically examined the patient.
-- Do not invent medical facts.
-- Do not provide personalized prescription instructions.
-- Do not provide personalized medication dosing.
-- Do not tell users to start, stop, or change prescription medicines.
-- Explain that a qualified healthcare professional should make personal medical decisions.
-- If emergency warning signs are present, advise urgent professional medical care.
-- Do not replace a qualified healthcare professional.
+Do not unnecessarily translate the user's question.
 
-For symptoms:
-Explain possible general causes or categories,
-but clearly state that symptoms alone cannot confirm a diagnosis.
+GENERAL ANSWERING RULES:
 
-For medicines:
-Provide general educational information such as:
-what the medicine is commonly used for,
-general precautions,
-common side effects,
-and important safety considerations.
+- Understand the user's actual question.
+- Give a direct answer.
+- Be helpful and clear.
+- Do not unnecessarily refuse normal questions.
+- If the question needs explanation, explain step by step.
+- If the user asks for code, provide useful working code.
+- If the user asks to rewrite something, provide the rewritten version.
+- If the user asks for translation, translate accurately.
+- If the user asks a mathematical question, calculate carefully.
+- If you are uncertain about a fact, clearly say that you are uncertain.
+- Never invent sources, facts, quotations, or events.
+- Do not pretend to have performed an action that you did not perform.
+- Do not claim internet access unless an actual browsing tool is available.
+- Do not claim to see files, images, accounts, or private information unless they are actually provided.
 
-Do not provide personalized dose changes.
+MEDICAL SAFETY:
+
+You can provide general educational medical information.
+
+However:
+
+- Do not claim to diagnose a person.
+- Symptoms alone cannot confirm a diagnosis.
+- Do not claim that you physically examined the user.
+- Do not provide unsafe personalized medical treatment.
+- Do not provide personalized prescription dosing.
+- Do not tell a user to start, stop, or change prescription medicine without professional medical guidance.
+- Encourage consultation with a qualified healthcare professional for personal medical decisions.
+- For possible emergencies, clearly recommend urgent professional medical help.
+- If symptoms suggest a possible emergency, explain the warning signs and advise appropriate urgent care.
+- Do not create false certainty.
+
+MEDICINES:
+
+For medicine questions, you may explain:
+
+- Common uses
+- General mechanism
+- Common side effects
+- General precautions
+- Common interactions
+- Questions to discuss with a doctor or pharmacist
+
+Do not give personalized prescription changes or unsafe dosing instructions.
 
 If asked who created you, say:
 
 "زه MedAI یم، د Toyebullah Dawoodzay لخوا په ۲۰۲۶ کال کې جوړ شوی یم."
 
-Always prioritize patient safety.
+Be useful, respectful, concise when the question is simple, and detailed when the user asks for detail.
 """
 
+
 # =========================================================
-# CHATGPT STYLE MOBILE UI
+# GEMINI REQUEST
+# =========================================================
+
+def call_gemini(model, message, history):
+
+    url = GEMINI_URL.format(model=model)
+
+    contents = []
+
+    for item in (history or [])[-MAX_HISTORY:]:
+
+        if not isinstance(item, dict):
+            continue
+
+        role = item.get("role", "user")
+
+        if role not in ("user", "model"):
+            role = "user"
+
+        text = str(
+            item.get("text", "")
+        ).strip()
+
+        if not text:
+            continue
+
+        contents.append({
+            "role": role,
+            "parts": [
+                {
+                    "text": text[:MAX_MESSAGE]
+                }
+            ]
+        })
+
+    # Always add the current user message.
+    contents.append({
+        "role": "user",
+        "parts": [
+            {
+                "text": message
+            }
+        ]
+    })
+
+    payload = {
+        "systemInstruction": {
+            "parts": [
+                {
+                    "text": SYSTEM_PROMPT
+                }
+            ]
+        },
+        "contents": contents,
+        "generationConfig": {
+            "maxOutputTokens": 4096
+        }
+    }
+
+    body = json.dumps(
+        payload,
+        ensure_ascii=False
+    ).encode("utf-8")
+
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "x-goog-api-key": GEMINI_API_KEY
+        },
+        method="POST"
+    )
+
+    with urllib.request.urlopen(
+        req,
+        timeout=60
+    ) as response:
+
+        raw = response.read().decode(
+            "utf-8",
+            errors="replace"
+        )
+
+    return json.loads(raw)
+
+
+# =========================================================
+# EXTRACT GEMINI RESPONSE
+# =========================================================
+
+def extract_answer(data):
+
+    candidates = data.get("candidates") or []
+
+    if not candidates:
+        raise RuntimeError(
+            "Gemini returned no candidates."
+        )
+
+    parts = (
+        candidates[0]
+        .get("content", {})
+        .get("parts", [])
+    )
+
+    answer = "".join(
+        part.get("text", "")
+        for part in parts
+        if isinstance(part, dict)
+    ).strip()
+
+    if not answer:
+        raise RuntimeError(
+            "Gemini returned an empty response."
+        )
+
+    return answer
+
+
+# =========================================================
+# SECURITY HEADERS
+# =========================================================
+
+@app.after_request
+def security_headers(response):
+
+    response.headers[
+        "X-Content-Type-Options"
+    ] = "nosniff"
+
+    response.headers[
+        "X-Frame-Options"
+    ] = "SAMEORIGIN"
+
+    response.headers[
+        "Referrer-Policy"
+    ] = "strict-origin-when-cross-origin"
+
+    response.headers[
+        "Permissions-Policy"
+    ] = "camera=(), geolocation=(), payment=()"
+
+    return response
+
+
+# =========================================================
+# FRONTEND
 # =========================================================
 
 HTML = r"""
 <!doctype html>
+
 <html lang="ps" dir="rtl">
 
 <head>
+
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#ffffff">
+
+<meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+>
+
+<meta
+    name="theme-color"
+    content="#ffffff"
+>
 
 <title>MedAI</title>
 
@@ -108,27 +346,25 @@ HTML = r"""
     --bg:#ffffff;
     --panel:#f7f7f8;
     --text:#202123;
-    --muted:#6b6f76;
-    --border:#e5e5e5;
+    --muted:#6b7280;
+    --border:#e5e7eb;
     --blue:#1677ff;
-    --blue-dark:#0d5ed7;
+    --blue2:#0d5ed7;
     --user:#eef6ff;
-    --danger:#d93025;
 }
 
 body.dark{
     --bg:#212121;
     --panel:#171717;
-    --text:#ececec;
-    --muted:#a0a0a0;
+    --text:#eeeeee;
+    --muted:#a1a1aa;
     --border:#383838;
-    --user:#26384d;
+    --user:#29394d;
 }
 
 html,
 body{
     margin:0;
-    padding:0;
     width:100%;
     height:100%;
     background:var(--bg);
@@ -143,93 +379,95 @@ body{
     overflow:hidden;
 }
 
-/* ========================================================
-   APP
-======================================================== */
+button,
+textarea,
+input{
+    font:inherit;
+}
+
+button{
+    cursor:pointer;
+}
+
+/* APP */
 
 .app{
     width:100%;
     height:100vh;
     display:flex;
-    background:var(--bg);
 }
 
-/* ========================================================
-   SIDEBAR
-======================================================== */
+/* SIDEBAR */
 
 .sidebar{
-    width:285px;
+    width:280px;
     height:100vh;
     background:var(--panel);
     border-left:1px solid var(--border);
-    padding:12px;
-    display:flex;
-    flex-direction:column;
     position:fixed;
     right:0;
     top:0;
-    z-index:30;
-    transition:.25s ease;
-}
-
-.sidebar-header{
+    z-index:50;
+    padding:13px;
     display:flex;
-    align-items:center;
-    justify-content:space-between;
-    margin-bottom:12px;
+    flex-direction:column;
+    transition:.25s;
 }
 
 .logo-area{
     display:flex;
     align-items:center;
     gap:9px;
+    margin-bottom:14px;
 }
 
 .logo{
-    width:38px;
-    height:38px;
-    border-radius:11px;
+    width:40px;
+    height:40px;
+    border-radius:12px;
+    background:var(--blue);
+    color:white;
     display:flex;
     align-items:center;
     justify-content:center;
-    background:var(--blue);
-    color:white;
-    font-size:21px;
+    font-size:22px;
 }
 
 .logo-name{
-    font-weight:700;
-    font-size:18px;
+    font-size:19px;
+    font-weight:800;
 }
 
 .new-chat{
     width:100%;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    gap:8px;
-    margin-bottom:12px;
+    border:0;
     background:var(--blue);
+    color:white;
+    padding:12px;
+    border-radius:11px;
+    font-weight:700;
+    margin-bottom:12px;
+}
+
+.new-chat:hover{
+    background:var(--blue2);
 }
 
 .menu-title{
     color:var(--muted);
-    font-size:12px;
-    margin:13px 8px 7px;
+    font-size:11px;
+    margin:12px 7px 6px;
 }
 
 .side-btn{
     width:100%;
+    border:0;
     background:transparent;
     color:var(--text);
-    text-align:right;
-    padding:12px;
+    padding:11px;
     border-radius:10px;
-    display:flex;
-    align-items:center;
-    gap:10px;
-    margin-bottom:3px;
+    text-align:right;
+    margin-bottom:2px;
 }
 
 .side-btn:hover{
@@ -239,36 +477,31 @@ body{
 .sidebar-bottom{
     margin-top:auto;
     border-top:1px solid var(--border);
-    padding-top:10px;
+    padding-top:8px;
 }
 
-/* ========================================================
-   MAIN
-======================================================== */
+/* MAIN */
 
 .main{
-    width:calc(100% - 285px);
+    width:calc(100% - 280px);
+    margin-right:280px;
     height:100vh;
-    margin-right:285px;
-    position:relative;
     display:flex;
     flex-direction:column;
+    position:relative;
 }
 
-/* ========================================================
-   TOP BAR
-======================================================== */
+/* TOPBAR */
 
 .topbar{
     height:58px;
     min-height:58px;
-    border-bottom:1px solid var(--border);
-    background:var(--bg);
     display:flex;
     align-items:center;
     justify-content:space-between;
-    padding:0 18px;
-    position:relative;
+    padding:0 17px;
+    border-bottom:1px solid var(--border);
+    background:var(--bg);
     z-index:10;
 }
 
@@ -279,24 +512,23 @@ body{
 }
 
 .top-title{
+    font-weight:800;
     font-size:16px;
-    font-weight:700;
 }
 
 .model{
     color:var(--muted);
-    font-size:12px;
+    font-size:11px;
 }
 
 .icon-btn{
-    width:39px;
-    height:39px;
-    padding:0;
-    border-radius:10px;
+    border:0;
     background:transparent;
     color:var(--text);
-    border:1px solid transparent;
-    font-size:19px;
+    width:39px;
+    height:39px;
+    border-radius:10px;
+    font-size:18px;
 }
 
 .icon-btn:hover{
@@ -307,33 +539,27 @@ body{
     display:none;
 }
 
-/* ========================================================
-   CHAT AREA
-======================================================== */
+/* CHAT */
 
 .chat-area{
     flex:1;
     overflow-y:auto;
-    padding:25px 18px 175px;
-    scroll-behavior:smooth;
+    padding:25px 18px 180px;
 }
 
 .chat-content{
-    max-width:760px;
+    max-width:820px;
     margin:auto;
 }
 
-/* ========================================================
-   WELCOME
-======================================================== */
+/* WELCOME */
 
 .welcome{
-    min-height:55vh;
+    min-height:60vh;
     display:flex;
     align-items:center;
     justify-content:center;
     text-align:center;
-    padding:25px 10px;
 }
 
 .welcome-inner{
@@ -341,56 +567,52 @@ body{
 }
 
 .welcome-logo{
-    width:64px;
-    height:64px;
-    border-radius:20px;
+    width:68px;
+    height:68px;
+    border-radius:21px;
     background:var(--blue);
     color:white;
-    margin:0 auto 17px;
     display:flex;
     align-items:center;
     justify-content:center;
-    font-size:34px;
-    box-shadow:0 10px 30px rgba(22,119,255,.2);
+    margin:0 auto 16px;
+    font-size:35px;
 }
 
 .welcome h1{
-    margin:0 0 10px;
+    margin:0 0 9px;
     font-size:28px;
 }
 
 .welcome p{
+    max-width:650px;
+    margin:0 auto 25px;
     color:var(--muted);
     line-height:1.8;
-    margin:0 auto 25px;
-    max-width:560px;
 }
 
 .suggestions{
+    max-width:650px;
+    margin:auto;
     display:grid;
     grid-template-columns:repeat(2,1fr);
     gap:9px;
-    max-width:600px;
-    margin:auto;
 }
 
 .suggestion{
+    border:1px solid var(--border);
     background:var(--bg);
     color:var(--text);
-    border:1px solid var(--border);
-    padding:13px 10px;
+    padding:14px;
     border-radius:13px;
     text-align:right;
-    cursor:pointer;
 }
 
 .suggestion:hover{
     border-color:var(--blue);
 }
 
-/* ========================================================
-   MESSAGES
-======================================================== */
+/* MESSAGES */
 
 .message{
     display:flex;
@@ -403,24 +625,19 @@ body{
     background:var(--user);
     border-radius:15px;
     padding:14px;
-    margin:8px 0;
-}
-
-.message.ai{
-    background:transparent;
+    margin:7px 0;
 }
 
 .avatar{
-    min-width:32px;
-    width:32px;
-    height:32px;
-    border-radius:9px;
+    width:33px;
+    min-width:33px;
+    height:33px;
+    border-radius:10px;
+    background:var(--blue);
+    color:white;
     display:flex;
     align-items:center;
     justify-content:center;
-    background:var(--blue);
-    color:white;
-    font-size:16px;
 }
 
 .user .avatar{
@@ -430,70 +647,69 @@ body{
 .message-body{
     flex:1;
     min-width:0;
-    white-space:pre-wrap;
     overflow-wrap:anywhere;
+}
+
+.ai-text{
+    white-space:pre-wrap;
 }
 
 .message-actions{
     display:flex;
-    gap:4px;
+    gap:3px;
     margin-top:8px;
 }
 
 .message-action{
+    border:0;
     background:transparent;
     color:var(--muted);
     padding:5px 8px;
-    font-size:13px;
+    border-radius:7px;
 }
 
 .message-action:hover{
     background:var(--panel);
 }
 
-/* ========================================================
-   COMPOSER
-======================================================== */
+/* COMPOSER */
 
 .composer-wrap{
     position:absolute;
     bottom:0;
     left:0;
     right:0;
-    padding:16px 18px 18px;
-    background:
-        linear-gradient(
-            transparent,
-            var(--bg) 28%
-        );
+    padding:13px 18px 17px;
+    background:linear-gradient(
+        transparent,
+        var(--bg) 30%
+    );
 }
 
 .composer{
-    max-width:760px;
+    max-width:820px;
     margin:auto;
     border:1px solid var(--border);
-    background:var(--bg);
     border-radius:18px;
+    background:var(--bg);
     box-shadow:0 6px 28px rgba(0,0,0,.08);
     overflow:hidden;
 }
 
-.composer textarea{
-    width:100%;
-    min-height:58px;
-    max-height:180px;
-    border:0;
-    outline:0;
+textarea{
     resize:none;
-    padding:16px 16px 5px;
-    background:transparent;
-    color:var(--text);
-    font-size:15px;
-    line-height:1.7;
 }
 
-.composer textarea::placeholder{
-    color:var(--muted);
+#question{
+    width:100%;
+    min-height:58px;
+    max-height:190px;
+    padding:15px;
+    border:0;
+    outline:0;
+    background:transparent;
+    color:var(--text);
+    line-height:1.7;
 }
 
 .composer-bottom{
@@ -505,17 +721,16 @@ body{
 
 .composer-tools{
     display:flex;
-    gap:4px;
+    gap:3px;
 }
 
 .tool-btn{
-    width:38px;
-    height:38px;
-    padding:0;
-    border-radius:10px;
+    border:0;
     background:transparent;
     color:var(--muted);
-    font-size:18px;
+    width:38px;
+    height:38px;
+    border-radius:9px;
 }
 
 .tool-btn:hover{
@@ -523,17 +738,13 @@ body{
 }
 
 .send-btn{
-    width:42px;
-    height:42px;
-    padding:0;
+    width:43px;
+    height:43px;
+    border:0;
     border-radius:12px;
     background:var(--blue);
     color:white;
     font-size:18px;
-}
-
-.send-btn:hover{
-    background:var(--blue-dark);
 }
 
 .send-btn:disabled{
@@ -541,42 +752,29 @@ body{
 }
 
 .disclaimer{
-    max-width:760px;
+    max-width:820px;
     margin:7px auto 0;
-    text-align:center;
     color:var(--muted);
     font-size:10px;
+    text-align:center;
 }
-
-/* ========================================================
-   STATUS
-======================================================== */
 
 .status{
-    text-align:center;
+    max-width:820px;
+    margin:0 auto 4px;
     color:var(--muted);
     font-size:12px;
-    margin:8px;
+    text-align:center;
 }
 
-.loading{
-    animation:pulse 1s infinite;
-}
-
-@keyframes pulse{
-    50%{opacity:.35}
-}
-
-/* ========================================================
-   MODAL
-======================================================== */
+/* MODAL */
 
 .modal{
     display:none;
     position:fixed;
     inset:0;
-    background:rgba(0,0,0,.55);
     z-index:100;
+    background:rgba(0,0,0,.55);
     padding:15px;
     overflow:auto;
 }
@@ -586,30 +784,28 @@ body{
 }
 
 .modal-box{
-    max-width:650px;
+    max-width:680px;
     margin:45px auto;
     background:var(--bg);
     color:var(--text);
-    border-radius:18px;
-    padding:18px;
     border:1px solid var(--border);
+    border-radius:18px;
+    padding:20px;
 }
 
 .modal-box h3{
     margin-top:0;
 }
 
-.modal-input,
-.modal-box textarea,
-.modal-box select{
+.modal-input{
     width:100%;
     padding:12px;
-    border-radius:11px;
+    border-radius:10px;
     border:1px solid var(--border);
     background:var(--panel);
     color:var(--text);
-    outline:none;
     margin-bottom:9px;
+    outline:0;
 }
 
 .modal-row{
@@ -620,6 +816,43 @@ body{
 
 .modal-row button{
     flex:1;
+    padding:10px;
+    border:0;
+    border-radius:9px;
+}
+
+.primary{
+    background:var(--blue);
+    color:white;
+}
+
+.secondary{
+    background:var(--panel);
+    color:var(--text);
+}
+
+.danger{
+    background:#ffe8e6;
+    color:#c62828;
+}
+
+.small{
+    color:var(--muted);
+    font-size:12px;
+    line-height:1.8;
+}
+
+.history-item{
+    border-bottom:1px solid var(--border);
+    padding:12px 0;
+}
+
+.favorite-item{
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:12px;
+    margin-bottom:8px;
+    white-space:pre-wrap;
 }
 
 .pill{
@@ -628,35 +861,18 @@ body{
     border:1px solid var(--border);
     border-radius:20px;
     padding:6px 10px;
-    margin:3px;
+    margin:4px;
     font-size:12px;
 }
 
-.small{
-    color:var(--muted);
-    font-size:12px;
-    line-height:1.7;
-}
-
-.danger{
-    background:#feeceb;
-    color:var(--danger);
-}
-
-/* ========================================================
-   MOBILE
-======================================================== */
+/* MOBILE */
 
 @media(max-width:760px){
-
-    body{
-        overflow:hidden;
-    }
 
     .sidebar{
         width:290px;
         transform:translateX(100%);
-        box-shadow:-15px 0 40px rgba(0,0,0,.16);
+        box-shadow:-15px 0 40px rgba(0,0,0,.18);
     }
 
     .sidebar.open{
@@ -672,130 +888,62 @@ body{
         display:block;
     }
 
-    .topbar{
-        padding:0 10px;
+    .model{
+        display:none;
     }
 
     .chat-area{
-        padding:
-            18px
-            12px
-            170px;
+        padding:18px 11px 175px;
     }
 
-    .chat-content{
-        width:100%;
-    }
-
-    .welcome{
-        min-height:58vh;
-    }
-
-    .welcome h1{
-        font-size:25px;
-    }
-
-    .welcome-logo{
-        width:58px;
-        height:58px;
-        font-size:29px;
+    .composer-wrap{
+        padding:8px 8px 12px;
     }
 
     .suggestions{
         grid-template-columns:1fr;
     }
 
+    .welcome h1{
+        font-size:24px;
+    }
+
+    .welcome-logo{
+        width:58px;
+        height:58px;
+        font-size:30px;
+    }
+
     .message{
         padding:13px 1px;
-    }
-
-    .message.user{
-        padding:12px;
-    }
-
-    .composer-wrap{
-        padding:
-            8px
-            8px
-            calc(8px + env(safe-area-inset-bottom));
-    }
-
-    .composer{
-        border-radius:17px;
-    }
-
-    .composer textarea{
-        min-height:52px;
-        padding:14px 13px 4px;
-    }
-
-    .disclaimer{
-        font-size:9px;
-        padding:0 15px;
-    }
-
-    .top-title{
-        font-size:15px;
-    }
-
-    .model{
-        display:none;
-    }
-}
-
-/* ========================================================
-   EXTRA SMALL
-======================================================== */
-
-@media(max-width:380px){
-
-    .suggestion{
-        font-size:13px;
-    }
-
-    .avatar{
-        min-width:29px;
-        width:29px;
-        height:29px;
-    }
-
-    .message{
-        gap:8px;
     }
 
 }
 
 </style>
+
 </head>
 
 <body>
 
 <div class="app">
 
-<!-- =====================================================
-     SIDEBAR
-===================================================== -->
+<!-- SIDEBAR -->
 
-<aside class="sidebar" id="sidebar">
+<aside
+    class="sidebar"
+    id="sidebar"
+>
 
-    <div class="sidebar-header">
+    <div class="logo-area">
 
-        <div class="logo-area">
-
-            <div class="logo">🩺</div>
-
-            <div class="logo-name">
-                MedAI
-            </div>
-
+        <div class="logo">
+            🩺
         </div>
 
-        <button
-            class="icon-btn"
-            onclick="closeSidebar()"
-        >
-            ✕
-        </button>
+        <div class="logo-name">
+            MedAI
+        </div>
 
     </div>
 
@@ -807,14 +955,14 @@ body{
     </button>
 
     <div class="menu-title">
-        چټ او معلومات
+        اصلي
     </div>
 
     <button
         class="side-btn"
         onclick="showHistory()"
     >
-        🕘 تاریخچه
+        🕘 د چټ تاریخچه
     </button>
 
     <button
@@ -825,42 +973,49 @@ body{
     </button>
 
     <div class="menu-title">
-        طبي وسایل
+        AI Tools
     </div>
 
     <button
         class="side-btn"
-        onclick="askPreset('د دې نښو په اړه عمومي طبي معلومات راکړه: ')"
+        onclick="preset('د دې موضوع په اړه معلومات راکړه: ')"
     >
-        🩺 نښې
+        💡 معلومات
     </button>
 
     <button
         class="side-btn"
-        onclick="askPreset('د دې درمل په اړه عمومي معلومات راکړه: ')"
+        onclick="preset('دا متن راته ولیکه/اصلاح کړه: ')"
     >
-        💊 درمل
+        ✍️ لیکل
     </button>
 
     <button
         class="side-btn"
-        onclick="askPreset('دا Lab Report په ساده ژبه تشریح کړه: ')"
+        onclick="preset('دا متن راته وژباړه: ')"
     >
-        🧪 لابراتوار
+        🌐 ژباړه
     </button>
 
     <button
         class="side-btn"
-        onclick="askPreset('د First Aid مهم اصول راکړه.')"
+        onclick="preset('دا موضوع راته په ساده ډول تشریح کړه: ')"
     >
-        🩹 لومړنۍ مرسته
+        📚 زده کړه
     </button>
 
     <button
         class="side-btn"
-        onclick="askPreset('د Emergency warning signs په اړه معلومات راکړه.')"
+        onclick="preset('دا طبي موضوع راته تشریح کړه: ')"
     >
-        🚨 بیړنی حالت
+        🩺 طبي معلومات
+    </button>
+
+    <button
+        class="side-btn"
+        onclick="preset('دا کوډ راته اصلاح او تشریح کړه: ')"
+    >
+        💻 Coding
     </button>
 
     <button
@@ -874,7 +1029,7 @@ body{
         class="side-btn"
         onclick="openModal('reminder')"
     >
-        ⏰ درملو یادونه
+        ⏰ Reminders
     </button>
 
     <div class="sidebar-bottom">
@@ -884,13 +1039,6 @@ body{
             onclick="toggleDark()"
         >
             🌙 Dark / Light
-        </button>
-
-        <button
-            class="side-btn"
-            onclick="openModal('account')"
-        >
-            👤 حساب
         </button>
 
         <button
@@ -905,13 +1053,9 @@ body{
 </aside>
 
 
-<!-- =====================================================
-     MAIN
-===================================================== -->
+<!-- MAIN -->
 
 <main class="main">
-
-    <!-- TOP BAR -->
 
     <header class="topbar">
 
@@ -925,17 +1069,18 @@ body{
             </button>
 
             <div>
+
                 <div class="top-title">
                     MedAI
                 </div>
 
                 <div class="model">
-                    طبي معلوماتي مرستیال
+                    General AI Assistant
                 </div>
+
             </div>
 
         </div>
-
 
         <div>
 
@@ -960,8 +1105,6 @@ body{
     </header>
 
 
-    <!-- CHAT -->
-
     <section
         class="chat-area"
         id="chatArea"
@@ -984,44 +1127,43 @@ body{
                     </div>
 
                     <h1>
-                        له MedAI سره خبرې وکړئ
+                        له MedAI څخه هره پوښتنه وکړئ
                     </h1>
 
                     <p>
-                        ستاسې هوښیار طبي معلوماتي مرستیال.
-                        خپله پوښتنه ولیکئ او د تعلیمي طبي معلوماتو
-                        لپاره ځواب ترلاسه کړئ.
+                        MedAI یو General AI Assistant دی.
+                        طبي، تعلیمي، تخنیکي، Coding، ژباړې،
+                        لیکلو او نورو عادي پوښتنو ته ځواب ورکوي.
                     </p>
-
 
                     <div class="suggestions">
 
                         <button
                             class="suggestion"
-                            onclick="askPreset('د شکر ناروغۍ په اړه مهم معلومات راکړه.')"
+                            onclick="preset('Gemini AI څه شی دی؟')"
                         >
-                            🩸 د شکر په اړه معلومات
+                            🤖 AI څه شی دی؟
                         </button>
 
                         <button
                             class="suggestion"
-                            onclick="askPreset('د لوړ فشار په اړه عمومي معلومات راکړه.')"
+                            onclick="preset('Python راته له صفر څخه تشریح کړه.')"
                         >
-                            ❤️ د فشار معلومات
+                            💻 Python زده کړه
                         </button>
 
                         <button
                             class="suggestion"
-                            onclick="askPreset('د زړه د ناروغیو په اړه معلومات راکړه.')"
+                            onclick="preset('د انسان د زړه د کار کولو طریقه تشریح کړه.')"
                         >
-                            🫀 د زړه معلومات
+                            🫀 طبي معلومات
                         </button>
 
                         <button
                             class="suggestion"
-                            onclick="askPreset('د سالنډۍ یا Asthma په اړه معلومات راکړه.')"
+                            onclick="preset('دا جمله انګلیسي ته وژباړه: سلام، څنګه یې؟')"
                         >
-                            🫁 د سالنډۍ معلومات
+                            🌐 ژباړه
                         </button>
 
                     </div>
@@ -1040,8 +1182,8 @@ body{
     <div class="composer-wrap">
 
         <div
-            id="status"
             class="status"
+            id="status"
         ></div>
 
         <div class="composer">
@@ -1049,9 +1191,8 @@ body{
             <textarea
                 id="question"
                 rows="1"
-                placeholder="له MedAI څخه پوښتنه وکړئ..."
+                placeholder="له MedAI څخه هره پوښتنه وکړئ..."
             ></textarea>
-
 
             <div class="composer-bottom">
 
@@ -1060,15 +1201,15 @@ body{
                     <button
                         class="tool-btn"
                         onclick="startVoice()"
-                        title="Voice"
+                        title="Voice Input"
                     >
                         🎤
                     </button>
 
                     <button
                         class="tool-btn"
-                        onclick="speakAnswer()"
-                        title="Listen"
+                        onclick="speakLast()"
+                        title="Read Answer"
                     >
                         🔊
                     </button>
@@ -1083,12 +1224,10 @@ body{
 
                 </div>
 
-
                 <button
                     id="sendBtn"
                     class="send-btn"
                     onclick="askAI()"
-                    title="Send"
                 >
                     ➤
                 </button>
@@ -1097,12 +1236,9 @@ body{
 
         </div>
 
-
         <div class="disclaimer">
-
-            MedAI یوازې تعلیمي طبي معلومات وړاندې کوي؛
-            د ډاکټر بدیل نه دی.
-
+            MedAI د معلوماتو او زده کړې لپاره دی.
+            د مهمو طبي پرېکړو لپاره له مسلکي روغتیايي کارکوونکي سره مشوره وکړئ.
         </div>
 
     </div>
@@ -1112,9 +1248,7 @@ body{
 </div>
 
 
-<!-- =====================================================
-     MODAL
-===================================================== -->
+<!-- MODAL -->
 
 <div
     class="modal"
@@ -1132,10 +1266,12 @@ body{
 <script>
 
 /* ========================================================
-   STORAGE
+   STATE
 ======================================================== */
 
 let lastAnswer = "";
+
+let conversation = [];
 
 let historyList =
     JSON.parse(
@@ -1147,15 +1283,57 @@ let favorites =
         localStorage.getItem("medai_favorites") || "[]"
     );
 
+let tracker =
+    JSON.parse(
+        localStorage.getItem("medai_tracker") || "[]"
+    );
+
 let reminders =
     JSON.parse(
         localStorage.getItem("medai_reminders") || "[]"
     );
 
-let tracker =
-    JSON.parse(
-        localStorage.getItem("medai_tracker") || "[]"
+
+/* ========================================================
+   HELPERS
+======================================================== */
+
+function escapeHtml(value){
+
+    return String(value).replace(
+        /[&<>"']/g,
+        function(c){
+
+            return {
+                "&":"&amp;",
+                "<":"&lt;",
+                ">":"&gt;",
+                '"':"&quot;",
+                "'":"&#39;"
+            }[c];
+
+        }
     );
+
+}
+
+
+function scrollBottom(){
+
+    const area =
+        document.getElementById("chatArea");
+
+    setTimeout(
+        function(){
+
+            area.scrollTop =
+                area.scrollHeight;
+
+        },
+        60
+    );
+
+}
 
 
 /* ========================================================
@@ -1182,82 +1360,6 @@ function closeSidebar(){
 
 
 /* ========================================================
-   NEW CHAT
-======================================================== */
-
-function newChat(){
-
-    const chat =
-        document.getElementById("chatContent");
-
-    chat.innerHTML = `
-
-        <div class="welcome" id="welcome">
-
-            <div class="welcome-inner">
-
-                <div class="welcome-logo">
-                    🩺
-                </div>
-
-                <h1>
-                    له MedAI سره خبرې وکړئ
-                </h1>
-
-                <p>
-                    ستاسې هوښیار طبي معلوماتي مرستیال.
-                    خپله پوښتنه ولیکئ.
-                </p>
-
-                <div class="suggestions">
-
-                    <button
-                        class="suggestion"
-                        onclick="askPreset('د شکر ناروغۍ په اړه مهم معلومات راکړه.')"
-                    >
-                        🩸 د شکر په اړه معلومات
-                    </button>
-
-                    <button
-                        class="suggestion"
-                        onclick="askPreset('د لوړ فشار په اړه عمومي معلومات راکړه.')"
-                    >
-                        ❤️ د فشار معلومات
-                    </button>
-
-                    <button
-                        class="suggestion"
-                        onclick="askPreset('د زړه د ناروغیو په اړه معلومات راکړه.')"
-                    >
-                        🫀 د زړه معلومات
-                    </button>
-
-                    <button
-                        class="suggestion"
-                        onclick="askPreset('د سالنډۍ یا Asthma په اړه معلومات راکړه.')"
-                    >
-                        🫁 د سالنډۍ معلومات
-                    </button>
-
-                </div>
-
-            </div>
-
-        </div>
-    `;
-
-    lastAnswer = "";
-
-    document.getElementById("question").value = "";
-
-    document.getElementById("status").textContent = "";
-
-    closeSidebar();
-
-}
-
-
-/* ========================================================
    DARK MODE
 ======================================================== */
 
@@ -1277,30 +1379,93 @@ function toggleDark(){
 if(
     localStorage.getItem("medai_dark") === "1"
 ){
+
     document.body.classList.add("dark");
+
 }
 
 
 /* ========================================================
-   ESCAPE HTML
+   NEW CHAT
 ======================================================== */
 
-function escapeHtml(value){
+function newChat(){
 
-    return String(value).replace(
-        /[&<>"']/g,
-        function(c){
+    conversation = [];
 
-            return {
-                "&":"&amp;",
-                "<":"&lt;",
-                ">":"&gt;",
-                '"':"&quot;",
-                "'":"&#39;"
-            }[c];
+    lastAnswer = "";
 
-        }
-    );
+    const content =
+        document.getElementById("chatContent");
+
+    content.innerHTML = `
+
+        <div
+            class="welcome"
+            id="welcome"
+        >
+
+            <div class="welcome-inner">
+
+                <div class="welcome-logo">
+                    🩺
+                </div>
+
+                <h1>
+                    له MedAI څخه هره پوښتنه وکړئ
+                </h1>
+
+                <p>
+                    خپله پوښتنه ولیکئ.
+                </p>
+
+                <div class="suggestions">
+
+                    <button
+                        class="suggestion"
+                        onclick="preset('AI څه شی دی؟')"
+                    >
+                        🤖 AI
+                    </button>
+
+                    <button
+                        class="suggestion"
+                        onclick="preset('Python راته تشریح کړه.')"
+                    >
+                        💻 Python
+                    </button>
+
+                    <button
+                        class="suggestion"
+                        onclick="preset('د زړه په اړه معلومات راکړه.')"
+                    >
+                        🫀 طب
+                    </button>
+
+                    <button
+                        class="suggestion"
+                        onclick="preset('دا جمله انګلیسي ته وژباړه: سلام')"
+                    >
+                        🌐 ژباړه
+                    </button>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    `;
+
+    document.getElementById(
+        "question"
+    ).value = "";
+
+    document.getElementById(
+        "status"
+    ).textContent = "";
+
+    closeSidebar();
 
 }
 
@@ -1318,24 +1483,30 @@ function addUserMessage(text){
         document.getElementById("welcome");
 
     if(welcome){
+
         welcome.remove();
+
     }
 
-    content.innerHTML += `
+    const wrapper =
+        document.createElement("div");
 
-        <div class="message user">
+    wrapper.className =
+        "message user";
 
-            <div class="avatar">
-                👤
-            </div>
+    wrapper.innerHTML = `
 
-            <div class="message-body">
-                ${escapeHtml(text)}
-            </div>
+        <div class="avatar">
+            👤
+        </div>
 
+        <div class="message-body">
+            ${escapeHtml(text)}
         </div>
 
     `;
+
+    content.appendChild(wrapper);
 
 }
 
@@ -1352,7 +1523,8 @@ function addAIMessage(text){
     const wrapper =
         document.createElement("div");
 
-    wrapper.className = "message ai";
+    wrapper.className =
+        "message ai";
 
     wrapper.innerHTML = `
 
@@ -1368,7 +1540,7 @@ function addAIMessage(text){
 
                 <button
                     class="message-action"
-                    onclick="copyText(this)"
+                    onclick="copyMessage(this)"
                 >
                     📋 کاپي
                 </button>
@@ -1382,7 +1554,7 @@ function addAIMessage(text){
 
                 <button
                     class="message-action"
-                    onclick="speakAnswer()"
+                    onclick="speakLast()"
                 >
                     🔊 واورئ
                 </button>
@@ -1405,16 +1577,19 @@ function addAIMessage(text){
 
 
 /* ========================================================
-   ASK PRESET
+   PRESET
 ======================================================== */
 
-function askPreset(text){
+function preset(text){
 
-    document.getElementById("question").value = text;
+    const input =
+        document.getElementById("question");
+
+    input.value = text;
 
     autoResize();
 
-    askAI();
+    input.focus();
 
     closeSidebar();
 
@@ -1440,7 +1615,19 @@ async function askAI(){
         input.value.trim();
 
     if(!message){
+
         return;
+
+    }
+
+    if(message.length > 20000){
+
+        alert(
+            "پوښتنه ډېره اوږده ده."
+        );
+
+        return;
+
     }
 
     addUserMessage(message);
@@ -1451,10 +1638,15 @@ async function askAI(){
 
     button.disabled = true;
 
-    status.innerHTML =
-        '<span class="loading">MedAI فکر کوي...</span>';
+    status.textContent =
+        "MedAI فکر کوي...";
 
-    scrollToBottom();
+    scrollBottom();
+
+
+    const oldHistory =
+        conversation.slice(-24);
+
 
     try{
 
@@ -1471,17 +1663,24 @@ async function askAI(){
 
                     body:
                         JSON.stringify({
-                            message:message
+
+                            message:message,
+
+                            history:
+                                oldHistory
+
                         })
-                }
-            );
+
+                    }
+                );
 
 
         let data = {};
 
         try{
 
-            data = await response.json();
+            data =
+                await response.json();
 
         }catch{
 
@@ -1500,16 +1699,32 @@ async function askAI(){
         }
 
 
-        lastAnswer =
+        const answer =
             data.reply ||
             "ځواب ترلاسه نه شو.";
 
 
-        addAIMessage(lastAnswer);
+        lastAnswer = answer;
 
-        addHistory(
+
+        addAIMessage(answer);
+
+
+        conversation.push(
+            {
+                role:"user",
+                text:message
+            },
+            {
+                role:"model",
+                text:answer
+            }
+        );
+
+
+        saveHistory(
             message,
-            lastAnswer
+            answer
         );
 
 
@@ -1519,49 +1734,26 @@ async function askAI(){
                 : "";
 
 
-        scrollToBottom();
+        scrollBottom();
 
 
     }catch(error){
 
         addAIMessage(
-            "بخښنه، یوه ستونزه رامنځته شوه:\n" +
+            "بخښنه، ستونزه رامنځته شوه:\n\n" +
             error.message
         );
 
         status.textContent =
-            "API Error";
+            "Error";
 
-
-        scrollToBottom();
+        scrollBottom();
 
     }finally{
 
         button.disabled = false;
 
     }
-
-}
-
-
-/* ========================================================
-   SCROLL
-======================================================== */
-
-function scrollToBottom(){
-
-    const area =
-        document.getElementById("chatArea");
-
-    setTimeout(
-        function(){
-
-            area.scrollTop =
-                area.scrollHeight;
-
-        },
-        50
-    );
 
 }
 
@@ -1580,10 +1772,15 @@ function autoResize(){
     textarea.style.height =
         Math.min(
             textarea.scrollHeight,
-            180
+            190
         ) + "px";
 
 }
+
+
+/* ========================================================
+   ENTER
+======================================================== */
 
 document
     .getElementById("question")
@@ -1592,10 +1789,6 @@ document
         autoResize
     );
 
-
-/* ========================================================
-   ENTER TO SEND
-======================================================== */
 
 document
     .getElementById("question")
@@ -1622,19 +1815,30 @@ document
    COPY
 ======================================================== */
 
-function copyText(button){
+function copyMessage(button){
 
-    const message =
+    const text =
         button
             .closest(".message")
             .querySelector(".ai-text")
             .textContent;
 
-    if(
-        navigator.clipboard
-    ){
+    if(navigator.clipboard){
 
-        navigator.clipboard.writeText(message);
+        navigator.clipboard.writeText(text);
+
+        button.textContent =
+            "✓ کاپي شو";
+
+        setTimeout(
+            function(){
+
+                button.textContent =
+                    "📋 کاپي";
+
+            },
+            1200
+        );
 
     }
 
@@ -1645,44 +1849,31 @@ function copyText(button){
    VOICE OUTPUT
 ======================================================== */
 
-function speakAnswer(){
+function speakLast(){
 
     if(
-        lastAnswer &&
-        "speechSynthesis" in window
+        !lastAnswer ||
+        !("speechSynthesis" in window)
     ){
 
-        speechSynthesis.cancel();
+        return;
 
-        const speech =
-            new SpeechSynthesisUtterance(
-                lastAnswer
-            );
+    }
 
-        speech.lang = "ps-AF";
+    speechSynthesis.cancel();
 
-        speechSynthesis.speak(
-            speech
+    const speech =
+        new SpeechSynthesisUtterance(
+            lastAnswer
         );
 
-    }
+    speech.lang = "ps-AF";
 
-}
+    speech.rate = 1;
 
-
-/* ========================================================
-   STOP VOICE
-======================================================== */
-
-function stopVoice(){
-
-    if(
-        "speechSynthesis" in window
-    ){
-
-        speechSynthesis.cancel();
-
-    }
+    speechSynthesis.speak(
+        speech
+    );
 
 }
 
@@ -1710,17 +1901,26 @@ function startVoice(){
     const recognition =
         new Recognition();
 
-    recognition.lang = "ps-AF";
+    recognition.lang =
+        "ps-AF";
 
-    recognition.interimResults = false;
+    recognition.interimResults =
+        false;
+
+    recognition.maxAlternatives =
+        1;
 
     recognition.onresult =
         function(event){
 
+            const text =
+                event
+                    .results[0][0]
+                    .transcript;
+
             document.getElementById(
                 "question"
-            ).value =
-                event.results[0][0].transcript;
+            ).value = text;
 
             autoResize();
 
@@ -1749,17 +1949,23 @@ function saveFavorite(){
     if(!lastAnswer){
 
         alert(
-            "لومړی یو AI ځواب ترلاسه کړئ."
+            "لومړی AI ځواب ترلاسه کړئ."
         );
 
         return;
 
     }
 
-    favorites.unshift(lastAnswer);
+    if(!favorites.includes(lastAnswer)){
+
+        favorites.unshift(
+            lastAnswer
+        );
+
+    }
 
     favorites =
-        favorites.slice(0,30);
+        favorites.slice(0,50);
 
     localStorage.setItem(
         "medai_favorites",
@@ -1796,12 +2002,16 @@ function clearFavorites(){
    HISTORY
 ======================================================== */
 
-function addHistory(q,a){
+function saveHistory(q,a){
 
     historyList.unshift({
+
         q:q,
+
         a:a,
+
         t:new Date().toLocaleString()
+
     });
 
     historyList =
@@ -1853,113 +2063,47 @@ function openModal(type){
     let html = "";
 
 
-    /* ACCOUNT */
-
-    if(type === "account"){
-
-        const account =
-            JSON.parse(
-                localStorage.getItem(
-                    "medai_account"
-                ) || "{}"
-            );
-
-        html = `
-
-            <h3>👤 حساب</h3>
-
-            <p class="small">
-                دا د محلي Demo حساب دی.
-                معلومات یوازې په دې وسیله کې ساتل کېږي.
-            </p>
-
-            <input
-                class="modal-input"
-                id="name"
-                placeholder="نوم"
-                value="${escapeHtml(account.name || "")}"
-            >
-
-            <input
-                class="modal-input"
-                id="email"
-                placeholder="Email"
-                value="${escapeHtml(account.email || "")}"
-            >
-
-            <div class="modal-row">
-
-                <button onclick="localAccount()">
-                    Save
-                </button>
-
-                <button
-                    class="secondary"
-                    onclick="closeModal()"
-                >
-                    Close
-                </button>
-
-            </div>
-
-            <div
-                id="accountStatus"
-                class="small"
-            ></div>
-        `;
-
-    }
-
-
     /* HISTORY */
 
     if(type === "history"){
 
         html = `
 
-            <h3>🕘 تاریخچه</h3>
+            <h3>
+                🕘 د چټ تاریخچه
+            </h3>
 
             ${
                 historyList.length
                 ?
+
                 historyList.map(
                     function(x){
 
                         return `
 
-                            <div
-                                class="message ai"
-                                style="border-bottom:1px solid var(--border)"
-                            >
+                            <div class="history-item">
 
-                                <div class="avatar">
-                                    🩺
+                                <div class="small">
+                                    ${escapeHtml(x.t)}
                                 </div>
 
-                                <div class="message-body">
+                                <b>
+                                    پوښتنه:
+                                </b>
 
-                                    <div class="small">
-                                        ${escapeHtml(x.t)}
-                                    </div>
+                                <div>
+                                    ${escapeHtml(x.q)}
+                                </div>
 
-                                    <b>
-                                        پوښتنه:
-                                    </b>
+                                <br>
 
-                                    <div>
-                                        ${escapeHtml(x.q)}
-                                    </div>
+                                <b>
+                                    ځواب:
+                                </b>
 
-                                    <br>
-
-                                    <b>
-                                        ځواب:
-                                    </b>
-
-                                    <div>
-                                        ${escapeHtml(x.a)}
-                                    </div>
-
+                                <div>
+                                    ${escapeHtml(x.a)}
                                 </div>
 
                             </div>
@@ -1968,7 +2112,9 @@ function openModal(type){
 
                     }
                 ).join("")
+
                 :
+
                 "<p>تر اوسه تاریخچه نشته.</p>"
             }
 
@@ -1989,6 +2135,7 @@ function openModal(type){
                 </button>
 
             </div>
+
         `;
 
     }
@@ -2000,26 +2147,28 @@ function openModal(type){
 
         html = `
 
-            <h3>⭐ خوښې</h3>
+            <h3>
+                ⭐ خوښې
+            </h3>
 
             ${
                 favorites.length
                 ?
+
                 favorites.map(
                     function(x){
 
                         return `
-                            <div class="message ai">
-                                <div class="avatar">🩺</div>
-                                <div class="message-body">
-                                    ${escapeHtml(x)}
-                                </div>
+                            <div class="favorite-item">
+                                ${escapeHtml(x)}
                             </div>
                         `;
 
                     }
                 ).join("")
+
                 :
+
                 "<p>تر اوسه Favorite نشته.</p>"
             }
 
@@ -2040,6 +2189,7 @@ function openModal(type){
                 </button>
 
             </div>
+
         `;
 
     }
@@ -2051,17 +2201,27 @@ function openModal(type){
 
         html = `
 
-            <h3>📊 Health Tracker</h3>
+            <h3>
+                📊 Health Tracker
+            </h3>
+
+            <p class="small">
+                دلته ساده روغتیايي یادښتونه
+                په همدې براوزر کې ساتل کېږي.
+            </p>
 
             <input
                 class="modal-input"
                 id="metric"
-                placeholder="مثلاً وزن 70kg"
+                placeholder="مثلاً: وزن 70kg"
             >
 
             <div class="modal-row">
 
-                <button onclick="saveTracker()">
+                <button
+                    class="primary"
+                    onclick="saveTracker()"
+                >
                     Save
                 </button>
 
@@ -2075,7 +2235,11 @@ function openModal(type){
             </div>
 
             <div>
+
                 ${
+                    tracker.length
+                    ?
+
                     tracker.map(
                         function(x){
 
@@ -2087,8 +2251,14 @@ function openModal(type){
 
                         }
                     ).join("")
+
+                    :
+
+                    "<p class='small'>هیڅ یادښت نشته.</p>"
                 }
+
             </div>
+
         `;
 
     }
@@ -2100,7 +2270,13 @@ function openModal(type){
 
         html = `
 
-            <h3>⏰ Medication Reminder</h3>
+            <h3>
+                ⏰ Reminders
+            </h3>
+
+            <p class="small">
+                یادونې په دې براوزر کې ساتل کېږي.
+            </p>
 
             <input
                 class="modal-input"
@@ -2116,7 +2292,10 @@ function openModal(type){
 
             <div class="modal-row">
 
-                <button onclick="saveReminder()">
+                <button
+                    class="primary"
+                    onclick="saveReminder()"
+                >
                     Save
                 </button>
 
@@ -2130,7 +2309,11 @@ function openModal(type){
             </div>
 
             <div>
+
                 ${
+                    reminders.length
+                    ?
+
                     reminders.map(
                         function(x){
 
@@ -2144,8 +2327,14 @@ function openModal(type){
 
                         }
                     ).join("")
+
+                    :
+
+                    "<p class='small'>هیڅ reminder نشته.</p>"
                 }
+
             </div>
+
         `;
 
     }
@@ -2157,10 +2346,13 @@ function openModal(type){
 
         html = `
 
-            <h3>ℹ️ د MedAI په اړه</h3>
+            <h3>
+                ℹ️ د MedAI په اړه
+            </h3>
 
             <p>
-                MedAI یو تعلیمي طبي معلوماتي AI دی.
+                MedAI یو General AI Assistant دی
+                چې د Gemini API له لارې ځوابونه جوړوي.
             </p>
 
             <p>
@@ -2174,13 +2366,17 @@ function openModal(type){
             </p>
 
             <p class="small">
-                MedAI د ډاکټر بدیل نه دی.
-                د بیړني حالت پر مهال مسلکي طبي مرسته وغواړئ.
+                MedAI د طبي معلوماتو لپاره د ډاکټر
+                بدیل نه دی.
             </p>
 
-            <button onclick="closeModal()">
+            <button
+                class="secondary"
+                onclick="closeModal()"
+            >
                 Close
             </button>
+
         `;
 
     }
@@ -2204,47 +2400,27 @@ function closeModal(){
 
 
 /* ========================================================
-   ACCOUNT
-======================================================== */
-
-function localAccount(){
-
-    const name =
-        document.getElementById("name").value.trim();
-
-    const email =
-        document.getElementById("email").value.trim();
-
-    localStorage.setItem(
-        "medai_account",
-        JSON.stringify({
-            name:name,
-            email:email
-        })
-    );
-
-    document.getElementById(
-        "accountStatus"
-    ).textContent =
-        "حساب په دې وسیله کې خوندي شو.";
-
-}
-
-
-/* ========================================================
    TRACKER
 ======================================================== */
 
 function saveTracker(){
 
+    const input =
+        document.getElementById("metric");
+
+    if(!input){
+
+        return;
+
+    }
+
     const value =
-        document
-            .getElementById("metric")
-            .value
-            .trim();
+        input.value.trim();
 
     if(!value){
+
         return;
+
     }
 
     tracker.unshift(
@@ -2252,6 +2428,9 @@ function saveTracker(){
         + " — "
         + value
     );
+
+    tracker =
+        tracker.slice(0,100);
 
     localStorage.setItem(
         "medai_tracker",
@@ -2269,33 +2448,48 @@ function saveTracker(){
 
 function saveReminder(){
 
+    const textInput =
+        document.getElementById(
+            "reminderText"
+        );
+
+    const timeInput =
+        document.getElementById(
+            "reminderTime"
+        );
+
+    if(!textInput || !timeInput){
+
+        return;
+
+    }
+
     const text =
-        document
-            .getElementById("reminderText")
-            .value
-            .trim();
+        textInput.value.trim();
 
     const time =
-        document
-            .getElementById("reminderTime")
-            .value;
+        timeInput.value;
 
     if(!text || !time){
+
         return;
+
     }
 
     reminders.unshift({
+
         text:text,
+
         time:time
+
     });
+
+    reminders =
+        reminders.slice(0,100);
 
     localStorage.setItem(
         "medai_reminders",
         JSON.stringify(reminders)
-    );
-
-    alert(
-        "یادونه خوندي شوه."
     );
 
     openModal("reminder");
@@ -2304,7 +2498,7 @@ function saveReminder(){
 
 
 /* ========================================================
-   MODAL OUTSIDE CLICK
+   MODAL CLICK
 ======================================================== */
 
 document
@@ -2326,7 +2520,27 @@ document
 
 
 /* ========================================================
-   CLOSE SIDEBAR ON OUTSIDE MOBILE
+   ESC
+======================================================== */
+
+document.addEventListener(
+    "keydown",
+    function(event){
+
+        if(event.key === "Escape"){
+
+            closeModal();
+
+            closeSidebar();
+
+        }
+
+    }
+);
+
+
+/* ========================================================
+   MOBILE OUTSIDE SIDEBAR
 ======================================================== */
 
 document.addEventListener(
@@ -2334,7 +2548,9 @@ document.addEventListener(
     function(event){
 
         const sidebar =
-            document.getElementById("sidebar");
+            document.getElementById(
+                "sidebar"
+            );
 
         if(
             window.innerWidth <= 760 &&
@@ -2350,28 +2566,10 @@ document.addEventListener(
     }
 );
 
-
-/* ========================================================
-   ESC KEY
-======================================================== */
-
-document.addEventListener(
-    "keydown",
-    function(event){
-
-        if(event.key === "Escape"){
-
-            closeModal();
-            closeSidebar();
-
-        }
-
-    }
-);
-
 </script>
 
 </body>
+
 </html>
 """
 
@@ -2380,21 +2578,26 @@ document.addEventListener(
 # HOME
 # =========================================================
 
-@app.route("/")
+@app.get("/")
 def home():
-    return render_template_string(HTML)
+
+    return render_template_string(
+        HTML
+    )
 
 
 # =========================================================
 # HEALTH CHECK
 # =========================================================
 
-@app.route("/health")
+@app.get("/health")
 def health():
 
     return jsonify({
 
-        "status":"ok",
+        "ok": True,
+
+        "service": "MedAI",
 
         "primary_model":
             GEMINI_MODEL,
@@ -2402,43 +2605,42 @@ def health():
         "fallback_model":
             GEMINI_FALLBACK_MODEL,
 
-        "api_key_configured":
+        "gemini_configured":
             bool(GEMINI_API_KEY)
 
     })
 
 
 # =========================================================
-# GEMINI CHAT API
+# CHAT API
 # =========================================================
 
-@app.route(
-    "/api/chat",
-    methods=["POST"]
-)
-def chat():
+@app.post("/api/chat")
+def api_chat():
 
     if not GEMINI_API_KEY:
 
         return jsonify({
 
             "error":
-                "GEMINI_API_KEY په Vercel کې نه دی تنظیم شوی."
+                "GEMINI_API_KEY په Vercel Environment Variables کې نه دی تنظیم شوی."
 
         }), 500
 
 
-    data = request.get_json(
-        silent=True
-    ) or {}
+    data =
+        request.get_json(
+            silent=True
+        ) or {}
 
 
-    message = str(
-        data.get(
-            "message",
-            ""
-        )
-    ).strip()
+    message =
+        str(
+            data.get(
+                "message",
+                ""
+            )
+        ).strip()
 
 
     if not message:
@@ -2449,6 +2651,28 @@ def chat():
                 "مهرباني وکړئ خپله پوښتنه ولیکئ."
 
         }), 400
+
+
+    if len(message) > MAX_MESSAGE:
+
+        return jsonify({
+
+            "error":
+                "ستاسې پوښتنه ډېره اوږده ده."
+
+        }), 413
+
+
+    history =
+        data.get(
+            "history",
+            []
+        )
+
+
+    if not isinstance(history, list):
+
+        history = []
 
 
     models = [
@@ -2462,187 +2686,70 @@ def chat():
     )
 
 
-    last_error = None
+    last_error = ""
 
 
     for model in models:
 
-        url = GEMINI_BASE_URL.format(
-            model=model
-        )
-
-
-        payload = {
-
-            "contents":[
-
-                {
-
-                    "role":"user",
-
-                    "parts":[
-
-                        {
-
-                            "text":
-                                SYSTEM_PROMPT
-                                +
-                                "\n\nUSER QUESTION:\n"
-                                +
-                                message
-
-                        }
-
-                    ]
-
-                }
-
-            ],
-
-            "generationConfig":{
-
-                "temperature":0.3,
-
-                "maxOutputTokens":1200
-
-            }
-
-        }
-
-
-        body = json.dumps(
-            payload
-        ).encode("utf-8")
-
-
         for attempt in range(3):
-
-            req = urllib.request.Request(
-
-                url,
-
-                data=body,
-
-                headers={
-
-                    "Content-Type":
-                        "application/json",
-
-                    "x-goog-api-key":
-                        GEMINI_API_KEY
-
-                },
-
-                method="POST"
-
-            )
-
 
             try:
 
-                with urllib.request.urlopen(
-                    req,
-                    timeout=45
-                ) as response:
-
-                    result = json.loads(
-                        response
-                            .read()
-                            .decode("utf-8")
+                result =
+                    call_gemini(
+                        model,
+                        message,
+                        history
                     )
 
 
-                candidates = result.get(
-                    "candidates",
-                    []
-                )
-
-
-                if not candidates:
-
-                    last_error = (
-                        f"{model}: "
-                        "Gemini returned no candidates."
+                answer =
+                    extract_answer(
+                        result
                     )
 
-                    break
 
+                return jsonify({
 
-                content = candidates[0].get(
-                    "content",
-                    {}
-                )
+                    "reply":
+                        answer,
 
+                    "model":
+                        model
 
-                parts = content.get(
-                    "parts",
-                    []
-                )
-
-
-                text = "".join(
-
-                    part.get(
-                        "text",
-                        ""
-                    )
-
-                    for part in parts
-
-                    if isinstance(
-                        part,
-                        dict
-                    )
-
-                ).strip()
-
-
-                if text:
-
-                    return jsonify({
-
-                        "reply":
-                            text,
-
-                        "model":
-                            model
-
-                    }), 200
-
-
-                last_error = (
-                    f"{model}: "
-                    "Gemini returned empty response."
-                )
-
-                break
+                }), 200
 
 
             except urllib.error.HTTPError as error:
 
-                detail = error.read().decode(
-                    "utf-8",
-                    errors="ignore"
-                )
+                try:
+
+                    detail =
+                        error.read().decode(
+                            "utf-8",
+                            errors="ignore"
+                        )
+
+                except Exception:
+
+                    detail = ""
 
 
                 last_error = (
-                    f"{model}: "
-                    f"HTTP {error.code} — "
-                    f"{detail}"
+                    f"{model}: HTTP "
+                    f"{error.code} "
+                    f"{detail[:500]}"
                 )
 
 
-                retryable = error.code in (
+                # Retry temporary errors.
+                if error.code in (
                     429,
                     500,
                     502,
                     503,
                     504
-                )
-
-
-                if retryable:
+                ):
 
                     time.sleep(
                         2 ** attempt
@@ -2658,8 +2765,7 @@ def chat():
 
                 last_error = (
                     f"{model}: "
-                    "connection error — "
-                    f"{error}"
+                    f"connection error: {error}"
                 )
 
                 time.sleep(
@@ -2673,7 +2779,7 @@ def chat():
 
                 last_error = (
                     f"{model}: "
-                    f"{str(error)}"
+                    f"{error}"
                 )
 
                 break
@@ -2682,10 +2788,8 @@ def chat():
     return jsonify({
 
         "error":
-            "Gemini اوس مهال مصروف دی. "
-            "سیستم څو ځله هڅه وکړه، "
-            "خو ځواب ترلاسه نه شو. "
-            "مهرباني وکړئ څو شېبې وروسته بیا هڅه وکړئ."
+            "Gemini ته د ځواب ترلاسه کولو کې ستونزه راغله. "
+            "لږ وروسته بیا هڅه وکړئ."
 
     }), 503
 
@@ -2694,17 +2798,29 @@ def chat():
 # CHAT ALIAS
 # =========================================================
 
-@app.route(
-    "/chat",
-    methods=["POST"]
-)
+@app.post("/chat")
 def chat_alias():
 
-    return chat()
+    return api_chat()
 
 
 # =========================================================
-# LOCAL DEVELOPMENT
+# 404
+# =========================================================
+
+@app.errorhandler(404)
+def not_found(error):
+
+    return jsonify({
+
+        "error":
+            "Page not found."
+
+    }), 404
+
+
+# =========================================================
+# LOCAL RUN
 # =========================================================
 
 if __name__ == "__main__":
