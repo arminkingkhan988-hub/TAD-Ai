@@ -5,29 +5,41 @@ from flask import Flask, request, jsonify, render_template_string
 app = Flask(__name__)
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 TEXT_MODEL = "openai/gpt-oss-20b"
-VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+VISION_MODEL = "qwen/qwen3.6-27b"
+
 
 SYSTEM_PROMPT = """
 You are MedAI, a helpful AI assistant.
 
+You can help with:
+- Education
+- Science
+- Mathematics
+- Programming
+- Technology
+- History
+- Business
+- Writing
+- General knowledge
+- Health and medical education
+
 Rules:
-- Answer in the same language as the user.
-- Support Pashto, Dari, and English.
-- Help with education, science, coding, mathematics, technology,
-  history, business, writing, and general questions.
-- For medical questions, provide general educational information only.
-- Do not pretend to be a doctor.
-- Do not provide a definite diagnosis from chat or images.
-- For emergencies, advise contacting a qualified healthcare professional
-  or local emergency medical services.
-- Be clear, friendly, accurate, and useful.
+1. Always answer in the same language as the user.
+2. Support Pashto, Dari, and English.
+3. For medical questions, provide general educational information.
+4. Never claim to be a doctor.
+5. Do not give a definite diagnosis based only on chat or an image.
+6. Do not tell users to start or stop prescription medicine without professional advice.
+7. If symptoms may indicate an emergency, advise the user to contact local emergency medical services or a qualified healthcare professional.
+8. Be clear, respectful, friendly, and useful.
 """
 
 
-HTML = """
+HTML = r"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -37,6 +49,7 @@ HTML = """
 <title>MedAI</title>
 
 <style>
+
 * {
     box-sizing: border-box;
 }
@@ -328,7 +341,21 @@ body.dark textarea {
     padding: 60px 20px;
 }
 
+.error-box {
+    padding: 10px;
+    margin-top: 10px;
+    border-radius: 8px;
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+body.dark .error-box {
+    background: #450a0a;
+    color: #fecaca;
+}
+
 @media (max-width: 600px) {
+
     .app {
         height: 100dvh;
     }
@@ -358,6 +385,7 @@ body.dark textarea {
         grid-template-columns: repeat(2, 1fr);
     }
 }
+
 </style>
 </head>
 
@@ -366,54 +394,77 @@ body.dark textarea {
 <div class="app">
 
 <header>
+
     <div class="logo">
         🤖 MedAI
         <span>AI Assistant</span>
     </div>
 
     <div class="actions">
+
         <button onclick="newChat()">🆕 New</button>
-        <button onclick="toggleSearch()">🔍 Search</button>
-        <button onclick="toggleImageSearch()">🖼️ Images</button>
-        <button onclick="toggleUpload()">📤 Upload</button>
-        <button onclick="exportChat()">📥 Export</button>
-        <button onclick="toggleDark()">🌙</button>
+
+        <button onclick="toggleSearch()">
+            🔍 Search
+        </button>
+
+        <button onclick="toggleImageSearch()">
+            🖼️ Images
+        </button>
+
+        <button onclick="toggleUpload()">
+            📤 Upload
+        </button>
+
+        <button onclick="exportChat()">
+            📥 Export
+        </button>
+
+        <button onclick="toggleDark()">
+            🌙
+        </button>
+
     </div>
+
 </header>
 
 
-<!-- CHAT SEARCH -->
 <div class="panel" id="searchPanel">
+
     <div class="panel-row">
+
         <input
             id="searchInput"
             type="text"
             placeholder="Search in this chat..."
             oninput="searchChat()"
         >
+
     </div>
 
     <div
         class="search-results"
         id="searchResults"
     ></div>
+
 </div>
 
 
-<!-- IMAGE SEARCH -->
 <div class="panel" id="imagePanel">
 
     <div class="panel-row">
+
         <input
             id="imageQuery"
             type="text"
-            placeholder="Search images: Lion, Kabul, Mountain..."
+            placeholder="Search images..."
             onkeydown="if(event.key==='Enter') searchImages()"
         >
 
         <button onclick="searchImages()">
             🔍 Search
         </button>
+
     </div>
 
     <div id="imageResults"></div>
@@ -421,7 +472,6 @@ body.dark textarea {
 </div>
 
 
-<!-- IMAGE UPLOAD -->
 <div class="panel" id="uploadPanel">
 
     <div class="upload-area">
@@ -435,7 +485,7 @@ body.dark textarea {
         <input
             type="file"
             id="imageFile"
-            accept="image/*"
+            accept="image/jpeg,image/png,image/webp,image/gif"
             onchange="previewImage(event)"
         >
 
@@ -448,7 +498,7 @@ body.dark textarea {
             id="imageQuestion"
             type="text"
             placeholder="What should I ask about this image?"
-            style="width:100%;margin-top:10px;"
+            style="width:100%;margin-top:10px;padding:10px;border:1px solid #ccd3df;border-radius:8px;"
         >
 
         <br><br>
@@ -462,7 +512,6 @@ body.dark textarea {
 </div>
 
 
-<!-- MEDICAL SAFETY -->
 <div
     id="medicalWarning"
     class="medical-warning"
@@ -471,6 +520,7 @@ body.dark textarea {
     MedAI provides general educational information and is not a doctor.
     For diagnosis or treatment, consult a qualified healthcare professional.
 </div>
+
 
 <div
     id="emergencyWarning"
@@ -574,7 +624,8 @@ function renderMessages() {
 
     messages.forEach(function(message) {
 
-        const div = document.createElement("div");
+        const div =
+            document.createElement("div");
 
         div.className =
             "message " +
@@ -585,9 +636,11 @@ function renderMessages() {
             );
 
 
-        const text = document.createElement("div");
+        const text =
+            document.createElement("div");
 
-        text.textContent = message.content;
+        text.textContent =
+            message.content;
 
         div.appendChild(text);
 
@@ -638,7 +691,8 @@ function renderMessages() {
 
 async function sendMessage() {
 
-    const text = input.value.trim();
+    const text =
+        input.value.trim();
 
     if (!text) {
         return;
@@ -665,24 +719,26 @@ async function sendMessage() {
 
     try {
 
-        const response = await fetch(
-            "/chat",
-            {
-                method: "POST",
+        const response =
+            await fetch(
+                "/chat",
+                {
+                    method: "POST",
 
-                headers: {
-                    "Content-Type":
-                        "application/json"
-                },
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
 
-                body: JSON.stringify({
-                    messages: messages
-                })
-            }
-        );
+                    body: JSON.stringify({
+                        messages: messages
+                    })
+                }
+            );
 
 
-        const data = await response.json();
+        const data =
+            await response.json();
 
 
         if (!response.ok) {
@@ -766,8 +822,6 @@ function copyText(text, button) {
 }
 
 
-/* NEW CHAT */
-
 function newChat() {
 
     if (messages.length > 0) {
@@ -814,6 +868,21 @@ function newChat() {
 
 
     document.getElementById(
+        "imageFile"
+    ).value = "";
+
+
+    document.getElementById(
+        "imageQuestion"
+    ).value = "";
+
+
+    document.getElementById(
+        "imagePreview"
+    ).style.display = "none";
+
+
+    document.getElementById(
         "medicalWarning"
     ).style.display = "none";
 
@@ -829,8 +898,6 @@ function newChat() {
     renderMessages();
 }
 
-
-/* DARK MODE */
 
 function toggleDark() {
 
@@ -855,8 +922,6 @@ function loadDarkMode() {
 }
 
 
-/* CHAT SEARCH */
-
 function toggleSearch() {
 
     const panel =
@@ -877,17 +942,6 @@ function toggleSearch() {
             "searchInput"
         ).focus();
 
-    } else {
-
-        document.getElementById(
-            "searchInput"
-        ).value = "";
-
-        document.getElementById(
-            "searchResults"
-        ).textContent = "";
-
-        renderMessages();
     }
 }
 
@@ -968,8 +1022,6 @@ function searchChat() {
 }
 
 
-/* EXPORT */
-
 function exportChat() {
 
     if (messages.length === 0) {
@@ -983,10 +1035,10 @@ function exportChat() {
 
 
     let content =
-        "MedAI Chat Export\\n";
+        "MedAI Chat Export\n";
 
     content +=
-        "=================\\n\\n";
+        "=================\n\n";
 
 
     messages.forEach(function(message) {
@@ -998,11 +1050,11 @@ function exportChat() {
 
 
         content +=
-            role + ":\\n";
+            role + ":\n";
 
         content +=
             message.content +
-            "\\n\\n";
+            "\n\n";
 
     });
 
@@ -1040,8 +1092,6 @@ function exportChat() {
     URL.revokeObjectURL(url);
 }
 
-
-/* IMAGE SEARCH */
 
 function toggleImageSearch() {
 
@@ -1088,7 +1138,7 @@ async function searchImages() {
 
 
     results.innerHTML =
-        "<p>🔍 Searching...</p>";
+        "<p>🔍 Searching images...</p>";
 
 
     try {
@@ -1106,10 +1156,18 @@ async function searchImages() {
 
         if (!response.ok) {
 
-            throw new Error(
+            let message =
                 data.error ||
-                "Image search failed."
-            );
+                "Image search failed.";
+
+            if (data.details) {
+                message +=
+                    "<br><small>" +
+                    String(data.details) +
+                    "</small>";
+            }
+
+            throw new Error(message);
         }
 
 
@@ -1183,8 +1241,11 @@ async function searchImages() {
             link.target =
                 "_blank";
 
+            link.rel =
+                "noopener noreferrer";
+
             link.textContent =
-                "Open source";
+                "Open Wikimedia source";
 
 
             info.appendChild(title);
@@ -1209,12 +1270,12 @@ async function searchImages() {
     } catch (error) {
 
         results.innerHTML =
-            "⚠️ " + error.message;
+            '<div class="error-box">⚠️ ' +
+            error.message +
+            "</div>";
     }
 }
 
-
-/* IMAGE UPLOAD */
 
 function toggleUpload() {
 
@@ -1252,6 +1313,18 @@ function previewImage(event) {
     }
 
 
+    if (!file.type.startsWith("image/")) {
+
+        alert(
+            "Please select an image."
+        );
+
+        event.target.value = "";
+
+        return;
+    }
+
+
     preview.src =
         URL.createObjectURL(file);
 
@@ -1270,20 +1343,16 @@ function fileToBase64(file) {
 
 
         reader.onload = function() {
-
             resolve(reader.result);
-
         };
 
 
         reader.onerror = function() {
-
             reject(
                 new Error(
                     "Could not read image."
                 )
             );
-
         };
 
 
@@ -1311,6 +1380,16 @@ async function analyzeImage() {
 
         alert(
             "Please select an image first."
+        );
+
+        return;
+    }
+
+
+    if (!file.type.startsWith("image/")) {
+
+        alert(
+            "Please select a valid image."
         );
 
         return;
@@ -1375,7 +1454,7 @@ async function analyzeImage() {
         messages.push({
             role: "user",
             content:
-                "📷 Image: " +
+                "📷 Image question: " +
                 (
                     question ||
                     "Describe this image."
@@ -1396,9 +1475,15 @@ async function analyzeImage() {
 
     } catch (error) {
 
-        alert(
-            "⚠️ " + error.message
-        );
+        messages.push({
+            role: "assistant",
+            content:
+                "⚠️ " + error.message
+        });
+
+        saveMessages();
+
+        renderMessages();
 
 
     } finally {
@@ -1408,8 +1493,6 @@ async function analyzeImage() {
     }
 }
 
-
-/* MEDICAL SAFETY */
 
 function checkMedicalSafety(text) {
 
@@ -1468,17 +1551,13 @@ function checkMedicalSafety(text) {
 
     const isMedical =
         medicalWords.some(function(word) {
-
             return lower.includes(word);
-
         });
 
 
     const isEmergency =
         emergencyWords.some(function(word) {
-
             return lower.includes(word);
-
         });
 
 
@@ -1528,7 +1607,7 @@ def chat_api():
 
     if not GROQ_API_KEY:
         return jsonify({
-            "error": "GROQ_API_KEY is not configured."
+            "error": "GROQ_API_KEY is not configured in Vercel."
         }), 500
 
     data = request.get_json(silent=True) or {}
@@ -1588,7 +1667,7 @@ def chat_api():
     }
 
     headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Authorization": "Bearer " + GROQ_API_KEY,
         "Content-Type": "application/json"
     }
 
@@ -1607,23 +1686,27 @@ def chat_api():
             "error": "AI request timed out."
         }), 504
 
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as error:
 
         return jsonify({
-            "error": "Could not connect to Groq."
+            "error": "Could not connect to Groq.",
+            "details": str(error)
         }), 502
 
     if response.status_code == 401:
+
         return jsonify({
             "error": "Groq API key is invalid."
         }), 401
 
     if response.status_code == 403:
+
         return jsonify({
             "error": "Groq API access was denied."
         }), 403
 
     if response.status_code == 429:
+
         return jsonify({
             "error": "Groq free limit has been reached. Please try again later."
         }), 429
@@ -1632,18 +1715,24 @@ def chat_api():
 
         try:
             error_data = response.json()
-            error_obj = error_data.get("error", {})
-
-            if isinstance(error_obj, dict):
-                message = error_obj.get(
-                    "message",
-                    "Groq API error."
-                )
-            else:
-                message = str(error_obj)
-
         except Exception:
-            message = "Groq API error."
+            error_data = {}
+
+        error_obj = error_data.get(
+            "error",
+            {}
+        )
+
+        if isinstance(error_obj, dict):
+
+            message = error_obj.get(
+                "message",
+                "Groq API error."
+            )
+
+        else:
+
+            message = str(error_obj)
 
         return jsonify({
             "error": message
@@ -1684,68 +1773,101 @@ def image_search():
     ).strip()
 
     if not query:
+
         return jsonify({
             "error": "Please enter an image search term."
         }), 400
 
-    url = "https://commons.wikimedia.org/w/api.php"
+    api_url = (
+        "https://commons.wikimedia.org/w/api.php"
+    )
 
     params = {
         "action": "query",
+        "format": "json",
+        "formatversion": "2",
         "generator": "search",
         "gsrsearch": query,
-        "gsrnamespace": 6,
-        "gsrlimit": 12,
+        "gsrnamespace": "6",
+        "gsrlimit": "12",
         "prop": "imageinfo",
         "iiprop": "url",
-        "iiurlwidth": 500,
-        "format": "json",
+        "iiurlwidth": "500",
         "origin": "*"
+    }
+
+    headers = {
+        "User-Agent":
+            "MedAI/1.0 (AI assistant)"
     }
 
     try:
 
         response = requests.get(
-            url,
+            api_url,
             params=params,
-            timeout=20
+            headers=headers,
+            timeout=25
         )
 
         response.raise_for_status()
 
         data = response.json()
 
-    except Exception:
+    except requests.exceptions.Timeout:
 
         return jsonify({
-            "error": "Image search service is unavailable."
+            "error":
+                "Wikimedia image search timed out."
+        }), 504
+
+    except requests.exceptions.RequestException as error:
+
+        return jsonify({
+            "error":
+                "Could not connect to Wikimedia Commons.",
+            "details":
+                str(error)
+        }), 502
+
+    except ValueError:
+
+        return jsonify({
+            "error":
+                "Wikimedia returned an invalid response."
         }), 502
 
     pages = (
-        data.get("query", {})
-        .get("pages", {})
+        data
+        .get("query", {})
+        .get("pages", [])
     )
 
     images = []
 
-    for page in pages.values():
+    for page in pages:
 
-        info = page.get(
+        image_info = page.get(
             "imageinfo",
             []
         )
 
-        if not info:
+        if not image_info:
             continue
 
-        image = info[0]
+        info = image_info[0]
 
-        original = image.get("url")
+        original = info.get("url")
 
-        thumbnail = image.get(
-            "thumburl",
-            original
+        thumbnail = info.get(
+            "thumburl"
         )
+
+        if not thumbnail:
+            thumbnail = original
+
+        if not thumbnail:
+            continue
 
         title = page.get(
             "title",
@@ -1758,13 +1880,17 @@ def image_search():
         )
 
         images.append({
-            "title": title.replace(
-                "File:",
-                ""
-            ),
-            "thumbnail": thumbnail,
-            "original": original,
-            "page": page_url
+            "title":
+                title.replace(
+                    "File:",
+                    ""
+                ),
+            "thumbnail":
+                thumbnail,
+            "original":
+                original,
+            "page":
+                page_url
         })
 
     return jsonify({
@@ -1776,8 +1902,10 @@ def image_search():
 def analyze_image():
 
     if not GROQ_API_KEY:
+
         return jsonify({
-            "error": "GROQ_API_KEY is not configured."
+            "error":
+                "GROQ_API_KEY is not configured."
         }), 500
 
     data = request.get_json(
@@ -1792,22 +1920,35 @@ def analyze_image():
     )
 
     if not image:
+
         return jsonify({
-            "error": "No image was provided."
+            "error":
+                "No image was provided."
+        }), 400
+
+    if not isinstance(image, str):
+
+        return jsonify({
+            "error":
+                "Invalid image data."
         }), 400
 
     if not image.startswith("data:image/"):
+
         return jsonify({
-            "error": "Invalid image format."
+            "error":
+                "Invalid image format."
         }), 400
 
-    if len(image) > 11_000_000:
+    if len(image) > 12_000_000:
+
         return jsonify({
-            "error": "Image is too large. Please use an image smaller than 8 MB."
+            "error":
+                "Image is too large. Please use an image smaller than 8 MB."
         }), 413
 
     vision_prompt = f"""
-Analyze the uploaded image carefully.
+Analyze this image carefully.
 
 User question:
 {question}
@@ -1816,8 +1957,8 @@ Rules:
 - Answer in the same language as the user.
 - Describe only what you can reasonably identify.
 - Do not invent details.
-- If this appears to be a medical image, do not provide a definitive diagnosis.
-- Recommend a qualified healthcare professional for medical interpretation.
+- If this is a medical image, do not provide a definitive diagnosis.
+- For medical interpretation, recommend a qualified healthcare professional.
 """
 
     payload = {
@@ -1844,12 +1985,14 @@ Rules:
             }
         ],
         "temperature": 0.2,
-        "max_tokens": 1200
+        "max_completion_tokens": 1200
     }
 
     headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
+        "Authorization":
+            "Bearer " + GROQ_API_KEY,
+        "Content-Type":
+            "application/json"
     }
 
     try:
@@ -1864,26 +2007,39 @@ Rules:
     except requests.exceptions.Timeout:
 
         return jsonify({
-            "error": "Image analysis timed out."
+            "error":
+                "Image analysis timed out."
         }), 504
 
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as error:
 
         return jsonify({
-            "error": "Could not connect to Groq."
+            "error":
+                "Could not connect to Groq.",
+            "details":
+                str(error)
         }), 502
+
+    if response.status_code == 401:
+
+        return jsonify({
+            "error":
+                "Groq API key is invalid."
+        }), 401
+
+    if response.status_code == 403:
+
+        return jsonify({
+            "error":
+                "Groq image access was denied."
+        }), 403
 
     if response.status_code == 429:
 
         return jsonify({
-            "error": "Groq vision model rate limit reached. Please try again later."
+            "error":
+                "Groq vision rate limit has been reached."
         }), 429
-
-    if response.status_code in [401, 403]:
-
-        return jsonify({
-            "error": "Groq API key is not authorized for image analysis."
-        }), response.status_code
 
     if response.status_code >= 400:
 
@@ -1893,8 +2049,10 @@ Rules:
             details = response.text
 
         return jsonify({
-            "error": "Groq image analysis error.",
-            "details": details
+            "error":
+                "Groq image analysis error.",
+            "details":
+                details
         }), response.status_code
 
     try:
@@ -1915,7 +2073,8 @@ Rules:
     ):
 
         return jsonify({
-            "error": "Invalid image analysis response."
+            "error":
+                "Invalid image analysis response."
         }), 502
 
     return jsonify({
@@ -1924,6 +2083,7 @@ Rules:
 
 
 if __name__ == "__main__":
+
     app.run(
         host="0.0.0.0",
         port=int(
