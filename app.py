@@ -11,47 +11,25 @@ GEMINI_MODEL = "gemini-3.8-flash"
 SYSTEM_PROMPT = """
 You are MedAI, a helpful AI assistant.
 
-You can answer general questions, not only medical questions.
+Answer general questions, medical questions, education,
+science, coding, mathematics, history, business and technology.
 
-Supported languages:
-- Pashto
-- Dari
-- English
+Support Pashto, Dari and English.
 
-Always answer in the same language as the user's question unless the
-user asks for another language.
+Always answer in the same language as the user.
 
-You can help with:
-- General knowledge
-- Education
-- Science
-- Mathematics
-- Programming and coding
-- Writing and translation
-- History
-- Business
-- Technology
-- Everyday questions
-- Medical information
-
-Medical safety:
-- Give general educational information, not a diagnosis.
-- Do not claim certainty about a medical condition.
-- Encourage the user to contact a qualified healthcare professional when
-  symptoms may be serious.
-- For emergencies, advise seeking emergency medical care immediately.
-
-Be clear, helpful, respectful, and concise.
+For medical questions:
+- Give general educational information.
+- Do not claim to diagnose the user.
+- For serious or emergency symptoms, recommend professional medical care.
 """
-
 
 HTML = """
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
     <title>MedAI</title>
 
     <style>
@@ -66,75 +44,51 @@ HTML = """
             color: #111827;
         }
 
-        .app {
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
-
         header {
             height: 64px;
-            background: #ffffff;
-            border-bottom: 1px solid #e5e7eb;
+            background: white;
+            border-bottom: 1px solid #ddd;
             display: flex;
             align-items: center;
             justify-content: space-between;
             padding: 0 20px;
-            position: sticky;
-            top: 0;
-            z-index: 10;
         }
 
         .logo {
-            font-size: 21px;
-            font-weight: 700;
+            font-size: 22px;
+            font-weight: bold;
             color: #2563eb;
         }
 
-        .header-buttons {
-            display: flex;
-            gap: 8px;
-        }
-
         button {
-            border: none;
-            cursor: pointer;
+            border: 0;
             border-radius: 10px;
             padding: 10px 14px;
-            font-size: 14px;
+            cursor: pointer;
         }
 
-        .secondary {
-            background: #eef2ff;
-            color: #1e40af;
-        }
-
-        .danger {
+        .new-chat {
             background: #fee2e2;
             color: #b91c1c;
         }
 
         .chat {
-            flex: 1;
-            width: 100%;
             max-width: 900px;
-            margin: 0 auto;
-            padding: 25px 18px 130px;
+            margin: auto;
+            padding: 30px 15px 130px;
         }
 
         .welcome {
             text-align: center;
-            margin-top: 12vh;
+            margin-top: 15vh;
         }
 
         .welcome h1 {
             font-size: 38px;
-            margin-bottom: 10px;
         }
 
         .welcome p {
             color: #6b7280;
-            font-size: 16px;
         }
 
         .message {
@@ -142,13 +96,13 @@ HTML = """
             margin: 18px 0;
         }
 
-        .message.user {
+        .user {
             justify-content: flex-end;
         }
 
         .bubble {
             max-width: 80%;
-            padding: 13px 16px;
+            padding: 14px 16px;
             border-radius: 16px;
             line-height: 1.6;
             white-space: pre-wrap;
@@ -157,24 +111,11 @@ HTML = """
         .user .bubble {
             background: #2563eb;
             color: white;
-            border-bottom-right-radius: 5px;
         }
 
         .assistant .bubble {
             background: white;
-            border: 1px solid #e5e7eb;
-            border-bottom-left-radius: 5px;
-        }
-
-        .actions {
-            margin-top: 8px;
-        }
-
-        .copy {
-            background: transparent;
-            color: #6b7280;
-            padding: 4px 8px;
-            font-size: 12px;
+            border: 1px solid #ddd;
         }
 
         .composer {
@@ -182,9 +123,9 @@ HTML = """
             bottom: 0;
             left: 0;
             right: 0;
-            background: rgba(255,255,255,.96);
-            border-top: 1px solid #e5e7eb;
-            padding: 14px;
+            background: white;
+            border-top: 1px solid #ddd;
+            padding: 12px;
         }
 
         .composer-inner {
@@ -197,218 +138,112 @@ HTML = """
         textarea {
             flex: 1;
             resize: none;
-            min-height: 50px;
-            max-height: 150px;
-            border: 1px solid #d1d5db;
+            min-height: 52px;
+            border: 1px solid #ccc;
             border-radius: 14px;
             padding: 14px;
             font-size: 15px;
-            outline: none;
-            font-family: inherit;
-        }
-
-        textarea:focus {
-            border-color: #2563eb;
         }
 
         .send {
             background: #2563eb;
             color: white;
-            min-width: 75px;
-        }
-
-        .send:disabled {
-            opacity: .5;
-            cursor: not-allowed;
+            min-width: 70px;
         }
 
         .thinking {
-            color: #6b7280;
+            color: #777;
             font-style: italic;
-        }
-
-        .error {
-            color: #b91c1c;
-        }
-
-        .quick-prompts {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            justify-content: center;
-            margin-top: 25px;
-        }
-
-        .prompt {
-            background: white;
-            border: 1px solid #e5e7eb;
-            color: #374151;
         }
 
         body.dark {
             background: #111827;
-            color: #f9fafb;
+            color: white;
         }
 
         body.dark header,
-        body.dark .composer {
+        body.dark .composer,
+        body.dark .assistant .bubble {
             background: #1f2937;
+            color: white;
             border-color: #374151;
-        }
-
-        body.dark .assistant .bubble,
-        body.dark textarea,
-        body.dark .prompt {
-            background: #1f2937;
-            color: #f9fafb;
-            border-color: #374151;
-        }
-
-        body.dark .welcome p {
-            color: #9ca3af;
         }
 
         @media (max-width: 600px) {
-            header {
-                padding: 0 12px;
-            }
-
-            .welcome h1 {
-                font-size: 30px;
-            }
-
             .bubble {
                 max-width: 90%;
             }
 
-            .chat {
-                padding-left: 10px;
-                padding-right: 10px;
-            }
-
-            .composer-inner {
-                gap: 6px;
-            }
-
-            .send {
-                min-width: 60px;
+            .welcome h1 {
+                font-size: 30px;
             }
         }
     </style>
 </head>
 
 <body>
-<div class="app">
 
-    <header>
-        <div class="logo">🩺 MedAI</div>
+<header>
+    <div class="logo">🩺 MedAI</div>
 
-        <div class="header-buttons">
-            <button class="secondary" onclick="toggleDark()">
-                🌙
-            </button>
+    <div>
+        <button onclick="toggleDark()">🌙</button>
+        <button class="new-chat" onclick="newChat()">New Chat</button>
+    </div>
+</header>
 
-            <button class="danger" onclick="newChat()">
-                New Chat
-            </button>
-        </div>
-    </header>
+<div class="chat" id="chat">
 
-    <main class="chat" id="chat">
+    <div class="welcome" id="welcome">
+        <h1>How can I help you?</h1>
+        <p>
+            Ask me anything — Medical, Science, Coding,
+            Education and more.
+        </p>
+    </div>
 
-        <div class="welcome" id="welcome">
-            <h1>How can I help you?</h1>
-            <p>
-                Ask anything — medical, education, science, coding,
-                mathematics, or general questions.
-            </p>
+</div>
 
-            <div class="quick-prompts">
-                <button class="prompt"
-                    onclick="usePrompt('Explain artificial intelligence simply.')">
-                    🤖 AI
-                </button>
+<div class="composer">
 
-                <button class="prompt"
-                    onclick="usePrompt('What are common causes of headache?')">
-                    🩺 Medical
-                </button>
+    <div class="composer-inner">
 
-                <button class="prompt"
-                    onclick="usePrompt('Explain photosynthesis.')">
-                    🔬 Science
-                </button>
+        <textarea
+            id="message"
+            placeholder="Message MedAI..."
+            onkeydown="handleKey(event)"
+        ></textarea>
 
-                <button class="prompt"
-                    onclick="usePrompt('Help me write Python code.')">
-                    💻 Coding
-                </button>
-            </div>
-        </div>
+        <button
+            class="send"
+            id="sendButton"
+            onclick="sendMessage()"
+        >
+            Send
+        </button>
 
-    </main>
-
-    <div class="composer">
-        <div class="composer-inner">
-
-            <textarea
-                id="message"
-                placeholder="Message MedAI..."
-                onkeydown="handleKey(event)"
-            ></textarea>
-
-            <button
-                class="send"
-                id="sendButton"
-                onclick="sendMessage()"
-            >
-                Send
-            </button>
-
-        </div>
     </div>
 
 </div>
 
 <script>
+
 let conversation = [];
 
 function addMessage(role, text) {
+
     const chat = document.getElementById("chat");
-    const welcome = document.getElementById("welcome");
 
-    if (welcome) {
-        welcome.remove();
-    }
-
-    const wrapper = document.createElement("div");
-    wrapper.className = "message " + role;
+    const message = document.createElement("div");
+    message.className = "message " + role;
 
     const bubble = document.createElement("div");
     bubble.className = "bubble";
 
     bubble.textContent = text;
 
-    wrapper.appendChild(bubble);
-
-    if (role === "assistant") {
-        const actions = document.createElement("div");
-        actions.className = "actions";
-
-        const copy = document.createElement("button");
-        copy.className = "copy";
-        copy.textContent = "📋 Copy";
-
-        copy.onclick = function() {
-            navigator.clipboard.writeText(text);
-            copy.textContent = "✓ Copied";
-        };
-
-        actions.appendChild(copy);
-        bubble.appendChild(actions);
-    }
-
-    chat.appendChild(wrapper);
+    message.appendChild(bubble);
+    chat.appendChild(message);
 
     window.scrollTo({
         top: document.body.scrollHeight,
@@ -416,27 +251,28 @@ function addMessage(role, text) {
     });
 }
 
+
 function showThinking() {
+
     const chat = document.getElementById("chat");
 
-    const wrapper = document.createElement("div");
-    wrapper.className = "message assistant";
-    wrapper.id = "thinking";
+    const message = document.createElement("div");
+
+    message.className = "message assistant";
+    message.id = "thinking";
 
     const bubble = document.createElement("div");
+
     bubble.className = "bubble thinking";
     bubble.textContent = "MedAI is thinking...";
 
-    wrapper.appendChild(bubble);
-    chat.appendChild(wrapper);
-
-    window.scrollTo({
-        top: document.body.scrollHeight,
-        behavior: "smooth"
-    });
+    message.appendChild(bubble);
+    chat.appendChild(message);
 }
 
+
 function removeThinking() {
+
     const thinking = document.getElementById("thinking");
 
     if (thinking) {
@@ -444,7 +280,9 @@ function removeThinking() {
     }
 }
 
+
 async function sendMessage() {
+
     const input = document.getElementById("message");
     const button = document.getElementById("sendButton");
 
@@ -457,6 +295,12 @@ async function sendMessage() {
     input.value = "";
     button.disabled = true;
 
+    const welcome = document.getElementById("welcome");
+
+    if (welcome) {
+        welcome.remove();
+    }
+
     addMessage("user", message);
 
     conversation.push({
@@ -467,15 +311,20 @@ async function sendMessage() {
     showThinking();
 
     try {
+
         const response = await fetch("/api/chat", {
+
             method: "POST",
+
             headers: {
                 "Content-Type": "application/json"
             },
+
             body: JSON.stringify({
                 message: message,
-                history: conversation.slice(-12)
+                history: conversation.slice(-10)
             })
+
         });
 
         const data = await response.json();
@@ -483,16 +332,26 @@ async function sendMessage() {
         removeThinking();
 
         if (!response.ok) {
+
             addMessage(
                 "assistant",
-                "Error: " + (data.error || "Something went wrong.")
+                "Error: " +
+                (data.error || "Unknown error")
             );
+
+            console.log(data);
+
             return;
         }
 
-        const answer = data.answer || "No answer received.";
+        const answer =
+            data.answer ||
+            "No answer received.";
 
-        addMessage("assistant", answer);
+        addMessage(
+            "assistant",
+            answer
+        );
 
         conversation.push({
             role: "assistant",
@@ -500,59 +359,60 @@ async function sendMessage() {
         });
 
     } catch (error) {
+
         removeThinking();
 
         addMessage(
             "assistant",
             "Connection error. Please try again."
         );
+
+        console.error(error);
+
     } finally {
+
         button.disabled = false;
         input.focus();
     }
 }
 
+
 function handleKey(event) {
-    if (event.key === "Enter" && !event.shiftKey) {
+
+    if (
+        event.key === "Enter" &&
+        !event.shiftKey
+    ) {
+
         event.preventDefault();
+
         sendMessage();
     }
 }
 
-function usePrompt(text) {
-    const input = document.getElementById("message");
-    input.value = text;
-    input.focus();
-}
 
 function newChat() {
+
     conversation = [];
 
-    const chat = document.getElementById("chat");
-
-    chat.innerHTML = `
+    document.getElementById("chat").innerHTML = `
         <div class="welcome" id="welcome">
             <h1>How can I help you?</h1>
             <p>
-                Ask anything — medical, education, science, coding,
-                mathematics, or general questions.
+                Ask me anything — Medical, Science,
+                Coding, Education and more.
             </p>
         </div>
     `;
 }
 
+
 function toggleDark() {
+
     document.body.classList.toggle("dark");
 
-    localStorage.setItem(
-        "medai_dark",
-        document.body.classList.contains("dark")
-    );
 }
 
-if (localStorage.getItem("medai_dark") === "true") {
-    document.body.classList.add("dark");
-}
 </script>
 
 </body>
@@ -575,14 +435,18 @@ def health():
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
+
     if not GEMINI_API_KEY:
         return jsonify({
-            "error": "GEMINI_API_KEY is not configured on the server."
+            "error": "GEMINI_API_KEY is missing in Vercel."
         }), 500
 
     data = request.get_json(silent=True) or {}
 
-    message = str(data.get("message", "")).strip()
+    message = str(
+        data.get("message", "")
+    ).strip()
+
     history = data.get("history", [])
 
     if not message:
@@ -590,30 +454,34 @@ def chat():
             "error": "Message is required."
         }), 400
 
-    if not isinstance(history, list):
-        history = []
-
     conversation_text = ""
 
-    for item in history[-12:]:
-        if not isinstance(item, dict):
-            continue
+    if isinstance(history, list):
 
-        role = item.get("role", "user")
-        content = str(item.get("content", "")).strip()
+        for item in history[-10:]:
 
-        if not content:
-            continue
+            if not isinstance(item, dict):
+                continue
 
-        conversation_text += (
-            f"\n{role.upper()}: {content}\n"
-        )
+            role = str(
+                item.get("role", "user")
+            )
+
+            content = str(
+                item.get("content", "")
+            ).strip()
+
+            if content:
+
+                conversation_text += (
+                    f"\n{role.upper()}: {content}"
+                )
 
     prompt = (
         SYSTEM_PROMPT
         + "\n\nConversation history:"
         + conversation_text
-        + "\n\nCurrent user question:\n"
+        + "\n\nCurrent user question:"
         + message
     )
 
@@ -628,84 +496,142 @@ def chat():
     }
 
     try:
-        response = None
 
-        for attempt in range(3):
-            response = requests.post(
-                url,
-                headers={
-                    "Content-Type": "application/json",
-                    "x-goog-api-key": GEMINI_API_KEY
-                },
-                json=payload,
-                timeout=60
-            )
+        response = requests.post(
 
-            if response.status_code != 503:
-                break
+            url,
 
-        if response is None:
-            return jsonify({
-                "error": "No response from Gemini."
-            }), 502
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": GEMINI_API_KEY
+            },
+
+            json=payload,
+
+            timeout=90
+        )
+
+        try:
+
+            result = response.json()
+
+        except Exception:
+
+            result = {
+                "raw_response": response.text
+            }
 
         if response.status_code != 200:
-            try:
-                error_data = response.json()
-            except Exception:
-                error_data = {
-                    "message": response.text[:500]
-                }
 
             return jsonify({
+
                 "error": "Gemini API error",
-                "details": error_data
-            }), response.status_code
 
-        result = response.json()
+                "status_code":
+                    response.status_code,
 
-        answer_parts = []
+                "details":
+                    result
 
-        for step in result.get("steps", []):
-            if step.get("type") != "model_output":
-                continue
+            }), 502
 
-            for item in step.get("content", []):
-                if item.get("type") == "text":
-                    text = item.get("text", "")
-
-                    if text:
-                        answer_parts.append(text)
-
-        answer = "\n".join(answer_parts).strip()
+        answer = result.get(
+            "output_text",
+            ""
+        )
 
         if not answer:
-            answer = "I could not generate an answer. Please try again."
+
+            parts = []
+
+            for step in result.get(
+                "steps",
+                []
+            ):
+
+                if step.get(
+                    "type"
+                ) != "model_output":
+
+                    continue
+
+                for item in step.get(
+                    "content",
+                    []
+                ):
+
+                    if item.get(
+                        "type"
+                    ) == "text":
+
+                        text = item.get(
+                            "text",
+                            ""
+                        )
+
+                        if text:
+                            parts.append(text)
+
+            answer = "\n".join(
+                parts
+            ).strip()
+
+        if not answer:
+
+            return jsonify({
+
+                "error":
+                    "Gemini returned no text.",
+
+                "details":
+                    result
+
+            }), 502
 
         return jsonify({
             "answer": answer
         })
 
     except requests.Timeout:
+
         return jsonify({
-            "error": "Gemini request timed out. Please try again."
+            "error":
+                "Gemini request timed out."
         }), 504
 
     except requests.RequestException as e:
+
         return jsonify({
-            "error": "Could not connect to Gemini.",
-            "details": str(e)
+
+            "error":
+                "Could not connect to Gemini.",
+
+            "details":
+                str(e)
+
         }), 502
 
     except Exception as e:
+
         return jsonify({
-            "error": "Unexpected server error.",
-            "details": str(e)
+
+            "error":
+                "Unexpected server error.",
+
+            "details":
+                str(e)
+
         }), 500
 
 
 if __name__ == "__main__":
+
     app.run(
         host="0.0.0.0",
-        port=int(os.environ.get("PORT", 5000))
+        port=int(
+            os.environ.get(
+                "PORT",
+                5000
+            )
+        )
     )
