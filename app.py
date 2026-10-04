@@ -522,18 +522,12 @@ def chat():
             }
 
         if response.status_code != 200:
-
-            return jsonify({
-
-                "error": "Gemini API error",
-
-                "status_code":
-                    response.status_code,
-
-                "details":
-                    result
-
-            }), 502
+    return jsonify({
+        "error": "Gemini API error",
+        "status_code": response.status_code,
+        "details": result,
+        "raw_response": response.text
+    }), 502
 
         answer = result.get(
             "output_text",
