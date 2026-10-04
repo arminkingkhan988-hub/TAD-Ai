@@ -29,7 +29,6 @@ HTML = r"""
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
 <title>MedAI</title>
 
 <style>
@@ -108,7 +107,7 @@ body.dark {
     margin: 14px 0;
 }
 
-.message-row.user-row {
+.user-row {
     justify-content: flex-end;
 }
 
@@ -139,21 +138,22 @@ body.dark .ai-message {
 }
 
 .message-actions {
-    margin-top: 7px;
+    margin-top: 8px;
     display: flex;
     gap: 6px;
+    flex-wrap: wrap;
 }
 
-.copy-btn {
+.action-btn {
     border: 1px solid #d1d5db;
     background: transparent;
     border-radius: 7px;
-    padding: 5px 8px;
+    padding: 5px 9px;
     cursor: pointer;
     font-size: 12px;
 }
 
-body.dark .copy-btn {
+body.dark .action-btn {
     color: white;
     border-color: #4b5563;
 }
@@ -164,13 +164,16 @@ body.dark .copy-btn {
     padding: 12px;
     background: rgba(255,255,255,0.96);
     border-top: 1px solid #ddd;
-    display: flex;
-    gap: 9px;
 }
 
 body.dark .input-area {
     background: rgba(17,24,39,0.96);
     border-color: #374151;
+}
+
+.input-row {
+    display: flex;
+    gap: 9px;
 }
 
 textarea {
@@ -193,14 +196,33 @@ body.dark textarea {
     border-color: #4b5563;
 }
 
+.voice-btn,
+.send-btn {
+    border: 0;
+    border-radius: 12px;
+    padding: 0 16px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+.voice-btn {
+    background: #e5e7eb;
+    color: #111827;
+}
+
+body.dark .voice-btn {
+    background: #374151;
+    color: white;
+}
+
+.voice-btn.listening {
+    background: #dc2626;
+    color: white;
+}
+
 .send-btn {
     background: #2563eb;
     color: white;
-    border: 0;
-    border-radius: 12px;
-    padding: 0 18px;
-    cursor: pointer;
-    font-size: 15px;
 }
 
 .send-btn:disabled {
@@ -223,6 +245,13 @@ body.dark textarea {
 
 .loading {
     opacity: 0.65;
+}
+
+.voice-status {
+    font-size: 13px;
+    margin-top: 7px;
+    opacity: 0.7;
+    min-height: 18px;
 }
 
 @media (max-width: 600px) {
@@ -251,12 +280,17 @@ body.dark textarea {
         padding: 8px;
     }
 
+    .input-row {
+        gap: 6px;
+    }
+
     textarea {
         font-size: 15px;
     }
 
+    .voice-btn,
     .send-btn {
-        padding: 0 14px;
+        padding: 0 12px;
     }
 }
 </style>
@@ -304,19 +338,34 @@ body.dark textarea {
 
     <div class="input-area">
 
-        <textarea
-            id="message"
-            placeholder="Type your message..."
-            onkeydown="handleKey(event)"
-        ></textarea>
+        <div class="input-row">
 
-        <button
-            id="sendBtn"
-            class="send-btn"
-            onclick="sendMessage()"
-        >
-            Send
-        </button>
+            <textarea
+                id="message"
+                placeholder="Type or speak your message..."
+                onkeydown="handleKey(event)"
+            ></textarea>
+
+            <button
+                id="voiceBtn"
+                class="voice-btn"
+                onclick="toggleVoice()"
+                title="Voice Input"
+            >
+                🎤
+            </button>
+
+            <button
+                id="sendBtn"
+                class="send-btn"
+                onclick="sendMessage()"
+            >
+                Send
+            </button>
+
+        </div>
+
+        <div id="voiceStatus" class="voice-status"></div>
 
     </div>
 
@@ -327,16 +376,21 @@ body.dark textarea {
 
 let messages = [];
 
+let recognition = null;
 
-// -------------------------
-// Load saved history
-// -------------------------
+let isListening = false;
+
+
+// --------------------------------
+// Local history
+// --------------------------------
 
 function loadHistory() {
 
     try {
 
-        const saved = localStorage.getItem("medai_messages");
+        const saved =
+            localStorage.getItem("medai_messages");
 
         if (saved) {
 
@@ -351,7 +405,6 @@ function loadHistory() {
                 );
 
             });
-
         }
 
     } catch (error) {
@@ -361,10 +414,6 @@ function loadHistory() {
     }
 }
 
-
-// -------------------------
-// Save history
-// -------------------------
 
 function saveHistory() {
 
@@ -377,34 +426,38 @@ function saveHistory() {
 
     } catch (error) {
 
-        console.log("History could not be saved.");
+        console.log("History save failed.");
 
     }
 }
 
 
-// -------------------------
+// --------------------------------
 // Add message
-// -------------------------
+// --------------------------------
 
-function addMessage(text, role, showCopy = true) {
+function addMessage(text, role, showActions = true) {
 
-    const chat = document.getElementById("chat");
+    const chat =
+        document.getElementById("chat");
 
-    const welcome = document.getElementById("welcome");
+    const welcome =
+        document.getElementById("welcome");
 
     if (welcome) {
         welcome.remove();
     }
 
-    const row = document.createElement("div");
+    const row =
+        document.createElement("div");
 
     row.className =
         "message-row " +
         (role === "user" ? "user-row" : "");
 
 
-    const box = document.createElement("div");
+    const box =
+        document.createElement("div");
 
     box.className =
         "message-box " +
@@ -413,47 +466,71 @@ function addMessage(text, role, showCopy = true) {
             : "ai-message");
 
 
-    box.textContent = text;
+    const content =
+        document.createElement("div");
+
+    content.textContent = text;
+
+    box.appendChild(content);
 
 
-    if (role === "assistant" && showCopy) {
+    if (role === "assistant" && showActions) {
 
-        const actions = document.createElement("div");
+        const actions =
+            document.createElement("div");
 
-        actions.className = "message-actions";
-
-
-        const copyButton = document.createElement("button");
-
-        copyButton.className = "copy-btn";
-
-        copyButton.textContent = "📋 Copy";
+        actions.className =
+            "message-actions";
 
 
-        copyButton.onclick = async function() {
+        // Copy
+        const copyBtn =
+            document.createElement("button");
+
+        copyBtn.className = "action-btn";
+
+        copyBtn.textContent = "📋 Copy";
+
+
+        copyBtn.onclick = async function() {
 
             try {
 
                 await navigator.clipboard.writeText(text);
 
-                copyButton.textContent = "✅ Copied";
+                copyBtn.textContent = "✅ Copied";
 
                 setTimeout(function() {
-
-                    copyButton.textContent = "📋 Copy";
-
+                    copyBtn.textContent = "📋 Copy";
                 }, 1500);
 
             } catch (error) {
 
-                copyButton.textContent = "❌ Failed";
+                copyBtn.textContent = "❌ Failed";
 
             }
+        };
+
+
+        // Speak
+        const speakBtn =
+            document.createElement("button");
+
+        speakBtn.className = "action-btn";
+
+        speakBtn.textContent = "🔊 Listen";
+
+
+        speakBtn.onclick = function() {
+
+            speakText(text);
 
         };
 
 
-        actions.appendChild(copyButton);
+        actions.appendChild(copyBtn);
+
+        actions.appendChild(speakBtn);
 
         box.appendChild(actions);
     }
@@ -463,24 +540,28 @@ function addMessage(text, role, showCopy = true) {
 
     chat.appendChild(row);
 
-    chat.scrollTop = chat.scrollHeight;
+    chat.scrollTop =
+        chat.scrollHeight;
 
 
     return row;
 }
 
 
-// -------------------------
+// --------------------------------
 // Send message
-// -------------------------
+// --------------------------------
 
 async function sendMessage() {
 
-    const input = document.getElementById("message");
+    const input =
+        document.getElementById("message");
 
-    const sendBtn = document.getElementById("sendBtn");
+    const sendBtn =
+        document.getElementById("sendBtn");
 
-    const text = input.value.trim();
+    const text =
+        input.value.trim();
 
 
     if (!text) {
@@ -488,12 +569,19 @@ async function sendMessage() {
     }
 
 
+    if (isListening) {
+        stopVoice();
+    }
+
+
     addMessage(text, "user");
+
 
     messages.push({
         role: "user",
         content: text
     });
+
 
     saveHistory();
 
@@ -503,33 +591,38 @@ async function sendMessage() {
     sendBtn.disabled = true;
 
 
-    const loading = addMessage(
-        "⏳ Thinking...",
-        "assistant",
-        false
-    );
+    const loading =
+        addMessage(
+            "⏳ Thinking...",
+            "assistant",
+            false
+        );
+
 
     loading.classList.add("loading");
 
 
     try {
 
-        const response = await fetch("/chat", {
+        const response =
+            await fetch("/chat", {
 
-            method: "POST",
+                method: "POST",
 
-            headers: {
-                "Content-Type": "application/json"
-            },
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                },
 
-            body: JSON.stringify({
-                messages: messages
-            })
+                body: JSON.stringify({
+                    messages: messages
+                })
 
-        });
+            });
 
 
-        const data = await response.json();
+        const data =
+            await response.json();
 
 
         loading.remove();
@@ -538,7 +631,8 @@ async function sendMessage() {
         if (!response.ok) {
 
             addMessage(
-                "❌ " + (
+                "❌ " +
+                (
                     data.error ||
                     "Something went wrong."
                 ),
@@ -590,9 +684,264 @@ async function sendMessage() {
 }
 
 
-// -------------------------
-// Enter key
-// -------------------------
+// --------------------------------
+// Voice Input
+// --------------------------------
+
+function setupVoice() {
+
+    const SpeechRecognition =
+        window.SpeechRecognition ||
+        window.webkitSpeechRecognition;
+
+
+    if (!SpeechRecognition) {
+
+        document.getElementById(
+            "voiceStatus"
+        ).textContent =
+            "🎤 Voice input is not supported in this browser.";
+
+        return false;
+    }
+
+
+    recognition =
+        new SpeechRecognition();
+
+
+    recognition.continuous = false;
+
+    recognition.interimResults = true;
+
+    recognition.lang = "en-US";
+
+
+    recognition.onstart = function() {
+
+        isListening = true;
+
+        const btn =
+            document.getElementById("voiceBtn");
+
+        btn.classList.add("listening");
+
+        btn.textContent = "⏹️";
+
+        document.getElementById(
+            "voiceStatus"
+        ).textContent =
+            "🎤 Listening... Speak now.";
+    };
+
+
+    recognition.onresult = function(event) {
+
+        let finalText = "";
+
+        let interimText = "";
+
+
+        for (
+            let i = event.resultIndex;
+            i < event.results.length;
+            i++
+        ) {
+
+            const transcript =
+                event.results[i][0].transcript;
+
+
+            if (event.results[i].isFinal) {
+
+                finalText += transcript;
+
+            } else {
+
+                interimText += transcript;
+
+            }
+        }
+
+
+        const input =
+            document.getElementById("message");
+
+
+        if (finalText) {
+
+            input.value =
+                (
+                    input.value + " " + finalText
+                ).trim();
+
+        } else if (interimText) {
+
+            document.getElementById(
+                "voiceStatus"
+            ).textContent =
+                "🎤 " + interimText;
+        }
+    };
+
+
+    recognition.onerror = function(event) {
+
+        isListening = false;
+
+        resetVoiceButton();
+
+
+        if (event.error === "not-allowed") {
+
+            document.getElementById(
+                "voiceStatus"
+            ).textContent =
+                "❌ Microphone permission was denied.";
+
+        } else {
+
+            document.getElementById(
+                "voiceStatus"
+            ).textContent =
+                "❌ Voice input error. Please try again.";
+        }
+    };
+
+
+    recognition.onend = function() {
+
+        isListening = false;
+
+        resetVoiceButton();
+
+
+        document.getElementById(
+            "voiceStatus"
+        ).textContent = "";
+    };
+
+
+    return true;
+}
+
+
+function toggleVoice() {
+
+    if (!recognition) {
+
+        if (!setupVoice()) {
+            return;
+        }
+    }
+
+
+    if (isListening) {
+
+        stopVoice();
+
+    } else {
+
+        startVoice();
+
+    }
+}
+
+
+function startVoice() {
+
+    try {
+
+        recognition.start();
+
+    } catch (error) {
+
+        console.log(error);
+
+    }
+}
+
+
+function stopVoice() {
+
+    if (recognition) {
+
+        try {
+            recognition.stop();
+        } catch (error) {
+            console.log(error);
+        }
+    }
+}
+
+
+function resetVoiceButton() {
+
+    const btn =
+        document.getElementById("voiceBtn");
+
+    btn.classList.remove("listening");
+
+    btn.textContent = "🎤";
+}
+
+
+// --------------------------------
+// Voice Output
+// --------------------------------
+
+function speakText(text) {
+
+    if (!("speechSynthesis" in window)) {
+
+        alert(
+            "Voice output is not supported in this browser."
+        );
+
+        return;
+    }
+
+
+    window.speechSynthesis.cancel();
+
+
+    const speech =
+        new SpeechSynthesisUtterance(text);
+
+
+    speech.rate = 0.95;
+
+    speech.pitch = 1;
+
+    speech.volume = 1;
+
+
+    const language =
+        detectLanguage(text);
+
+
+    speech.lang = language;
+
+
+    window.speechSynthesis.speak(speech);
+}
+
+
+function detectLanguage(text) {
+
+    // Pashto / Dari / Arabic-script detection
+    if (/[\u0600-\u06FF]/.test(text)) {
+
+        return "fa-AF";
+    }
+
+    return "en-US";
+}
+
+
+// --------------------------------
+// Keyboard
+// --------------------------------
 
 function handleKey(event) {
 
@@ -608,9 +957,9 @@ function handleKey(event) {
 }
 
 
-// -------------------------
-// New Chat
-// -------------------------
+// --------------------------------
+// New chat
+// --------------------------------
 
 function newChat() {
 
@@ -618,6 +967,7 @@ function newChat() {
         messages.length > 0 &&
         !confirm("Start a new chat?")
     ) {
+
         return;
     }
 
@@ -630,7 +980,12 @@ function newChat() {
     );
 
 
-    document.getElementById("chat").innerHTML = `
+    window.speechSynthesis?.cancel();
+
+
+    document.getElementById(
+        "chat"
+    ).innerHTML = `
 
         <div class="welcome" id="welcome">
 
@@ -646,9 +1001,9 @@ function newChat() {
 }
 
 
-// -------------------------
-// Dark / Light Mode
-// -------------------------
+// --------------------------------
+// Dark mode
+// --------------------------------
 
 function toggleTheme() {
 
@@ -666,10 +1021,6 @@ function toggleTheme() {
 }
 
 
-// -------------------------
-// Load theme
-// -------------------------
-
 function loadTheme() {
 
     const theme =
@@ -679,14 +1030,13 @@ function loadTheme() {
     if (theme === "dark") {
 
         document.body.classList.add("dark");
-
     }
 }
 
 
-// -------------------------
+// --------------------------------
 // Start
-// -------------------------
+// --------------------------------
 
 loadTheme();
 
@@ -718,19 +1068,23 @@ def chat():
     if not GROQ_API_KEY:
 
         return jsonify({
-            "error": "GROQ_API_KEY is not configured in Vercel."
+            "error":
+                "GROQ_API_KEY is not configured in Vercel."
         }), 500
 
 
-    data = request.get_json(silent=True) or {}
+    data =
+        request.get_json(silent=True) or {}
 
-    user_messages = data.get("messages", [])
+    user_messages =
+        data.get("messages", [])
 
 
     if not user_messages:
 
         return jsonify({
-            "error": "No message provided."
+            "error":
+                "No message provided."
         }), 400
 
 
@@ -775,13 +1129,9 @@ def chat():
             },
 
             json={
-
                 "model": MODEL,
-
                 "messages": messages,
-
                 "temperature": 0.7,
-
                 "max_tokens": 1200
             },
 
@@ -808,30 +1158,24 @@ def chat():
         if response.status_code >= 400:
 
             try:
-
                 details = response.json()
-
             except Exception:
-
                 details = response.text
 
 
             return jsonify({
-
                 "error":
                     "Groq API error",
-
                 "details":
                     details
-
             }), response.status_code
 
 
-        result = response.json()
+        result =
+            response.json()
 
 
         answer = (
-
             result
             .get("choices", [{}])[0]
             .get("message", {})
@@ -863,13 +1207,10 @@ def chat():
     except Exception as e:
 
         return jsonify({
-
             "error":
                 "Server error",
-
             "details":
                 str(e)
-
         }), 500
 
 
