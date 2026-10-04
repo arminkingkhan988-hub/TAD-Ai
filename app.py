@@ -4,6 +4,10 @@ from flask import Flask, request, jsonify, render_template_string
 
 app = Flask(__name__)
 
+# =========================================================
+# CONFIG
+# =========================================================
+
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -11,6 +15,12 @@ GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 TEXT_MODEL = "openai/gpt-oss-20b"
 VISION_MODEL = "qwen/qwen3.8-27b"
 
+MAX_IMAGE_SIZE = 8 * 1024 * 1024
+
+
+# =========================================================
+# SYSTEM PROMPT
+# =========================================================
 
 SYSTEM_PROMPT = """
 You are MedAI, a helpful AI assistant.
@@ -28,23 +38,413 @@ You can help with:
 - Health and medical education
 
 Rules:
+
 1. Always answer in the same language as the user.
 2. Support Pashto, Dari, and English.
-3. For medical questions, provide general educational information.
-4. Never claim to be a doctor.
-5. Do not give a definite diagnosis based only on chat or an image.
-6. Do not tell users to start or stop prescription medicine without professional advice.
-7. If symptoms may indicate an emergency, advise the user to contact local emergency medical services or a qualified healthcare professional.
-8. Be clear, respectful, friendly, and useful.
+3. If the user writes in Pashto, answer in Pashto.
+4. If the user writes in Dari, answer in Dari.
+5. If the user writes in English, answer in English.
+6. For medical questions, provide general educational information.
+7. Never claim to be a doctor.
+8. Do not provide a definite diagnosis based only on chat or an image.
+9. Do not tell users to start or stop prescription medicine without professional advice.
+10. If symptoms may indicate an emergency, advise the user to contact local emergency medical services or a qualified healthcare professional.
+11. Be clear, respectful, friendly, and useful.
+12. Do not unnecessarily repeat the user's question.
 """
 
+
+# =========================================================
+# HELPERS
+# =========================================================
+
+def groq_error_response(response):
+    try:
+        details = response.json()
+    except Exception:
+        details = response.text
+
+    return jsonify({
+        "error": "Groq API error",
+        "details": details,
+        "status_code": response.status_code
+    }), response.status_code
+
+
+def clean_messages(messages):
+    if not isinstance(messages, list):
+        return []
+
+    cleaned = []
+
+    for item in messages[-20:]:
+        if not isinstance(item, dict):
+            continue
+
+        role = item.get("role")
+        content = item.get("content")
+
+        if role not in ["user", "assistant"]:
+            continue
+
+        if not isinstance(content, str):
+            continue
+
+        content = content.strip()
+
+        if not content:
+            continue
+
+        cleaned.append({
+            "role": role,
+            "content": content
+        })
+
+    return cleaned
+
+
+# =========================================================
+# MAIN PAGE
+# =========================================================
+
+@app.route("/")
+def home():
+    return render_template_string(HTML)
+
+
+# =========================================================
+# HEALTH
+# =========================================================
+
+@app.route("/health")
+def health():
+    return jsonify({
+        "service": "MedAI",
+        "status": "ok"
+    })
+
+
+# =========================================================
+# CHAT
+# =========================================================
+
+@app.route("/chat", methods=["POST"])
+def chat():
+
+    if not GROQ_API_KEY:
+        return jsonify({
+            "error": "GROQ_API_KEY is not configured."
+        }), 500
+
+    try:
+        data = request.get_json(silent=True) or {}
+
+        messages = clean_messages(data.get("messages", []))
+
+        if not messages:
+            return jsonify({
+                "error": "No messages provided."
+            }), 400
+
+        payload = {
+            "model": TEXT_MODEL,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": SYSTEM_PROMPT
+                }
+            ] + messages,
+            "temperature": 0.7,
+            "max_completion_tokens": 1500
+        }
+
+        response = requests.post(
+            GROQ_URL,
+            headers={
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=60
+        )
+
+        if response.status_code >= 400:
+            return groq_error_response(response)
+
+        result = response.json()
+
+        answer = (
+            result.get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", "")
+        )
+
+        if not answer:
+            return jsonify({
+                "error": "No answer was returned by Groq."
+            }), 502
+
+        return jsonify({
+            "answer": answer
+        })
+
+    except requests.exceptions.Timeout:
+        return jsonify({
+            "error": "Groq request timed out."
+        }), 504
+
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            "error": "Could not connect to Groq.",
+            "details": str(e)
+        }), 502
+
+    except Exception as e:
+        return jsonify({
+            "error": "Chat error.",
+            "details": str(e)
+        }), 500
+
+
+# =========================================================
+# IMAGE SEARCH - WIKIMEDIA COMMONS
+# =========================================================
+
+@app.route("/images", methods=["GET"])
+def images():
+
+    query = request.args.get("q", "").strip()
+
+    if not query:
+        return jsonify({
+            "images": []
+        })
+
+    try:
+        api_url = "https://commons.wikimedia.org/w/api.php"
+
+        params = {
+            "action": "query",
+            "format": "json",
+            "formatversion": "2",
+            "generator": "search",
+            "gsrsearch": query,
+            "gsrnamespace": "6",
+            "gsrlimit": "12",
+            "prop": "imageinfo",
+            "iiprop": "url",
+            "iiurlwidth": "500",
+            "origin": "*"
+        }
+
+        response = requests.get(
+            api_url,
+            params=params,
+            headers={
+                "User-Agent": "MedAI/1.0 AI Assistant"
+            },
+            timeout=20
+        )
+
+        if response.status_code >= 400:
+            return jsonify({
+                "error": "Image search service is unavailable.",
+                "details": response.text
+            }), 502
+
+        data = response.json()
+
+        results = []
+
+        for page in data.get("query", {}).get("pages", []):
+
+            imageinfo = page.get("imageinfo", [])
+
+            if not imageinfo:
+                continue
+
+            info = imageinfo[0]
+
+            image_url = info.get("thumburl") or info.get("url")
+
+            if not image_url:
+                continue
+
+            results.append({
+                "title": page.get("title", "Image"),
+                "url": image_url,
+                "original_url": info.get("url", image_url)
+            })
+
+        return jsonify({
+            "images": results
+        })
+
+    except requests.exceptions.Timeout:
+        return jsonify({
+            "error": "Image search timed out."
+        }), 504
+
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            "error": "Image search service is unavailable.",
+            "details": str(e)
+        }), 502
+
+    except Exception as e:
+        return jsonify({
+            "error": "Image search error.",
+            "details": str(e)
+        }), 500
+
+
+# =========================================================
+# IMAGE ANALYSIS
+# =========================================================
+
+@app.route("/analyze-image", methods=["POST"])
+def analyze_image():
+
+    if not GROQ_API_KEY:
+        return jsonify({
+            "error": "GROQ_API_KEY is not configured."
+        }), 500
+
+    try:
+        data = request.get_json(silent=True) or {}
+
+        image = data.get("image")
+        question = data.get("question", "").strip()
+
+        if not image:
+            return jsonify({
+                "error": "No image was provided."
+            }), 400
+
+        if not isinstance(image, str):
+            return jsonify({
+                "error": "Invalid image format."
+            }), 400
+
+        if not image.startswith("data:image/"):
+            return jsonify({
+                "error": "Image must be a valid image data URL."
+            }), 400
+
+        if len(image) > 12 * 1024 * 1024:
+            return jsonify({
+                "error": "Image is too large."
+            }), 413
+
+        if not question:
+            question = (
+                "Analyze this image and explain clearly what you can see. "
+                "If it is a medical image, provide only general educational "
+                "information and do not make a definite diagnosis."
+            )
+
+        vision_prompt = f"""
+{question}
+
+Important:
+- Answer in the same language as the user's question.
+- If this is a medical image, do not claim a definite diagnosis.
+- Explain visible findings carefully.
+- If the image is unclear, say so.
+- Do not invent details that cannot be seen.
+"""
+
+        payload = {
+            "model": VISION_MODEL,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": SYSTEM_PROMPT
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": vision_prompt
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": image
+                            }
+                        }
+                    ]
+                }
+            ],
+            "temperature": 0.2,
+            "max_completion_tokens": 1500
+        }
+
+        response = requests.post(
+            GROQ_URL,
+            headers={
+                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=90
+        )
+
+        if response.status_code >= 400:
+            return groq_error_response(response)
+
+        result = response.json()
+
+        answer = (
+            result.get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", "")
+        )
+
+        if not answer:
+            return jsonify({
+                "error": "No image analysis result was returned."
+            }), 502
+
+        return jsonify({
+            "answer": answer
+        })
+
+    except requests.exceptions.Timeout:
+        return jsonify({
+            "error": "Image analysis timed out."
+        }), 504
+
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            "error": "Could not connect to Groq image analysis.",
+            "details": str(e)
+        }), 502
+
+    except Exception as e:
+        return jsonify({
+            "error": "Image analysis error.",
+            "details": str(e)
+        }), 500
+
+
+# =========================================================
+# HTML
+# =========================================================
 
 HTML = r"""
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
+
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+>
 
 <title>MedAI</title>
 
@@ -54,652 +454,888 @@ HTML = r"""
     box-sizing: border-box;
 }
 
+html,
 body {
     margin: 0;
-    font-family: Arial, sans-serif;
-    background: #f4f7fb;
-    color: #172033;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+body {
+    background: #f5f7fb;
+    color: #111827;
+    transition: 0.2s;
 }
 
 body.dark {
-    background: #111827;
-    color: #f3f4f6;
+    background: #0f172a;
+    color: #f8fafc;
 }
 
 .app {
-    max-width: 1100px;
+    display: flex;
+    width: 100%;
     height: 100vh;
-    margin: auto;
+    overflow: hidden;
+}
+
+/* SIDEBAR */
+
+.sidebar {
+    width: 260px;
+    background: #ffffff;
+    border-right: 1px solid #e5e7eb;
+    padding: 16px;
     display: flex;
     flex-direction: column;
+    gap: 12px;
 }
 
-header {
-    padding: 14px 18px;
-    background: white;
-    border-bottom: 1px solid #ddd;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-}
-
-body.dark header {
-    background: #1f2937;
-    border-color: #374151;
+body.dark .sidebar {
+    background: #111827;
+    border-color: #1f2937;
 }
 
 .logo {
-    font-size: 22px;
+    font-size: 24px;
     font-weight: bold;
+    margin-bottom: 8px;
 }
 
 .logo span {
-    display: block;
-    font-size: 12px;
-    opacity: 0.6;
+    font-size: 13px;
     font-weight: normal;
+    color: #64748b;
 }
 
-.actions {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-}
-
-button {
+.side-button {
+    width: 100%;
+    padding: 12px;
     border: 0;
-    border-radius: 8px;
-    padding: 9px 11px;
+    border-radius: 10px;
+    background: #eef2ff;
+    color: #1e293b;
     cursor: pointer;
-    background: #e8eef7;
-    color: #172033;
+    text-align: left;
+    font-size: 14px;
 }
 
-button:hover {
-    opacity: 0.8;
+.side-button:hover {
+    background: #e0e7ff;
 }
 
-body.dark button {
-    background: #374151;
-    color: white;
+body.dark .side-button {
+    background: #1e293b;
+    color: #f8fafc;
 }
+
+.history-title {
+    margin-top: 10px;
+    font-size: 13px;
+    color: #64748b;
+}
+
+.history {
+    flex: 1;
+    overflow-y: auto;
+}
+
+/* MAIN */
+
+.main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.topbar {
+    height: 64px;
+    padding: 10px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #e5e7eb;
+    background: rgba(255,255,255,0.95);
+}
+
+body.dark .topbar {
+    background: #111827;
+    border-color: #1f2937;
+}
+
+.top-title {
+    font-weight: bold;
+    font-size: 18px;
+}
+
+.top-actions {
+    display: flex;
+    gap: 7px;
+}
+
+.icon-button {
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 8px;
+    font-size: 17px;
+}
+
+.icon-button:hover {
+    background: #e5e7eb;
+}
+
+body.dark .icon-button:hover {
+    background: #1e293b;
+}
+
+/* CHAT */
 
 .chat {
     flex: 1;
     overflow-y: auto;
-    padding: 20px;
+    padding: 25px;
 }
 
-.message {
-    max-width: 82%;
-    margin-bottom: 15px;
-    padding: 13px 15px;
-    border-radius: 14px;
-    line-height: 1.55;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-}
-
-.user {
-    margin-left: auto;
-    background: #2563eb;
-    color: white;
-    border-bottom-right-radius: 4px;
-}
-
-.assistant {
-    margin-right: auto;
-    background: white;
-    border: 1px solid #e1e5eb;
-    border-bottom-left-radius: 4px;
-}
-
-body.dark .assistant {
-    background: #1f2937;
-    border-color: #374151;
-}
-
-.message-actions {
-    margin-top: 8px;
-}
-
-.copy-btn {
-    font-size: 12px;
-    padding: 5px 8px;
-}
-
-.thinking {
-    display: none;
-    margin: 0 20px 10px;
-    opacity: 0.7;
-}
-
-.panel {
-    display: none;
-    padding: 10px 18px;
-    background: white;
-    border-bottom: 1px solid #ddd;
-}
-
-body.dark .panel {
-    background: #1f2937;
-    border-color: #374151;
-}
-
-.panel-row {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-.panel input {
-    flex: 1;
-    min-width: 180px;
-    padding: 10px;
-    border: 1px solid #ccd3df;
-    border-radius: 8px;
-    font-size: 14px;
-}
-
-body.dark .panel input {
-    background: #111827;
-    color: white;
-    border-color: #4b5563;
-}
-
-.search-results {
-    margin-top: 8px;
-    font-size: 13px;
-}
-
-.image-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-    gap: 12px;
-    margin-top: 12px;
-}
-
-.image-card {
-    background: white;
-    border: 1px solid #ddd;
-    border-radius: 10px;
-    overflow: hidden;
-}
-
-body.dark .image-card {
-    background: #111827;
-    border-color: #374151;
-}
-
-.image-card img {
-    width: 100%;
-    height: 160px;
-    object-fit: cover;
-    display: block;
-}
-
-.image-info {
-    padding: 8px;
-    font-size: 12px;
-}
-
-.image-info a {
-    color: #2563eb;
-    text-decoration: none;
-}
-
-.medical-warning {
-    display: none;
-    margin: 10px 18px;
-    padding: 12px;
-    border-radius: 10px;
-    background: #fff7ed;
-    border: 1px solid #fdba74;
-    color: #9a3412;
-    font-size: 14px;
-}
-
-body.dark .medical-warning {
-    background: #431407;
-    color: #fed7aa;
-}
-
-.emergency-warning {
-    display: none;
-    margin: 10px 18px;
-    padding: 12px;
-    border-radius: 10px;
-    background: #fee2e2;
-    border: 1px solid #ef4444;
-    color: #991b1b;
-    font-weight: bold;
-}
-
-body.dark .emergency-warning {
-    background: #450a0a;
-    color: #fecaca;
-}
-
-.upload-area {
-    padding: 15px;
-    border: 2px dashed #9ca3af;
-    border-radius: 10px;
+.empty {
+    max-width: 700px;
+    margin: 70px auto;
     text-align: center;
 }
 
-.preview {
-    max-width: 220px;
-    max-height: 220px;
-    margin: 12px auto;
-    display: none;
-    border-radius: 10px;
+.empty h1 {
+    font-size: 34px;
+    margin-bottom: 10px;
 }
 
-.composer {
-    padding: 12px;
+.empty p {
+    color: #64748b;
+}
+
+.message {
+    max-width: 850px;
+    margin: 0 auto 18px auto;
+    display: flex;
+}
+
+.message.user {
+    justify-content: flex-end;
+}
+
+.bubble {
+    max-width: 80%;
+    padding: 13px 16px;
+    border-radius: 15px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.message.user .bubble {
+    background: #2563eb;
+    color: white;
+}
+
+.message.assistant .bubble {
     background: white;
-    border-top: 1px solid #ddd;
+    border: 1px solid #e5e7eb;
+}
+
+body.dark .message.assistant .bubble {
+    background: #1e293b;
+    border-color: #334155;
+}
+
+/* INPUT */
+
+.input-area {
+    padding: 12px 18px 18px;
+    border-top: 1px solid #e5e7eb;
+    background: #ffffff;
+}
+
+body.dark .input-area {
+    background: #111827;
+    border-color: #1f2937;
+}
+
+.tools {
+    max-width: 900px;
+    margin: 0 auto 8px;
+    display: flex;
+    gap: 7px;
+    flex-wrap: wrap;
+}
+
+.tool {
+    border: 1px solid #dbeafe;
+    background: #eff6ff;
+    color: #1d4ed8;
+    border-radius: 8px;
+    padding: 7px 10px;
+    cursor: pointer;
+}
+
+body.dark .tool {
+    background: #172554;
+    border-color: #1e3a8a;
+    color: #bfdbfe;
+}
+
+.input-row {
+    max-width: 900px;
+    margin: auto;
     display: flex;
     gap: 8px;
-}
-
-body.dark .composer {
-    background: #1f2937;
-    border-color: #374151;
+    align-items: flex-end;
 }
 
 textarea {
     flex: 1;
-    resize: none;
-    min-height: 48px;
-    max-height: 150px;
-    border: 1px solid #ccd3df;
-    border-radius: 10px;
-    padding: 12px;
-    font-size: 15px;
+    min-height: 52px;
+    max-height: 180px;
+    resize: vertical;
+    border: 1px solid #cbd5e1;
+    border-radius: 13px;
+    padding: 14px;
     outline: none;
-    font-family: inherit;
+    font-size: 15px;
+    background: white;
+    color: #111827;
 }
 
 body.dark textarea {
-    background: #111827;
+    background: #1e293b;
     color: white;
-    border-color: #4b5563;
+    border-color: #475569;
 }
 
 .send {
+    width: 52px;
+    height: 52px;
+    border: 0;
+    border-radius: 13px;
     background: #2563eb;
     color: white;
-    min-width: 75px;
+    cursor: pointer;
+    font-size: 19px;
 }
 
-.empty {
-    text-align: center;
-    opacity: 0.6;
-    padding: 60px 20px;
+/* PANELS */
+
+.panel {
+    max-width: 900px;
+    margin: 0 auto 10px;
+    padding: 12px;
+    border: 1px solid #dbeafe;
+    border-radius: 12px;
+    background: #f8fafc;
 }
 
-.error-box {
+body.dark .panel {
+    background: #172033;
+    border-color: #334155;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* IMAGE UPLOAD */
+
+.upload-row {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.upload-row input[type="file"] {
     padding: 10px;
+}
+
+.upload-question {
+    width: 100%;
+    padding: 10px;
+    border-radius: 9px;
+    border: 1px solid #cbd5e1;
+}
+
+body.dark .upload-question {
+    background: #0f172a;
+    color: white;
+    border-color: #475569;
+}
+
+.preview-box {
     margin-top: 10px;
-    border-radius: 8px;
-    background: #fee2e2;
-    color: #991b1b;
 }
 
-body.dark .error-box {
-    background: #450a0a;
-    color: #fecaca;
+.preview-box img {
+    max-width: 280px;
+    max-height: 280px;
+    border-radius: 12px;
+    display: block;
 }
 
-@media (max-width: 600px) {
+/* IMAGE SEARCH */
 
-    .app {
-        height: 100dvh;
-    }
+.image-results {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+}
 
-    header {
-        align-items: flex-start;
-    }
+.image-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    overflow: hidden;
+    background: white;
+}
 
-    .actions button {
-        padding: 7px 8px;
-        font-size: 12px;
-    }
+body.dark .image-card {
+    background: #1e293b;
+    border-color: #334155;
+}
 
-    .message {
-        max-width: 92%;
+.image-card img {
+    width: 100%;
+    height: 130px;
+    object-fit: cover;
+    display: block;
+}
+
+.image-card div {
+    padding: 7px;
+    font-size: 12px;
+}
+
+/* THINKING */
+
+.thinking {
+    opacity: 0.7;
+    font-style: italic;
+}
+
+/* MEDICAL */
+
+.medical-warning {
+    max-width: 900px;
+    margin: 0 auto 10px;
+    padding: 12px;
+    border-radius: 10px;
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+    color: #9a3412;
+}
+
+/* MOBILE */
+
+@media (max-width: 800px) {
+
+    .sidebar {
+        display: none;
     }
 
     .chat {
-        padding: 12px;
+        padding: 15px;
     }
 
-    .composer {
-        padding: 8px;
+    .bubble {
+        max-width: 90%;
     }
 
-    .image-grid {
-        grid-template-columns: repeat(2, 1fr);
+    .topbar {
+        padding: 10px;
+    }
+
+    .input-area {
+        padding: 10px;
+    }
+
+    .empty h1 {
+        font-size: 27px;
     }
 }
 
 </style>
+
 </head>
 
 <body>
 
 <div class="app">
 
-<header>
+    <!-- SIDEBAR -->
 
-    <div class="logo">
-        🤖 MedAI
-        <span>AI Assistant</span>
-    </div>
+    <aside class="sidebar">
 
-    <div class="actions">
+        <div class="logo">
+            🩺 MedAI
+            <span>AI Assistant</span>
+        </div>
 
-        <button onclick="newChat()">🆕 New</button>
-
-        <button onclick="toggleSearch()">
-            🔍 Search
+        <button
+            class="side-button"
+            type="button"
+            onclick="newChat()"
+        >
+            ➕ New Chat
         </button>
 
-        <button onclick="toggleImageSearch()">
-            🖼️ Images
+        <button
+            class="side-button"
+            type="button"
+            onclick="toggleSearch()"
+        >
+            🔎 Search Chat
         </button>
 
-        <button onclick="toggleUpload()">
-            📤 Upload
+        <button
+            class="side-button"
+            type="button"
+            onclick="exportChat()"
+        >
+            📥 Export Chat
         </button>
 
-        <button onclick="exportChat()">
-            📥 Export
-        </button>
+        <div class="history-title">
+            Chat History
+        </div>
 
-        <button onclick="toggleDark()">
-            🌙
-        </button>
+        <div
+            id="history"
+            class="history"
+        ></div>
 
-    </div>
-
-</header>
+    </aside>
 
 
-<div class="panel" id="searchPanel">
+    <!-- MAIN -->
 
-    <div class="panel-row">
+    <main class="main">
 
-        <input
-            id="searchInput"
-            type="text"
-            placeholder="Search in this chat..."
-            oninput="searchChat()"
+        <header class="topbar">
+
+            <div class="top-title">
+                MedAI
+            </div>
+
+            <div class="top-actions">
+
+                <button
+                    class="icon-button"
+                    type="button"
+                    title="New Chat"
+                    onclick="newChat()"
+                >
+                    ➕
+                </button>
+
+                <button
+                    class="icon-button"
+                    type="button"
+                    title="Dark / Light"
+                    onclick="toggleDark()"
+                >
+                    🌙
+                </button>
+
+            </div>
+
+        </header>
+
+
+        <!-- CHAT -->
+
+        <section
+            id="chat"
+            class="chat"
+        ></section>
+
+
+        <!-- SEARCH PANEL -->
+
+        <div
+            id="searchPanel"
+            class="panel hidden"
         >
 
-    </div>
+            <input
+                id="chatSearchInput"
+                type="text"
+                placeholder="Search this chat..."
+                style="width:100%;padding:10px;border-radius:8px;border:1px solid #cbd5e1;"
+                oninput="searchChat()"
+            >
 
-    <div
-        class="search-results"
-        id="searchResults"
-    ></div>
+            <div id="searchResults"></div>
 
-</div>
+        </div>
 
 
-<div class="panel" id="imagePanel">
+        <!-- IMAGE SEARCH PANEL -->
 
-    <div class="panel-row">
-
-        <input
-            id="imageQuery"
-            type="text"
-            placeholder="Search images..."
-            onkeydown="if(event.key==='Enter') searchImages()"
+        <div
+            id="imageSearchPanel"
+            class="panel hidden"
         >
 
-        <button onclick="searchImages()">
-            🔍 Search
-        </button>
+            <div style="display:flex;gap:8px;">
 
-    </div>
+                <input
+                    id="imageSearchInput"
+                    type="text"
+                    placeholder="Search images..."
+                    style="flex:1;padding:10px;border-radius:8px;border:1px solid #cbd5e1;"
+                    onkeydown="if(event.key==='Enter') searchImages()"
+                >
 
-    <div id="imageResults"></div>
+                <button
+                    type="button"
+                    class="tool"
+                    onclick="searchImages()"
+                >
+                    Search
+                </button>
 
-</div>
+            </div>
+
+            <div
+                id="imageResults"
+                class="image-results"
+            ></div>
+
+        </div>
 
 
-<div class="panel" id="uploadPanel">
+        <!-- UPLOAD PANEL -->
 
-    <div class="upload-area">
-
-        <strong>📤 Upload Image</strong>
-
-        <p>
-            Upload an image and ask MedAI about it.
-        </p>
-
-        <input
-            type="file"
-            id="imageFile"
-            accept="image/jpeg,image/png,image/webp,image/gif"
-            onchange="previewImage(event)"
+        <div
+            id="uploadPanel"
+            class="panel hidden"
         >
 
-        <img
-            id="imagePreview"
-            class="preview"
-        >
+            <div class="upload-row">
 
-        <input
-            id="imageQuestion"
-            type="text"
-            placeholder="What should I ask about this image?"
-            style="width:100%;margin-top:10px;padding:10px;border:1px solid #ccd3df;border-radius:8px;"
-        >
+                <input
+                    type="file"
+                    id="imageInput"
+                    accept="image/png,image/jpeg,image/webp"
+                >
 
-        <br><br>
+                <div
+                    id="previewBox"
+                    class="preview-box"
+                ></div>
 
-        <button onclick="analyzeImage()">
-            🤖 Analyze Image
-        </button>
+                <input
+                    id="imageQuestion"
+                    class="upload-question"
+                    type="text"
+                    placeholder="Ask something about this image..."
+                >
 
-    </div>
+                <button
+                    type="button"
+                    class="tool"
+                    onclick="analyzeImage()"
+                >
+                    🔍 Analyze Image
+                </button>
 
-</div>
+            </div>
 
-
-<div
-    id="medicalWarning"
-    class="medical-warning"
->
-    🏥 <strong>Medical Safety:</strong>
-    MedAI provides general educational information and is not a doctor.
-    For diagnosis or treatment, consult a qualified healthcare professional.
-</div>
-
-
-<div
-    id="emergencyWarning"
-    class="emergency-warning"
->
-    🚨 Possible emergency:
-    If you have severe symptoms or believe this is an emergency,
-    contact local emergency medical services or a qualified healthcare
-    professional immediately.
-</div>
+        </div>
 
 
-<main class="chat" id="chat"></main>
+        <!-- MEDICAL WARNING -->
+
+        <div
+            id="medicalWarning"
+            class="medical-warning hidden"
+        ></div>
 
 
-<div class="thinking" id="thinking">
-    🤔 MedAI is thinking...
-</div>
+        <!-- INPUT -->
+
+        <div class="input-area">
+
+            <div class="tools">
+
+                <button
+                    class="tool"
+                    type="button"
+                    onclick="toggleUpload()"
+                >
+                    📤 Image Upload
+                </button>
+
+                <button
+                    class="tool"
+                    type="button"
+                    onclick="toggleImageSearch()"
+                >
+                    🖼️ Image Search
+                </button>
+
+                <button
+                    class="tool"
+                    type="button"
+                    onclick="toggleSearch()"
+                >
+                    🔎 Search
+                </button>
+
+                <button
+                    class="tool"
+                    type="button"
+                    onclick="checkMedicalSafety()"
+                >
+                    🏥 Medical Safety
+                </button>
+
+            </div>
 
 
-<div class="composer">
+            <div class="input-row">
 
-    <textarea
-        id="messageInput"
-        placeholder="Ask MedAI anything..."
-        onkeydown="handleKey(event)"
-    ></textarea>
+                <textarea
+                    id="messageInput"
+                    placeholder="Ask MedAI anything..."
+                    onkeydown="handleKey(event)"
+                ></textarea>
 
-    <button
-        class="send"
-        onclick="sendMessage()"
-    >
-        Send
-    </button>
+                <button
+                    id="sendButton"
+                    class="send"
+                    type="button"
+                    onclick="sendMessage()"
+                >
+                    ➤
+                </button>
 
-</div>
+            </div>
+
+        </div>
+
+    </main>
 
 </div>
 
 
 <script>
 
+/* =========================================================
+   STATE
+========================================================= */
+
 let messages = [];
 
-const chat = document.getElementById("chat");
-const input = document.getElementById("messageInput");
-const thinking = document.getElementById("thinking");
+let selectedImageBase64 = null;
 
+const STORAGE_KEY = "medai_messages_v2";
+
+
+/* =========================================================
+   ELEMENTS
+========================================================= */
+
+const chatElement =
+    document.getElementById("chat");
+
+const inputElement =
+    document.getElementById("messageInput");
+
+const imageInput =
+    document.getElementById("imageInput");
+
+
+/* =========================================================
+   INITIALIZE
+========================================================= */
+
+document.addEventListener("DOMContentLoaded", function() {
+
+    loadMessages();
+
+    loadDarkMode();
+
+    imageInput.addEventListener(
+        "change",
+        handleImageSelected
+    );
+
+    renderMessages();
+
+});
+
+
+/* =========================================================
+   LOAD / SAVE
+========================================================= */
 
 function loadMessages() {
 
     try {
 
-        const saved = localStorage.getItem(
-            "medai_messages"
-        );
+        const saved =
+            localStorage.getItem(STORAGE_KEY);
 
-        if (saved) {
-            messages = JSON.parse(saved);
+        if (!saved) {
+            messages = [];
+            return;
+        }
+
+        const parsed =
+            JSON.parse(saved);
+
+        if (Array.isArray(parsed)) {
+            messages = parsed;
+        } else {
+            messages = [];
         }
 
     } catch (error) {
 
+        console.error(
+            "Could not load messages:",
+            error
+        );
+
         messages = [];
-
     }
-
-    renderMessages();
 }
 
 
 function saveMessages() {
 
-    localStorage.setItem(
-        "medai_messages",
-        JSON.stringify(messages)
-    );
+    try {
+
+        localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify(messages)
+        );
+
+    } catch (error) {
+
+        console.error(
+            "Could not save messages:",
+            error
+        );
+    }
+
 }
 
 
+/* =========================================================
+   RENDER CHAT
+========================================================= */
+
 function renderMessages() {
 
-    chat.innerHTML = "";
+    chatElement.innerHTML = "";
 
     if (messages.length === 0) {
 
-        chat.innerHTML = `
-            <div class="empty">
-                <h2>🤖 Welcome to MedAI</h2>
-                <p>
-                    Ask me anything about education,
-                    science, coding, health,
-                    technology and more.
-                </p>
-            </div>
+        const empty =
+            document.createElement("div");
+
+        empty.className = "empty";
+
+        empty.innerHTML = `
+            <h1>🩺 Welcome to MedAI</h1>
+            <p>
+                Ask questions about education, science,
+                coding, technology, health and more.
+            </p>
         `;
+
+        chatElement.appendChild(empty);
 
         return;
     }
 
 
-    messages.forEach(function(message) {
+    messages.forEach(function(message, index) {
 
-        const div =
+        const wrapper =
             document.createElement("div");
 
-        div.className =
+        wrapper.className =
             "message " +
-            (
-                message.role === "user"
-                    ? "user"
-                    : "assistant"
-            );
+            (message.role === "user"
+                ? "user"
+                : "assistant");
 
 
-        const text =
+        const bubble =
             document.createElement("div");
 
-        text.textContent =
+        bubble.className = "bubble";
+
+        bubble.textContent =
             message.content;
 
-        div.appendChild(text);
+
+        wrapper.appendChild(bubble);
 
 
         if (message.role === "assistant") {
 
-            const actions =
-                document.createElement("div");
-
-            actions.className =
-                "message-actions";
-
-
-            const copy =
+            const copyButton =
                 document.createElement("button");
 
-            copy.className =
-                "copy-btn";
+            copyButton.type = "button";
 
-            copy.textContent =
-                "📋 Copy";
+            copyButton.textContent = "📋";
 
+            copyButton.style.marginLeft = "7px";
+            copyButton.style.border = "0";
+            copyButton.style.background = "transparent";
+            copyButton.style.cursor = "pointer";
 
-            copy.onclick = function() {
+            copyButton.onclick = function() {
 
                 copyText(
-                    message.content,
-                    copy
+                    message.content
                 );
 
             };
 
-
-            actions.appendChild(copy);
-
-            div.appendChild(actions);
+            wrapper.appendChild(copyButton);
         }
 
 
-        chat.appendChild(div);
+        chatElement.appendChild(wrapper);
 
     });
 
 
-    chat.scrollTop = chat.scrollHeight;
+    chatElement.scrollTop =
+        chatElement.scrollHeight;
+
+    updateHistory();
+
 }
 
+
+/* =========================================================
+   SEND MESSAGE
+========================================================= */
 
 async function sendMessage() {
 
     const text =
-        input.value.trim();
+        inputElement.value.trim();
 
     if (!text) {
         return;
     }
-
-
-    input.value = "";
 
 
     messages.push({
@@ -707,34 +1343,47 @@ async function sendMessage() {
         content: text
     });
 
+    inputElement.value = "";
 
     saveMessages();
+
     renderMessages();
 
-    checkMedicalSafety(text);
 
+    const thinking =
+        document.createElement("div");
 
-    thinking.style.display = "block";
+    thinking.className =
+        "message assistant";
+
+    thinking.id =
+        "thinkingMessage";
+
+    thinking.innerHTML =
+        '<div class="bubble thinking">MedAI is thinking...</div>';
+
+    chatElement.appendChild(thinking);
+
+    chatElement.scrollTop =
+        chatElement.scrollHeight;
 
 
     try {
 
         const response =
-            await fetch(
-                "/chat",
-                {
-                    method: "POST",
+            await fetch("/chat", {
 
-                    headers: {
-                        "Content-Type":
-                            "application/json"
-                    },
+                method: "POST",
 
-                    body: JSON.stringify({
-                        messages: messages
-                    })
-                }
-            );
+                headers: {
+                    "Content-Type": "application/json"
+                },
+
+                body: JSON.stringify({
+                    messages: messages
+                })
+
+            });
 
 
         const data =
@@ -743,43 +1392,72 @@ async function sendMessage() {
 
         if (!response.ok) {
 
-            throw new Error(
+            let errorMessage =
                 data.error ||
-                "Something went wrong."
+                "Chat request failed.";
+
+            if (data.details) {
+
+                errorMessage +=
+                    "\n" +
+                    (
+                        typeof data.details === "string"
+                        ? data.details
+                        : JSON.stringify(data.details)
+                    );
+            }
+
+            throw new Error(
+                errorMessage
             );
         }
 
 
+        const answer =
+            data.answer ||
+            "No answer received.";
+
+
         messages.push({
             role: "assistant",
-            content: data.answer
+            content: answer
         });
 
-
         saveMessages();
-        renderMessages();
-
 
     } catch (error) {
+
+        console.error(error);
 
         messages.push({
             role: "assistant",
             content:
-                "⚠️ " + error.message
+                "⚠️ " +
+                error.message
         });
 
-
         saveMessages();
-        renderMessages();
-
-
-    } finally {
-
-        thinking.style.display = "none";
 
     }
+
+
+    const thinkingElement =
+        document.getElementById(
+            "thinkingMessage"
+        );
+
+    if (thinkingElement) {
+        thinkingElement.remove();
+    }
+
+    renderMessages();
+
 }
 
+
+/* =========================================================
+   ENTER KEY
+========================================================= */
 
 function handleKey(event) {
 
@@ -791,74 +1469,51 @@ function handleKey(event) {
         event.preventDefault();
 
         sendMessage();
+
     }
+
 }
 
 
-function copyText(text, button) {
-
-    navigator.clipboard.writeText(text)
-        .then(function() {
-
-            const oldText =
-                button.textContent;
-
-            button.textContent =
-                "✅ Copied";
-
-            setTimeout(function() {
-
-                button.textContent =
-                    oldText;
-
-            }, 1500);
-
-        })
-        .catch(function() {
-
-            alert("Copy failed.");
-
-        });
-}
-
+/* =========================================================
+   NEW CHAT
+========================================================= */
 
 function newChat() {
 
-    if (messages.length > 0) {
-
-        const confirmed = confirm(
-            "Start a new chat? The current chat will be cleared."
-        );
-
-        if (!confirmed) {
-            return;
-        }
-    }
+    console.log(
+        "New Chat clicked"
+    );
 
 
     messages = [];
 
+    selectedImageBase64 = null;
+
 
     localStorage.removeItem(
-        "medai_messages"
+        STORAGE_KEY
     );
 
 
-    input.value = "";
+    chatElement.innerHTML = "";
+
+
+    inputElement.value = "";
 
 
     document.getElementById(
-        "searchInput"
+        "chatSearchInput"
     ).value = "";
 
 
     document.getElementById(
         "searchResults"
-    ).textContent = "";
+    ).innerHTML = "";
 
 
     document.getElementById(
-        "imageQuery"
+        "imageSearchInput"
     ).value = "";
 
 
@@ -868,7 +1523,7 @@ function newChat() {
 
 
     document.getElementById(
-        "imageFile"
+        "imageInput"
     ).value = "";
 
 
@@ -878,49 +1533,116 @@ function newChat() {
 
 
     document.getElementById(
-        "imagePreview"
-    ).style.display = "none";
+        "previewBox"
+    ).innerHTML = "";
 
 
     document.getElementById(
         "medicalWarning"
-    ).style.display = "none";
+    ).innerHTML = "";
 
 
     document.getElementById(
-        "emergencyWarning"
-    ).style.display = "none";
+        "medicalWarning"
+    ).classList.add(
+        "hidden"
+    );
 
 
-    thinking.style.display = "none";
+    document.getElementById(
+        "searchPanel"
+    ).classList.add(
+        "hidden"
+    );
+
+
+    document.getElementById(
+        "imageSearchPanel"
+    ).classList.add(
+        "hidden"
+    );
+
+
+    document.getElementById(
+        "uploadPanel"
+    ).classList.add(
+        "hidden"
+    );
 
 
     renderMessages();
+
+    inputElement.focus();
+
 }
 
 
+/* =========================================================
+   COPY
+========================================================= */
+
+async function copyText(text) {
+
+    try {
+
+        await navigator.clipboard.writeText(
+            text
+        );
+
+        alert("Copied!");
+
+    } catch (error) {
+
+        console.error(error);
+
+        alert("Could not copy text.");
+
+    }
+
+}
+
+
+/* =========================================================
+   DARK MODE
+========================================================= */
+
 function toggleDark() {
 
-    document.body.classList.toggle("dark");
+    document.body.classList.toggle(
+        "dark"
+    );
 
     localStorage.setItem(
         "medai_dark",
         document.body.classList.contains("dark")
+            ? "1"
+            : "0"
     );
+
 }
 
 
 function loadDarkMode() {
 
-    if (
-        localStorage.getItem("medai_dark")
-        === "true"
-    ) {
+    const dark =
+        localStorage.getItem(
+            "medai_dark"
+        );
 
-        document.body.classList.add("dark");
+    if (dark === "1") {
+
+        document.body.classList.add(
+            "dark"
+        );
+
     }
+
 }
 
+
+/* =========================================================
+   SEARCH CHAT
+========================================================= */
 
 function toggleSearch() {
 
@@ -929,20 +1651,10 @@ function toggleSearch() {
             "searchPanel"
         );
 
+    panel.classList.toggle(
+        "hidden"
+    );
 
-    panel.style.display =
-        panel.style.display === "block"
-            ? "none"
-            : "block";
-
-
-    if (panel.style.display === "block") {
-
-        document.getElementById(
-            "searchInput"
-        ).focus();
-
-    }
 }
 
 
@@ -950,77 +1662,59 @@ function searchChat() {
 
     const query =
         document.getElementById(
-            "searchInput"
-        )
-        .value
+            "chatSearchInput"
+        ).value
         .trim()
         .toLowerCase();
 
 
-    const results =
+    const result =
         document.getElementById(
             "searchResults"
         );
 
 
+    result.innerHTML = "";
+
+
     if (!query) {
-
-        results.textContent = "";
-
-        renderMessages();
-
         return;
     }
 
 
-    const matches =
-        messages.filter(function(message) {
+    messages.forEach(function(message) {
 
-            return message.content
+        if (
+            message.content
                 .toLowerCase()
-                .includes(query);
+                .includes(query)
+        ) {
 
-        });
+            const item =
+                document.createElement("div");
 
+            item.style.padding = "8px 0";
 
-    results.textContent =
-        matches.length +
-        " matching message(s) found.";
+            item.textContent =
+                (
+                    message.role === "user"
+                    ? "You: "
+                    : "MedAI: "
+                ) +
+                message.content;
 
+            result.appendChild(item);
 
-    chat.innerHTML = "";
-
-
-    matches.forEach(function(message) {
-
-        const div =
-            document.createElement("div");
-
-
-        div.className =
-            "message " +
-            (
-                message.role === "user"
-                    ? "user"
-                    : "assistant"
-            );
-
-
-        const text =
-            document.createElement("div");
-
-
-        text.textContent =
-            message.content;
-
-
-        div.appendChild(text);
-
-        chat.appendChild(div);
+        }
 
     });
+
 }
 
+
+/* =========================================================
+   EXPORT CHAT
+========================================================= */
 
 function exportChat() {
 
@@ -1034,25 +1728,19 @@ function exportChat() {
     }
 
 
-    let content =
-        "MedAI Chat Export\n";
-
-    content +=
-        "=================\n\n";
+    let text =
+        "MedAI Chat\n\n";
 
 
     messages.forEach(function(message) {
 
-        const role =
-            message.role === "user"
+        text +=
+            (
+                message.role === "user"
                 ? "You"
-                : "MedAI";
-
-
-        content +=
-            role + ":\n";
-
-        content +=
+                : "MedAI"
+            ) +
+            ":\n" +
             message.content +
             "\n\n";
 
@@ -1061,10 +1749,9 @@ function exportChat() {
 
     const blob =
         new Blob(
-            [content],
+            [text],
             {
-                type:
-                    "text/plain;charset=utf-8"
+                type: "text/plain"
             }
         );
 
@@ -1076,43 +1763,321 @@ function exportChat() {
     const link =
         document.createElement("a");
 
-
     link.href = url;
 
     link.download =
         "medai-chat.txt";
 
-
-    document.body.appendChild(link);
+    document.body.appendChild(
+        link
+    );
 
     link.click();
 
     link.remove();
 
     URL.revokeObjectURL(url);
+
 }
 
+
+/* =========================================================
+   IMAGE UPLOAD PANEL
+========================================================= */
+
+function toggleUpload() {
+
+    const panel =
+        document.getElementById(
+            "uploadPanel"
+        );
+
+    panel.classList.toggle(
+        "hidden"
+    );
+
+}
+
+
+/* =========================================================
+   IMAGE SELECT
+========================================================= */
+
+function handleImageSelected(event) {
+
+    const file =
+        event.target.files &&
+        event.target.files[0];
+
+
+    if (!file) {
+
+        selectedImageBase64 = null;
+
+        document.getElementById(
+            "previewBox"
+        ).innerHTML = "";
+
+        return;
+    }
+
+
+    if (!file.type.startsWith("image/")) {
+
+        alert(
+            "Please select an image."
+        );
+
+        event.target.value = "";
+
+        selectedImageBase64 = null;
+
+        return;
+    }
+
+
+    if (
+        file.size >
+        8 * 1024 * 1024
+    ) {
+
+        alert(
+            "Image must be smaller than 8 MB."
+        );
+
+        event.target.value = "";
+
+        selectedImageBase64 = null;
+
+        return;
+    }
+
+
+    const reader =
+        new FileReader();
+
+
+    reader.onload = function(e) {
+
+        selectedImageBase64 =
+            e.target.result;
+
+
+        const preview =
+            document.getElementById(
+                "previewBox"
+            );
+
+
+        preview.innerHTML = "";
+
+
+        const image =
+            document.createElement(
+                "img"
+            );
+
+
+        image.src =
+            selectedImageBase64;
+
+
+        image.alt =
+            "Selected image";
+
+
+        preview.appendChild(
+            image
+        );
+
+    };
+
+
+    reader.onerror = function() {
+
+        selectedImageBase64 = null;
+
+        alert(
+            "Could not read the image."
+        );
+
+    };
+
+
+    reader.readAsDataURL(
+        file
+    );
+
+}
+
+
+/* =========================================================
+   IMAGE ANALYSIS
+========================================================= */
+
+async function analyzeImage() {
+
+    if (!selectedImageBase64) {
+
+        alert(
+            "Please select an image first."
+        );
+
+        return;
+    }
+
+
+    const questionElement =
+        document.getElementById(
+            "imageQuestion"
+        );
+
+
+    const question =
+        questionElement.value.trim() ||
+        "Please analyze this image and explain what you see.";
+
+
+    const button =
+        document.querySelector(
+            '#uploadPanel button'
+        );
+
+
+    if (button) {
+
+        button.disabled = true;
+
+        button.textContent =
+            "Analyzing...";
+
+    }
+
+
+    try {
+
+        const response =
+            await fetch(
+                "/analyze-image",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        image:
+                            selectedImageBase64,
+
+                        question:
+                            question
+                    })
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if (!response.ok) {
+
+            let errorMessage =
+                data.error ||
+                "Image analysis failed.";
+
+            if (data.details) {
+
+                errorMessage +=
+                    "\n" +
+                    (
+                        typeof data.details === "string"
+                        ? data.details
+                        : JSON.stringify(data.details)
+                    );
+            }
+
+            throw new Error(
+                errorMessage
+            );
+        }
+
+
+        const answer =
+            data.answer ||
+            "No image analysis result received.";
+
+
+        messages.push({
+            role: "user",
+            content:
+                "🖼️ " + question
+        });
+
+
+        messages.push({
+            role: "assistant",
+            content:
+                answer
+        });
+
+
+        saveMessages();
+
+        renderMessages();
+
+
+        document.getElementById(
+            "uploadPanel"
+        ).classList.add(
+            "hidden"
+        );
+
+
+    } catch (error) {
+
+        console.error(
+            "Image analysis:",
+            error
+        );
+
+        alert(
+            error.message
+        );
+
+    } finally {
+
+        if (button) {
+
+            button.disabled = false;
+
+            button.textContent =
+                "🔍 Analyze Image";
+
+        }
+
+    }
+
+}
+
+
+/* =========================================================
+   IMAGE SEARCH
+========================================================= */
 
 function toggleImageSearch() {
 
     const panel =
         document.getElementById(
-            "imagePanel"
+            "imageSearchPanel"
         );
 
+    panel.classList.toggle(
+        "hidden"
+    );
 
-    panel.style.display =
-        panel.style.display === "block"
-            ? "none"
-            : "block";
-
-
-    if (panel.style.display === "block") {
-
-        document.getElementById(
-            "imageQuery"
-        ).focus();
-    }
 }
 
 
@@ -1120,25 +2085,27 @@ async function searchImages() {
 
     const query =
         document.getElementById(
-            "imageQuery"
-        )
-        .value
-        .trim();
+            "imageSearchInput"
+        ).value.trim();
 
 
-    const results =
+    const result =
         document.getElementById(
             "imageResults"
         );
 
 
+    result.innerHTML = "";
+
+
     if (!query) {
+
         return;
     }
 
 
-    results.innerHTML =
-        "<p>🔍 Searching images...</p>";
+    result.textContent =
+        "Searching images...";
 
 
     try {
@@ -1156,22 +2123,14 @@ async function searchImages() {
 
         if (!response.ok) {
 
-            let message =
+            throw new Error(
                 data.error ||
-                "Image search failed.";
-
-            if (data.details) {
-                message +=
-                    "<br><small>" +
-                    String(data.details) +
-                    "</small>";
-            }
-
-            throw new Error(message);
+                "Image search failed."
+            );
         }
 
 
-        results.innerHTML = "";
+        result.innerHTML = "";
 
 
         if (
@@ -1179,911 +2138,197 @@ async function searchImages() {
             data.images.length === 0
         ) {
 
-            results.innerHTML =
-                "<p>No images found.</p>";
+            result.textContent =
+                "No images found.";
 
             return;
         }
 
 
-        const grid =
-            document.createElement("div");
+        data.images.forEach(
+            function(item) {
 
-        grid.className =
-            "image-grid";
+                const card =
+                    document.createElement(
+                        "div"
+                    );
 
-
-        data.images.forEach(function(image) {
-
-            const card =
-                document.createElement("div");
-
-            card.className =
-                "image-card";
+                card.className =
+                    "image-card";
 
 
-            const img =
-                document.createElement("img");
+                const image =
+                    document.createElement(
+                        "img"
+                    );
 
-            img.src =
-                image.thumbnail;
+                image.src =
+                    item.url;
 
-            img.alt =
-                image.title;
+                image.alt =
+                    item.title || "Image";
 
-            img.loading =
-                "lazy";
-
-
-            card.appendChild(img);
-
-
-            const info =
-                document.createElement("div");
-
-            info.className =
-                "image-info";
+                image.loading =
+                    "lazy";
 
 
-            const title =
-                document.createElement("div");
+                const title =
+                    document.createElement(
+                        "div"
+                    );
 
-            title.textContent =
-                image.title;
-
-
-            const link =
-                document.createElement("a");
-
-            link.href =
-                image.page;
-
-            link.target =
-                "_blank";
-
-            link.rel =
-                "noopener noreferrer";
-
-            link.textContent =
-                "Open Wikimedia source";
+                title.textContent =
+                    item.title || "Image";
 
 
-            info.appendChild(title);
+                card.appendChild(
+                    image
+                );
 
-            info.appendChild(
-                document.createElement("br")
-            );
-
-            info.appendChild(link);
-
-
-            card.appendChild(info);
-
-            grid.appendChild(card);
-
-        });
+                card.appendChild(
+                    title
+                );
 
 
-        results.appendChild(grid);
+                result.appendChild(
+                    card
+                );
+
+            }
+        );
 
 
     } catch (error) {
 
-        results.innerHTML =
-            '<div class="error-box">⚠️ ' +
-            error.message +
-            "</div>";
+        console.error(error);
+
+        result.textContent =
+            error.message;
+
     }
+
 }
 
 
-function toggleUpload() {
+/* =========================================================
+   MEDICAL SAFETY
+========================================================= */
 
-    const panel =
+function checkMedicalSafety() {
+
+    const warning =
         document.getElementById(
-            "uploadPanel"
+            "medicalWarning"
         );
 
 
-    panel.style.display =
-        panel.style.display === "block"
-            ? "none"
-            : "block";
+    warning.classList.remove(
+        "hidden"
+    );
+
+
+    warning.textContent =
+        "🏥 Medical Safety: MedAI provides general educational information and is not a doctor. For serious, worsening, or emergency symptoms, contact a qualified healthcare professional or local emergency medical service.";
+
 }
 
 
-function previewImage(event) {
+/* =========================================================
+   HISTORY
+========================================================= */
 
-    const file =
-        event.target.files[0];
+function updateHistory() {
 
-
-    const preview =
+    const history =
         document.getElementById(
-            "imagePreview"
+            "history"
         );
 
 
-    if (!file) {
-
-        preview.style.display =
-            "none";
-
-        return;
-    }
+    history.innerHTML = "";
 
 
-    if (!file.type.startsWith("image/")) {
-
-        alert(
-            "Please select an image."
+    const userMessages =
+        messages.filter(
+            function(message) {
+                return message.role === "user";
+            }
         );
 
-        event.target.value = "";
 
-        return;
-    }
+    userMessages
+        .slice(-10)
+        .reverse()
+        .forEach(
+            function(message) {
+
+                const item =
+                    document.createElement(
+                        "button"
+                    );
 
 
-    preview.src =
-        URL.createObjectURL(file);
+                item.type =
+                    "button";
 
 
-    preview.style.display =
-        "block";
+                item.style.width =
+                    "100%";
+
+                item.style.border =
+                    "0";
+
+                item.style.background =
+                    "transparent";
+
+                item.style.textAlign =
+                    "left";
+
+                item.style.padding =
+                    "8px";
+
+                item.style.cursor =
+                    "pointer";
+
+                item.textContent =
+                    message.content.length > 40
+                    ? message.content.slice(0, 40) + "..."
+                    : message.content;
+
+
+                item.onclick =
+                    function() {
+
+                        inputElement.value =
+                            message.content;
+
+                        inputElement.focus();
+
+                    };
+
+
+                history.appendChild(
+                    item
+                );
+
+            }
+        );
+
 }
-
-
-function fileToBase64(file) {
-
-    return new Promise(function(resolve, reject) {
-
-        const reader =
-            new FileReader();
-
-
-        reader.onload = function() {
-            resolve(reader.result);
-        };
-
-
-        reader.onerror = function() {
-            reject(
-                new Error(
-                    "Could not read image."
-                )
-            );
-        };
-
-
-        reader.readAsDataURL(file);
-
-    });
-}
-
-
-async function analyzeImage() {
-
-    const file =
-        document.getElementById(
-            "imageFile"
-        ).files[0];
-
-
-    const question =
-        document.getElementById(
-            "imageQuestion"
-        ).value.trim();
-
-
-    if (!file) {
-
-        alert(
-            "Please select an image first."
-        );
-
-        return;
-    }
-
-
-    if (!file.type.startsWith("image/")) {
-
-        alert(
-            "Please select a valid image."
-        );
-
-        return;
-    }
-
-
-    if (file.size > 8 * 1024 * 1024) {
-
-        alert(
-            "Please use an image smaller than 8 MB."
-        );
-
-        return;
-    }
-
-
-    thinking.style.display =
-        "block";
-
-
-    try {
-
-        const base64 =
-            await fileToBase64(file);
-
-
-        const response =
-            await fetch(
-                "/analyze-image",
-                {
-                    method: "POST",
-
-                    headers: {
-                        "Content-Type":
-                            "application/json"
-                    },
-
-                    body: JSON.stringify({
-                        image: base64,
-
-                        question:
-                            question ||
-                            "Describe this image."
-                    })
-                }
-            );
-
-
-        const data =
-            await response.json();
-
-
-        if (!response.ok) {
-
-            throw new Error(
-                data.error ||
-                "Image analysis failed."
-            );
-        }
-
-
-        messages.push({
-            role: "user",
-            content:
-                "📷 Image question: " +
-                (
-                    question ||
-                    "Describe this image."
-                )
-        });
-
-
-        messages.push({
-            role: "assistant",
-            content: data.answer
-        });
-
-
-        saveMessages();
-
-        renderMessages();
-
-
-    } catch (error) {
-
-        messages.push({
-            role: "assistant",
-            content:
-                "⚠️ " + error.message
-        });
-
-        saveMessages();
-
-        renderMessages();
-
-
-    } finally {
-
-        thinking.style.display =
-            "none";
-    }
-}
-
-
-function checkMedicalSafety(text) {
-
-    const lower =
-        text.toLowerCase();
-
-
-    const medicalWords = [
-        "doctor",
-        "medicine",
-        "medication",
-        "symptom",
-        "disease",
-        "pain",
-        "fever",
-        "cough",
-        "blood",
-        "injury",
-        "hospital",
-        "medical",
-        "health",
-        "tablet",
-        "pill",
-        "دوا",
-        "درمل",
-        "ناروغ",
-        "ناروغي",
-        "درد",
-        "تبه",
-        "روغتیا",
-        "ډاکټر",
-        "بیماری",
-        "پزشک"
-    ];
-
-
-    const emergencyWords = [
-        "chest pain",
-        "difficulty breathing",
-        "can't breathe",
-        "cannot breathe",
-        "severe bleeding",
-        "unconscious",
-        "stroke",
-        "heart attack",
-        "poisoning",
-        "seizure",
-        "شدید خونریزی",
-        "سخت نفس",
-        "د ساه",
-        "ډېر خونریزي",
-        "بې هوشه",
-        "تشنج"
-    ];
-
-
-    const isMedical =
-        medicalWords.some(function(word) {
-            return lower.includes(word);
-        });
-
-
-    const isEmergency =
-        emergencyWords.some(function(word) {
-            return lower.includes(word);
-        });
-
-
-    document.getElementById(
-        "medicalWarning"
-    ).style.display =
-        isMedical
-            ? "block"
-            : "none";
-
-
-    document.getElementById(
-        "emergencyWarning"
-    ).style.display =
-        isEmergency
-            ? "block"
-            : "none";
-}
-
-
-loadDarkMode();
-
-loadMessages();
 
 </script>
 
 </body>
+
 </html>
 """
 
 
-@app.route("/")
-def home():
-    return render_template_string(HTML)
-
-
-@app.route("/health")
-def health():
-    return jsonify({
-        "service": "MedAI",
-        "status": "ok"
-    })
-
-
-@app.route("/chat", methods=["POST"])
-def chat_api():
-
-    if not GROQ_API_KEY:
-        return jsonify({
-            "error": "GROQ_API_KEY is not configured in Vercel."
-        }), 500
-
-    data = request.get_json(silent=True) or {}
-
-    incoming_messages = data.get("messages", [])
-
-    if not isinstance(incoming_messages, list):
-        return jsonify({
-            "error": "Invalid messages format."
-        }), 400
-
-    clean_messages = []
-
-    for message in incoming_messages[-20:]:
-
-        if not isinstance(message, dict):
-            continue
-
-        role = message.get("role")
-        content = message.get("content")
-
-        if role not in ["user", "assistant"]:
-            continue
-
-        if not isinstance(content, str):
-            continue
-
-        content = content.strip()
-
-        if not content:
-            continue
-
-        clean_messages.append({
-            "role": role,
-            "content": content
-        })
-
-    if not clean_messages:
-        return jsonify({
-            "error": "Please enter a message."
-        }), 400
-
-    groq_messages = [
-        {
-            "role": "system",
-            "content": SYSTEM_PROMPT
-        }
-    ]
-
-    groq_messages.extend(clean_messages)
-
-    payload = {
-        "model": TEXT_MODEL,
-        "messages": groq_messages,
-        "temperature": 0.7,
-        "max_tokens": 1200
-    }
-
-    headers = {
-        "Authorization": "Bearer " + GROQ_API_KEY,
-        "Content-Type": "application/json"
-    }
-
-    try:
-
-        response = requests.post(
-            GROQ_URL,
-            headers=headers,
-            json=payload,
-            timeout=60
-        )
-
-    except requests.exceptions.Timeout:
-
-        return jsonify({
-            "error": "AI request timed out."
-        }), 504
-
-    except requests.exceptions.RequestException as error:
-
-        return jsonify({
-            "error": "Could not connect to Groq.",
-            "details": str(error)
-        }), 502
-
-    if response.status_code == 401:
-
-        return jsonify({
-            "error": "Groq API key is invalid."
-        }), 401
-
-    if response.status_code == 403:
-
-        return jsonify({
-            "error": "Groq API access was denied."
-        }), 403
-
-    if response.status_code == 429:
-
-        return jsonify({
-            "error": "Groq free limit has been reached. Please try again later."
-        }), 429
-
-    if response.status_code >= 400:
-
-        try:
-            error_data = response.json()
-        except Exception:
-            error_data = {}
-
-        error_obj = error_data.get(
-            "error",
-            {}
-        )
-
-        if isinstance(error_obj, dict):
-
-            message = error_obj.get(
-                "message",
-                "Groq API error."
-            )
-
-        else:
-
-            message = str(error_obj)
-
-        return jsonify({
-            "error": message
-        }), response.status_code
-
-    try:
-
-        result = response.json()
-
-        answer = (
-            result["choices"][0]
-            ["message"]
-            ["content"]
-        )
-
-    except (
-        KeyError,
-        IndexError,
-        TypeError,
-        ValueError
-    ):
-
-        return jsonify({
-            "error": "Invalid response from Groq."
-        }), 502
-
-    return jsonify({
-        "answer": answer
-    })
-
-
-@app.route("/images")
-def image_search():
-
-    query = request.args.get(
-        "q",
-        ""
-    ).strip()
-
-    if not query:
-
-        return jsonify({
-            "error": "Please enter an image search term."
-        }), 400
-
-    api_url = (
-        "https://commons.wikimedia.org/w/api.php"
-    )
-
-    params = {
-        "action": "query",
-        "format": "json",
-        "formatversion": "2",
-        "generator": "search",
-        "gsrsearch": query,
-        "gsrnamespace": "6",
-        "gsrlimit": "12",
-        "prop": "imageinfo",
-        "iiprop": "url",
-        "iiurlwidth": "500",
-        "origin": "*"
-    }
-
-    headers = {
-        "User-Agent":
-            "MedAI/1.0 (AI assistant)"
-    }
-
-    try:
-
-        response = requests.get(
-            api_url,
-            params=params,
-            headers=headers,
-            timeout=25
-        )
-
-        response.raise_for_status()
-
-        data = response.json()
-
-    except requests.exceptions.Timeout:
-
-        return jsonify({
-            "error":
-                "Wikimedia image search timed out."
-        }), 504
-
-    except requests.exceptions.RequestException as error:
-
-        return jsonify({
-            "error":
-                "Could not connect to Wikimedia Commons.",
-            "details":
-                str(error)
-        }), 502
-
-    except ValueError:
-
-        return jsonify({
-            "error":
-                "Wikimedia returned an invalid response."
-        }), 502
-
-    pages = (
-        data
-        .get("query", {})
-        .get("pages", [])
-    )
-
-    images = []
-
-    for page in pages:
-
-        image_info = page.get(
-            "imageinfo",
-            []
-        )
-
-        if not image_info:
-            continue
-
-        info = image_info[0]
-
-        original = info.get("url")
-
-        thumbnail = info.get(
-            "thumburl"
-        )
-
-        if not thumbnail:
-            thumbnail = original
-
-        if not thumbnail:
-            continue
-
-        title = page.get(
-            "title",
-            "Image"
-        )
-
-        page_url = (
-            "https://commons.wikimedia.org/wiki/"
-            + title.replace(" ", "_")
-        )
-
-        images.append({
-            "title":
-                title.replace(
-                    "File:",
-                    ""
-                ),
-            "thumbnail":
-                thumbnail,
-            "original":
-                original,
-            "page":
-                page_url
-        })
-
-    return jsonify({
-        "images": images
-    })
-
-
-@app.route("/analyze-image", methods=["POST"])
-def analyze_image():
-
-    if not GROQ_API_KEY:
-
-        return jsonify({
-            "error":
-                "GROQ_API_KEY is not configured."
-        }), 500
-
-    data = request.get_json(
-        silent=True
-    ) or {}
-
-    image = data.get("image")
-
-    question = data.get(
-        "question",
-        "Describe this image."
-    )
-
-    if not image:
-
-        return jsonify({
-            "error":
-                "No image was provided."
-        }), 400
-
-    if not isinstance(image, str):
-
-        return jsonify({
-            "error":
-                "Invalid image data."
-        }), 400
-
-    if not image.startswith("data:image/"):
-
-        return jsonify({
-            "error":
-                "Invalid image format."
-        }), 400
-
-    if len(image) > 12_000_000:
-
-        return jsonify({
-            "error":
-                "Image is too large. Please use an image smaller than 8 MB."
-        }), 413
-
-    vision_prompt = f"""
-Analyze this image carefully.
-
-User question:
-{question}
-
-Rules:
-- Answer in the same language as the user.
-- Describe only what you can reasonably identify.
-- Do not invent details.
-- If this is a medical image, do not provide a definitive diagnosis.
-- For medical interpretation, recommend a qualified healthcare professional.
-"""
-
-    payload = {
-        "model": VISION_MODEL,
-        "messages": [
-            {
-                "role": "system",
-                "content": SYSTEM_PROMPT
-            },
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": vision_prompt
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": image
-                        }
-                    }
-                ]
-            }
-        ],
-        "temperature": 0.2,
-        "max_completion_tokens": 1200
-    }
-
-    headers = {
-        "Authorization":
-            "Bearer " + GROQ_API_KEY,
-        "Content-Type":
-            "application/json"
-    }
-
-    try:
-
-        response = requests.post(
-            GROQ_URL,
-            headers=headers,
-            json=payload,
-            timeout=90
-        )
-
-    except requests.exceptions.Timeout:
-
-        return jsonify({
-            "error":
-                "Image analysis timed out."
-        }), 504
-
-    except requests.exceptions.RequestException as error:
-
-        return jsonify({
-            "error":
-                "Could not connect to Groq.",
-            "details":
-                str(error)
-        }), 502
-
-    if response.status_code == 401:
-
-        return jsonify({
-            "error":
-                "Groq API key is invalid."
-        }), 401
-
-    if response.status_code == 403:
-
-        return jsonify({
-            "error":
-                "Groq image access was denied."
-        }), 403
-
-    if response.status_code == 429:
-
-        return jsonify({
-            "error":
-                "Groq vision rate limit has been reached."
-        }), 429
-
-    if response.status_code >= 400:
-
-        try:
-            details = response.json()
-        except Exception:
-            details = response.text
-
-        return jsonify({
-            "error":
-                "Groq image analysis error.",
-            "details":
-                details
-        }), response.status_code
-
-    try:
-
-        result = response.json()
-
-        answer = (
-            result["choices"][0]
-            ["message"]
-            ["content"]
-        )
-
-    except (
-        KeyError,
-        IndexError,
-        TypeError,
-        ValueError
-    ):
-
-        return jsonify({
-            "error":
-                "Invalid image analysis response."
-        }), 502
-
-    return jsonify({
-        "answer": answer
-    })
-
+# =========================================================
+# RUN
+# =========================================================
 
 if __name__ == "__main__":
-
     app.run(
         host="0.0.0.0",
         port=int(
@@ -2091,5 +2336,6 @@ if __name__ == "__main__":
                 "PORT",
                 5000
             )
-        )
+        ),
+        debug=False
     )
