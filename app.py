@@ -11,1037 +11,626 @@ MODEL = "openai/gpt-oss-20b"
 SYSTEM_PROMPT = """
 You are MedAI, a helpful AI assistant.
 
-Rules:
-- Answer in the same language as the user.
-- Support Pashto, Dari, and English.
-- Help with education, science, coding, mathematics, technology,
-  history, business, writing, and general questions.
-- For medical questions, provide general educational information only.
-- Do not pretend to be a doctor.
-- For emergencies, advise contacting a qualified healthcare professional
-  or local emergency medical services.
-- Be clear, friendly, accurate, and useful.
+You can answer general questions about:
+- Education
+- Science
+- Mathematics
+- Programming and coding
+- Technology
+- History
+- Business
+- Writing
+- General knowledge
+- Health and medical topics
+
+Important rules:
+1. Answer in the same language as the user.
+2. Support Pashto, Dari, and English.
+3. For medical questions, provide safe general information.
+4. Do not pretend to be a doctor.
+5. For emergencies or serious symptoms, recommend contacting a qualified healthcare professional or emergency service.
+6. Be clear, friendly, and useful.
 """
 
 HTML = r"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MedAI</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<style>
-* {
-    box-sizing: border-box;
-}
+    <title>MedAI</title>
 
-body {
-    margin: 0;
-    font-family: Arial, sans-serif;
-    background: #f5f7fb;
-    color: #111827;
-    transition: 0.2s;
-}
+    <style>
+        * {
+            box-sizing: border-box;
+        }
 
-body.dark {
-    background: #111827;
-    color: #f9fafb;
-}
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f4f7fb;
+            color: #172033;
+            transition: 0.2s;
+        }
 
-.app {
-    max-width: 1000px;
-    margin: auto;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-}
+        body.dark {
+            background: #111827;
+            color: #f3f4f6;
+        }
 
-.header {
-    height: 65px;
-    padding: 12px 16px;
-    background: #111827;
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
+        .app {
+            max-width: 1100px;
+            height: 100vh;
+            margin: auto;
+            display: flex;
+            flex-direction: column;
+        }
 
-.logo {
-    font-size: 21px;
-    font-weight: bold;
-}
+        header {
+            padding: 14px 18px;
+            background: white;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
 
-.header-buttons {
-    display: flex;
-    gap: 8px;
-}
+        body.dark header {
+            background: #1f2937;
+            border-color: #374151;
+        }
 
-.header button {
-    border: 0;
-    border-radius: 9px;
-    padding: 9px 12px;
-    cursor: pointer;
-    font-size: 14px;
-}
+        .logo {
+            font-size: 22px;
+            font-weight: bold;
+        }
 
-.new-btn {
-    background: white;
-    color: #111827;
-}
+        .logo span {
+            font-size: 13px;
+            opacity: 0.65;
+            display: block;
+            font-weight: normal;
+        }
 
-.theme-btn {
-    background: #374151;
-    color: white;
-}
+        .actions {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
 
-.chat {
-    flex: 1;
-    padding: 20px;
-    overflow-y: auto;
-    min-height: calc(100vh - 145px);
-}
+        button {
+            border: 0;
+            border-radius: 8px;
+            padding: 9px 12px;
+            cursor: pointer;
+            background: #e8eef7;
+            color: #172033;
+            font-size: 14px;
+        }
 
-.message-row {
-    display: flex;
-    margin: 14px 0;
-}
+        button:hover {
+            opacity: 0.8;
+        }
 
-.user-row {
-    justify-content: flex-end;
-}
+        body.dark button {
+            background: #374151;
+            color: white;
+        }
 
-.message-box {
-    max-width: 82%;
-    border-radius: 15px;
-    padding: 12px 14px;
-    line-height: 1.6;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-}
+        .chat {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
 
-.user-message {
-    background: #2563eb;
-    color: white;
-}
+        .message {
+            max-width: 82%;
+            margin-bottom: 15px;
+            padding: 13px 15px;
+            border-radius: 14px;
+            line-height: 1.55;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
 
-.ai-message {
-    background: white;
-    color: #111827;
-    border: 1px solid #e5e7eb;
-}
+        .user {
+            margin-left: auto;
+            background: #2563eb;
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
 
-body.dark .ai-message {
-    background: #1f2937;
-    color: #f9fafb;
-    border-color: #374151;
-}
+        .assistant {
+            margin-right: auto;
+            background: white;
+            border: 1px solid #e1e5eb;
+            border-bottom-left-radius: 4px;
+        }
 
-.message-actions {
-    margin-top: 8px;
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-}
+        body.dark .assistant {
+            background: #1f2937;
+            border-color: #374151;
+        }
 
-.action-btn {
-    border: 1px solid #d1d5db;
-    background: transparent;
-    border-radius: 7px;
-    padding: 5px 9px;
-    cursor: pointer;
-    font-size: 12px;
-}
+        .message-actions {
+            margin-top: 8px;
+        }
 
-body.dark .action-btn {
-    color: white;
-    border-color: #4b5563;
-}
+        .copy-btn {
+            font-size: 12px;
+            padding: 5px 8px;
+        }
 
-.input-area {
-    position: sticky;
-    bottom: 0;
-    padding: 12px;
-    background: rgba(255,255,255,0.96);
-    border-top: 1px solid #ddd;
-}
+        .thinking {
+            display: none;
+            margin: 0 20px 10px;
+            opacity: 0.7;
+            font-size: 14px;
+        }
 
-body.dark .input-area {
-    background: rgba(17,24,39,0.96);
-    border-color: #374151;
-}
+        .search-box {
+            display: none;
+            padding: 10px 18px;
+            background: white;
+            border-bottom: 1px solid #ddd;
+        }
 
-.input-row {
-    display: flex;
-    gap: 9px;
-}
+        body.dark .search-box {
+            background: #1f2937;
+            border-color: #374151;
+        }
 
-textarea {
-    flex: 1;
-    resize: none;
-    min-height: 50px;
-    max-height: 150px;
-    padding: 13px;
-    border: 1px solid #d1d5db;
-    border-radius: 12px;
-    font-size: 16px;
-    outline: none;
-    background: white;
-    color: #111827;
-}
+        .search-box input {
+            width: 100%;
+            padding: 11px;
+            border: 1px solid #ccd3df;
+            border-radius: 8px;
+            outline: none;
+            font-size: 15px;
+        }
 
-body.dark textarea {
-    background: #1f2937;
-    color: white;
-    border-color: #4b5563;
-}
+        body.dark .search-box input {
+            background: #111827;
+            color: white;
+            border-color: #4b5563;
+        }
 
-.voice-btn,
-.send-btn {
-    border: 0;
-    border-radius: 12px;
-    padding: 0 16px;
-    cursor: pointer;
-    font-size: 16px;
-}
+        .search-results {
+            padding: 8px 18px;
+            font-size: 13px;
+            opacity: 0.8;
+        }
 
-.voice-btn {
-    background: #e5e7eb;
-    color: #111827;
-}
+        .composer {
+            padding: 12px;
+            background: white;
+            border-top: 1px solid #ddd;
+            display: flex;
+            gap: 8px;
+        }
 
-body.dark .voice-btn {
-    background: #374151;
-    color: white;
-}
+        body.dark .composer {
+            background: #1f2937;
+            border-color: #374151;
+        }
 
-.voice-btn.listening {
-    background: #dc2626;
-    color: white;
-}
+        textarea {
+            flex: 1;
+            resize: none;
+            min-height: 48px;
+            max-height: 150px;
+            border: 1px solid #ccd3df;
+            border-radius: 10px;
+            padding: 12px;
+            font-size: 15px;
+            outline: none;
+            font-family: inherit;
+        }
 
-.send-btn {
-    background: #2563eb;
-    color: white;
-}
+        body.dark textarea {
+            background: #111827;
+            color: white;
+            border-color: #4b5563;
+        }
 
-.send-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-}
+        .send {
+            background: #2563eb;
+            color: white;
+            min-width: 75px;
+        }
 
-.welcome {
-    text-align: center;
-    padding: 70px 20px;
-}
+        .empty {
+            text-align: center;
+            opacity: 0.6;
+            padding: 60px 20px;
+        }
 
-.welcome h2 {
-    margin-bottom: 10px;
-}
+        @media (max-width: 600px) {
+            .app {
+                height: 100dvh;
+            }
 
-.welcome p {
-    opacity: 0.7;
-}
+            header {
+                align-items: flex-start;
+            }
 
-.loading {
-    opacity: 0.65;
-}
+            .actions button {
+                padding: 7px 8px;
+                font-size: 12px;
+            }
 
-.voice-status {
-    font-size: 13px;
-    margin-top: 7px;
-    opacity: 0.7;
-    min-height: 18px;
-}
+            .message {
+                max-width: 92%;
+            }
 
-@media (max-width: 600px) {
+            .chat {
+                padding: 12px;
+            }
 
-    .header {
-        height: 60px;
-    }
-
-    .logo {
-        font-size: 18px;
-    }
-
-    .header button {
-        padding: 8px 9px;
-    }
-
-    .chat {
-        padding: 12px;
-    }
-
-    .message-box {
-        max-width: 94%;
-    }
-
-    .input-area {
-        padding: 8px;
-    }
-
-    .input-row {
-        gap: 6px;
-    }
-
-    textarea {
-        font-size: 15px;
-    }
-
-    .voice-btn,
-    .send-btn {
-        padding: 0 12px;
-    }
-}
-</style>
+            .composer {
+                padding: 8px;
+            }
+        }
+    </style>
 </head>
 
 <body>
 
 <div class="app">
 
-    <div class="header">
-
+    <header>
         <div class="logo">
             🤖 MedAI
+            <span>AI Assistant</span>
         </div>
 
-        <div class="header-buttons">
-
-            <button class="theme-btn" onclick="toggleTheme()">
-                🌙
-            </button>
-
-            <button class="new-btn" onclick="newChat()">
-                New Chat
-            </button>
-
+        <div class="actions">
+            <button onclick="newChat()">🆕 New</button>
+            <button onclick="toggleSearch()">🔍 Search</button>
+            <button onclick="exportChat()">📥 Export</button>
+            <button onclick="toggleDark()">🌙</button>
         </div>
+    </header>
 
+    <div class="search-box" id="searchBox">
+        <input
+            id="searchInput"
+            type="text"
+            placeholder="Search in this chat..."
+            oninput="searchChat()"
+        >
+        <div class="search-results" id="searchResults"></div>
     </div>
 
+    <main class="chat" id="chat">
+    </main>
 
-    <div id="chat" class="chat">
-
-        <div class="welcome" id="welcome">
-
-            <h2>👋 Welcome to MedAI</h2>
-
-            <p>
-                Ask me anything in Pashto, Dari, or English.
-            </p>
-
-        </div>
-
+    <div class="thinking" id="thinking">
+        🤔 MedAI is thinking...
     </div>
 
+    <div class="composer">
+        <textarea
+            id="messageInput"
+            placeholder="Ask MedAI anything..."
+            onkeydown="handleKey(event)"
+        ></textarea>
 
-    <div class="input-area">
-
-        <div class="input-row">
-
-            <textarea
-                id="message"
-                placeholder="Type or speak your message..."
-                onkeydown="handleKey(event)"
-            ></textarea>
-
-            <button
-                id="voiceBtn"
-                class="voice-btn"
-                onclick="toggleVoice()"
-                title="Voice Input"
-            >
-                🎤
-            </button>
-
-            <button
-                id="sendBtn"
-                class="send-btn"
-                onclick="sendMessage()"
-            >
-                Send
-            </button>
-
-        </div>
-
-        <div id="voiceStatus" class="voice-status"></div>
-
+        <button class="send" onclick="sendMessage()">
+            Send
+        </button>
     </div>
 
 </div>
 
-
 <script>
+    let messages = [];
 
-let messages = [];
+    const chat = document.getElementById("chat");
+    const input = document.getElementById("messageInput");
+    const thinking = document.getElementById("thinking");
 
-let recognition = null;
+    function loadMessages() {
+        try {
+            const saved = localStorage.getItem("medai_messages");
 
-let isListening = false;
-
-
-// --------------------------------
-// Local history
-// --------------------------------
-
-function loadHistory() {
-
-    try {
-
-        const saved =
-            localStorage.getItem("medai_messages");
-
-        if (saved) {
-
-            messages = JSON.parse(saved);
-
-            messages.forEach(function(message) {
-
-                addMessage(
-                    message.content,
-                    message.role,
-                    false
-                );
-
-            });
+            if (saved) {
+                messages = JSON.parse(saved);
+            }
+        } catch (error) {
+            messages = [];
         }
 
-    } catch (error) {
-
-        messages = [];
-
+        renderMessages();
     }
-}
 
-
-function saveHistory() {
-
-    try {
-
+    function saveMessages() {
         localStorage.setItem(
             "medai_messages",
             JSON.stringify(messages)
         );
-
-    } catch (error) {
-
-        console.log("History save failed.");
-
-    }
-}
-
-
-// --------------------------------
-// Add message
-// --------------------------------
-
-function addMessage(text, role, showActions = true) {
-
-    const chat =
-        document.getElementById("chat");
-
-    const welcome =
-        document.getElementById("welcome");
-
-    if (welcome) {
-        welcome.remove();
     }
 
-    const row =
-        document.createElement("div");
+    function renderMessages() {
+        chat.innerHTML = "";
 
-    row.className =
-        "message-row " +
-        (role === "user" ? "user-row" : "");
+        if (messages.length === 0) {
+            chat.innerHTML = `
+                <div class="empty">
+                    <h2>🤖 Welcome to MedAI</h2>
+                    <p>Ask me anything about education, science, coding, health, technology and more.</p>
+                </div>
+            `;
+            return;
+        }
 
+        messages.forEach(function(message, index) {
+            const div = document.createElement("div");
 
-    const box =
-        document.createElement("div");
+            div.className =
+                "message " +
+                (message.role === "user" ? "user" : "assistant");
 
-    box.className =
-        "message-box " +
-        (role === "user"
-            ? "user-message"
-            : "ai-message");
+            const text = document.createElement("div");
+            text.textContent = message.content;
 
+            div.appendChild(text);
 
-    const content =
-        document.createElement("div");
+            if (message.role === "assistant") {
+                const actions = document.createElement("div");
+                actions.className = "message-actions";
 
-    content.textContent = text;
+                const copy = document.createElement("button");
+                copy.className = "copy-btn";
+                copy.textContent = "📋 Copy";
 
-    box.appendChild(content);
+                copy.onclick = function() {
+                    copyText(message.content, copy);
+                };
 
-
-    if (role === "assistant" && showActions) {
-
-        const actions =
-            document.createElement("div");
-
-        actions.className =
-            "message-actions";
-
-
-        // Copy
-        const copyBtn =
-            document.createElement("button");
-
-        copyBtn.className = "action-btn";
-
-        copyBtn.textContent = "📋 Copy";
-
-
-        copyBtn.onclick = async function() {
-
-            try {
-
-                await navigator.clipboard.writeText(text);
-
-                copyBtn.textContent = "✅ Copied";
-
-                setTimeout(function() {
-                    copyBtn.textContent = "📋 Copy";
-                }, 1500);
-
-            } catch (error) {
-
-                copyBtn.textContent = "❌ Failed";
-
+                actions.appendChild(copy);
+                div.appendChild(actions);
             }
-        };
 
+            chat.appendChild(div);
+        });
 
-        // Speak
-        const speakBtn =
-            document.createElement("button");
-
-        speakBtn.className = "action-btn";
-
-        speakBtn.textContent = "🔊 Listen";
-
-
-        speakBtn.onclick = function() {
-
-            speakText(text);
-
-        };
-
-
-        actions.appendChild(copyBtn);
-
-        actions.appendChild(speakBtn);
-
-        box.appendChild(actions);
+        chat.scrollTop = chat.scrollHeight;
     }
 
+    async function sendMessage() {
+        const text = input.value.trim();
 
-    row.appendChild(box);
+        if (!text) {
+            return;
+        }
 
-    chat.appendChild(row);
+        input.value = "";
 
-    chat.scrollTop =
-        chat.scrollHeight;
+        messages.push({
+            role: "user",
+            content: text
+        });
 
+        saveMessages();
+        renderMessages();
 
-    return row;
-}
+        thinking.style.display = "block";
 
-
-// --------------------------------
-// Send message
-// --------------------------------
-
-async function sendMessage() {
-
-    const input =
-        document.getElementById("message");
-
-    const sendBtn =
-        document.getElementById("sendBtn");
-
-    const text =
-        input.value.trim();
-
-
-    if (!text) {
-        return;
-    }
-
-
-    if (isListening) {
-        stopVoice();
-    }
-
-
-    addMessage(text, "user");
-
-
-    messages.push({
-        role: "user",
-        content: text
-    });
-
-
-    saveHistory();
-
-
-    input.value = "";
-
-    sendBtn.disabled = true;
-
-
-    const loading =
-        addMessage(
-            "⏳ Thinking...",
-            "assistant",
-            false
-        );
-
-
-    loading.classList.add("loading");
-
-
-    try {
-
-        const response =
-            await fetch("/chat", {
-
+        try {
+            const response = await fetch("/chat", {
                 method: "POST",
-
                 headers: {
-                    "Content-Type":
-                        "application/json"
+                    "Content-Type": "application/json"
                 },
-
                 body: JSON.stringify({
                     messages: messages
                 })
-
             });
 
+            const data = await response.json();
 
-        const data =
-            await response.json();
+            if (!response.ok) {
+                throw new Error(
+                    data.error || "Something went wrong."
+                );
+            }
 
+            messages.push({
+                role: "assistant",
+                content: data.answer
+            });
 
-        loading.remove();
+            saveMessages();
+            renderMessages();
 
+        } catch (error) {
+            messages.push({
+                role: "assistant",
+                content: "⚠️ " + error.message
+            });
 
-        if (!response.ok) {
+            saveMessages();
+            renderMessages();
 
-            addMessage(
-                "❌ " +
-                (
-                    data.error ||
-                    "Something went wrong."
-                ),
-                "assistant"
+        } finally {
+            thinking.style.display = "none";
+        }
+    }
+
+    function handleKey(event) {
+        if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            sendMessage();
+        }
+    }
+
+    function copyText(text, button) {
+        navigator.clipboard.writeText(text)
+            .then(function() {
+                const oldText = button.textContent;
+                button.textContent = "✅ Copied";
+
+                setTimeout(function() {
+                    button.textContent = oldText;
+                }, 1500);
+            })
+            .catch(function() {
+                alert("Copy failed.");
+            });
+    }
+
+    function newChat() {
+        if (messages.length > 0) {
+            const confirmed = confirm(
+                "Start a new chat? The current chat will be cleared."
             );
 
-            sendBtn.disabled = false;
-
-            return;
-        }
-
-
-        const answer =
-            data.answer ||
-            "No answer received.";
-
-
-        addMessage(
-            answer,
-            "assistant"
-        );
-
-
-        messages.push({
-            role: "assistant",
-            content: answer
-        });
-
-
-        saveHistory();
-
-
-    } catch (error) {
-
-        loading.remove();
-
-
-        addMessage(
-            "❌ Connection error. Please try again.",
-            "assistant"
-        );
-
-    }
-
-
-    sendBtn.disabled = false;
-
-    input.focus();
-}
-
-
-// --------------------------------
-// Voice Input
-// --------------------------------
-
-function setupVoice() {
-
-    const SpeechRecognition =
-        window.SpeechRecognition ||
-        window.webkitSpeechRecognition;
-
-
-    if (!SpeechRecognition) {
-
-        document.getElementById(
-            "voiceStatus"
-        ).textContent =
-            "🎤 Voice input is not supported in this browser.";
-
-        return false;
-    }
-
-
-    recognition =
-        new SpeechRecognition();
-
-
-    recognition.continuous = false;
-
-    recognition.interimResults = true;
-
-    recognition.lang = "en-US";
-
-
-    recognition.onstart = function() {
-
-        isListening = true;
-
-        const btn =
-            document.getElementById("voiceBtn");
-
-        btn.classList.add("listening");
-
-        btn.textContent = "⏹️";
-
-        document.getElementById(
-            "voiceStatus"
-        ).textContent =
-            "🎤 Listening... Speak now.";
-    };
-
-
-    recognition.onresult = function(event) {
-
-        let finalText = "";
-
-        let interimText = "";
-
-
-        for (
-            let i = event.resultIndex;
-            i < event.results.length;
-            i++
-        ) {
-
-            const transcript =
-                event.results[i][0].transcript;
-
-
-            if (event.results[i].isFinal) {
-
-                finalText += transcript;
-
-            } else {
-
-                interimText += transcript;
-
+            if (!confirmed) {
+                return;
             }
         }
 
+        messages = [];
+        localStorage.removeItem("medai_messages");
 
-        const input =
-            document.getElementById("message");
+        renderMessages();
 
+        document.getElementById("searchInput").value = "";
+        document.getElementById("searchResults").textContent = "";
+    }
 
-        if (finalText) {
+    function toggleDark() {
+        document.body.classList.toggle("dark");
 
-            input.value =
-                (
-                    input.value + " " + finalText
-                ).trim();
+        localStorage.setItem(
+            "medai_dark",
+            document.body.classList.contains("dark")
+        );
+    }
 
-        } else if (interimText) {
+    function loadDarkMode() {
+        const dark = localStorage.getItem("medai_dark");
 
-            document.getElementById(
-                "voiceStatus"
-            ).textContent =
-                "🎤 " + interimText;
+        if (dark === "true") {
+            document.body.classList.add("dark");
         }
-    };
+    }
 
+    function toggleSearch() {
+        const box = document.getElementById("searchBox");
 
-    recognition.onerror = function(event) {
-
-        isListening = false;
-
-        resetVoiceButton();
-
-
-        if (event.error === "not-allowed") {
-
-            document.getElementById(
-                "voiceStatus"
-            ).textContent =
-                "❌ Microphone permission was denied.";
-
+        if (box.style.display === "block") {
+            box.style.display = "none";
+            document.getElementById("searchInput").value = "";
+            document.getElementById("searchResults").textContent = "";
         } else {
-
-            document.getElementById(
-                "voiceStatus"
-            ).textContent =
-                "❌ Voice input error. Please try again.";
+            box.style.display = "block";
+            document.getElementById("searchInput").focus();
         }
-    };
+    }
 
+    function searchChat() {
+        const query =
+            document.getElementById("searchInput")
+                .value
+                .trim()
+                .toLowerCase();
 
-    recognition.onend = function() {
+        const results =
+            document.getElementById("searchResults");
 
-        isListening = false;
-
-        resetVoiceButton();
-
-
-        document.getElementById(
-            "voiceStatus"
-        ).textContent = "";
-    };
-
-
-    return true;
-}
-
-
-function toggleVoice() {
-
-    if (!recognition) {
-
-        if (!setupVoice()) {
+        if (!query) {
+            results.textContent = "";
+            renderMessages();
             return;
         }
-    }
 
+        const matches = messages.filter(function(message) {
+            return message.content
+                .toLowerCase()
+                .includes(query);
+        });
 
-    if (isListening) {
+        results.textContent =
+            matches.length +
+            " matching message(s) found.";
 
-        stopVoice();
+        chat.innerHTML = "";
 
-    } else {
-
-        startVoice();
-
-    }
-}
-
-
-function startVoice() {
-
-    try {
-
-        recognition.start();
-
-    } catch (error) {
-
-        console.log(error);
-
-    }
-}
-
-
-function stopVoice() {
-
-    if (recognition) {
-
-        try {
-            recognition.stop();
-        } catch (error) {
-            console.log(error);
+        if (matches.length === 0) {
+            chat.innerHTML = `
+                <div class="empty">
+                    🔍 No matching messages found.
+                </div>
+            `;
+            return;
         }
+
+        matches.forEach(function(message) {
+            const div = document.createElement("div");
+
+            div.className =
+                "message " +
+                (message.role === "user"
+                    ? "user"
+                    : "assistant");
+
+            const text = document.createElement("div");
+            text.textContent = message.content;
+
+            div.appendChild(text);
+            chat.appendChild(div);
+        });
     }
-}
 
+    function exportChat() {
+        if (messages.length === 0) {
+            alert("There is no chat to export.");
+            return;
+        }
 
-function resetVoiceButton() {
+        let content = "MedAI Chat Export\n";
+        content += "=================\n\n";
 
-    const btn =
-        document.getElementById("voiceBtn");
+        messages.forEach(function(message) {
+            const role =
+                message.role === "user"
+                    ? "You"
+                    : "MedAI";
 
-    btn.classList.remove("listening");
+            content += role + ":\n";
+            content += message.content + "\n\n";
+        });
 
-    btn.textContent = "🎤";
-}
-
-
-// --------------------------------
-// Voice Output
-// --------------------------------
-
-function speakText(text) {
-
-    if (!("speechSynthesis" in window)) {
-
-        alert(
-            "Voice output is not supported in this browser."
+        const blob = new Blob(
+            [content],
+            { type: "text/plain;charset=utf-8" }
         );
 
-        return;
+        const url = URL.createObjectURL(blob);
+
+        const link = document.createElement("a");
+
+        link.href = url;
+        link.download =
+            "medai-chat-" +
+            new Date().toISOString()
+                .slice(0, 10) +
+            ".txt";
+
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+
+        URL.revokeObjectURL(url);
     }
 
-
-    window.speechSynthesis.cancel();
-
-
-    const speech =
-        new SpeechSynthesisUtterance(text);
-
-
-    speech.rate = 0.95;
-
-    speech.pitch = 1;
-
-    speech.volume = 1;
-
-
-    const language =
-        detectLanguage(text);
-
-
-    speech.lang = language;
-
-
-    window.speechSynthesis.speak(speech);
-}
-
-
-function detectLanguage(text) {
-
-    // Pashto / Dari / Arabic-script detection
-    if (/[\u0600-\u06FF]/.test(text)) {
-
-        return "fa-AF";
-    }
-
-    return "en-US";
-}
-
-
-// --------------------------------
-// Keyboard
-// --------------------------------
-
-function handleKey(event) {
-
-    if (
-        event.key === "Enter" &&
-        !event.shiftKey
-    ) {
-
-        event.preventDefault();
-
-        sendMessage();
-    }
-}
-
-
-// --------------------------------
-// New chat
-// --------------------------------
-
-function newChat() {
-
-    if (
-        messages.length > 0 &&
-        !confirm("Start a new chat?")
-    ) {
-
-        return;
-    }
-
-
-    messages = [];
-
-
-    localStorage.removeItem(
-        "medai_messages"
-    );
-
-
-    window.speechSynthesis?.cancel();
-
-
-    document.getElementById(
-        "chat"
-    ).innerHTML = `
-
-        <div class="welcome" id="welcome">
-
-            <h2>👋 Welcome to MedAI</h2>
-
-            <p>
-                Ask me anything in Pashto, Dari, or English.
-            </p>
-
-        </div>
-
-    `;
-}
-
-
-// --------------------------------
-// Dark mode
-// --------------------------------
-
-function toggleTheme() {
-
-    document.body.classList.toggle("dark");
-
-
-    const dark =
-        document.body.classList.contains("dark");
-
-
-    localStorage.setItem(
-        "medai_theme",
-        dark ? "dark" : "light"
-    );
-}
-
-
-function loadTheme() {
-
-    const theme =
-        localStorage.getItem("medai_theme");
-
-
-    if (theme === "dark") {
-
-        document.body.classList.add("dark");
-    }
-}
-
-
-// --------------------------------
-// Start
-// --------------------------------
-
-loadTheme();
-
-loadHistory();
-
+    loadDarkMode();
+    loadMessages();
 </script>
 
 </body>
@@ -1063,156 +652,138 @@ def health():
 
 
 @app.route("/chat", methods=["POST"])
-def chat():
-
+def chat_api():
     if not GROQ_API_KEY:
-
         return jsonify({
-            "error":
-                "GROQ_API_KEY is not configured in Vercel."
+            "error": "GROQ_API_KEY is not configured."
         }), 500
 
+    data = request.get_json(silent=True) or {}
 
-    data =
-        request.get_json(silent=True) or {}
+    incoming_messages = data.get("messages", [])
 
-    user_messages =
-        data.get("messages", [])
-
-
-    if not user_messages:
-
+    if not isinstance(incoming_messages, list):
         return jsonify({
-            "error":
-                "No message provided."
+            "error": "Invalid messages format."
         }), 400
 
+    clean_messages = []
 
-    messages = [
+    for message in incoming_messages[-20:]:
+        if not isinstance(message, dict):
+            continue
+
+        role = message.get("role")
+        content = message.get("content")
+
+        if role not in ["user", "assistant"]:
+            continue
+
+        if not isinstance(content, str):
+            continue
+
+        content = content.strip()
+
+        if not content:
+            continue
+
+        clean_messages.append({
+            "role": role,
+            "content": content
+        })
+
+    if not clean_messages:
+        return jsonify({
+            "error": "Please enter a message."
+        }), 400
+
+    groq_messages = [
         {
             "role": "system",
             "content": SYSTEM_PROMPT
         }
     ]
 
+    groq_messages.extend(clean_messages)
 
-    for msg in user_messages[-20:]:
+    payload = {
+        "model": MODEL,
+        "messages": groq_messages,
+        "temperature": 0.7,
+        "max_tokens": 1200
+    }
 
-        role = msg.get("role")
-
-        content = msg.get("content")
-
-
-        if (
-            role in ["user", "assistant"]
-            and content
-        ):
-
-            messages.append({
-                "role": role,
-                "content": str(content)
-            })
-
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
 
     try:
-
         response = requests.post(
-
             GROQ_URL,
-
-            headers={
-                "Authorization":
-                    f"Bearer {GROQ_API_KEY}",
-
-                "Content-Type":
-                    "application/json"
-            },
-
-            json={
-                "model": MODEL,
-                "messages": messages,
-                "temperature": 0.7,
-                "max_tokens": 1200
-            },
-
-            timeout=55
+            headers=headers,
+            json=payload,
+            timeout=60
         )
-
-
-        if response.status_code == 429:
-
-            return jsonify({
-                "error":
-                    "Groq rate limit reached. Please try again later."
-            }), 429
-
-
-        if response.status_code in [401, 403]:
-
-            return jsonify({
-                "error":
-                    "Groq API key is invalid or not authorized."
-            }), response.status_code
-
-
-        if response.status_code >= 400:
-
-            try:
-                details = response.json()
-            except Exception:
-                details = response.text
-
-
-            return jsonify({
-                "error":
-                    "Groq API error",
-                "details":
-                    details
-            }), response.status_code
-
-
-        result =
-            response.json()
-
-
-        answer = (
-            result
-            .get("choices", [{}])[0]
-            .get("message", {})
-            .get("content")
-        )
-
-
-        if not answer:
-
-            return jsonify({
-                "error":
-                    "No answer returned by Groq."
-            }), 500
-
-
-        return jsonify({
-            "answer": answer
-        })
-
 
     except requests.exceptions.Timeout:
-
         return jsonify({
-            "error":
-                "Groq request timed out. Please try again."
+            "error": "AI request timed out. Please try again."
         }), 504
 
+    except requests.exceptions.RequestException:
+        return jsonify({
+            "error": "Could not connect to the AI service."
+        }), 502
 
-    except Exception as e:
+    if response.status_code == 401:
+        return jsonify({
+            "error": "Groq API key is invalid."
+        }), 401
+
+    if response.status_code == 403:
+        return jsonify({
+            "error": "Groq API access was denied."
+        }), 403
+
+    if response.status_code == 429:
+        return jsonify({
+            "error": "Groq free limit has been reached. Please try again later."
+        }), 429
+
+    if response.status_code >= 400:
+        try:
+            error_data = response.json()
+            message = (
+                error_data.get("error", {})
+                .get("message", "Groq API error.")
+            )
+        except Exception:
+            message = "Groq API error."
 
         return jsonify({
-            "error":
-                "Server error",
-            "details":
-                str(e)
-        }), 500
+            "error": message
+        }), response.status_code
+
+    try:
+        result = response.json()
+
+        answer = (
+            result["choices"][0]["message"]["content"]
+        )
+
+    except (KeyError, IndexError, TypeError, ValueError):
+        return jsonify({
+            "error": "Invalid response received from Groq."
+        }), 502
+
+    return jsonify({
+        "answer": answer
+    })
 
 
 if __name__ == "__main__":
-    app.run()
+    app.run(
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 5000))
+    )
